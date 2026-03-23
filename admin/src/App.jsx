@@ -16,12 +16,12 @@ import SupportPage from './pages/SupportPage'
 
 function App() {
   return (
-    <BrowserRouter>
+    <BrowserRouter basename="/admin">
       <AuthProvider>
         <ToastProvider>
           <Routes>
-            <Route path="/admin/login" element={<LoginPage />} />
-            <Route path="/admin" element={<AdminLayout />}>
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/" element={<AdminLayout />}>
               <Route index element={<Dashboard />} />
               <Route path="landing" element={<LandingPageEditor />} />
               <Route path="games" element={<GamesPage />} />
