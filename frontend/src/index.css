@@ -1,0 +1,252 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: light dark;
+  }
+  
+  * {
+    @apply border-light-border;
+  }
+  
+  body {
+    @apply bg-light-bg text-light-text font-sans;
+    background-image: 
+      radial-gradient(ellipse at top, rgba(16, 185, 129, 0.05) 0%, transparent 50%),
+      radial-gradient(ellipse at bottom, rgba(59, 130, 246, 0.03) 0%, transparent 50%);
+    background-attachment: fixed;
+    overflow-x: hidden;
+    min-height: 100vh;
+  }
+  
+  html {
+    overflow-x: hidden;
+  }
+  
+  .dark {
+    @apply bg-dark-400 text-white;
+    background-image: 
+      radial-gradient(ellipse at top, rgba(52, 211, 153, 0.05) 0%, transparent 50%),
+      radial-gradient(ellipse at bottom, rgba(123, 0, 255, 0.03) 0%, transparent 50%);
+  }
+  
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  
+  ::-webkit-scrollbar-track {
+    @apply bg-gray-100;
+  }
+  
+  ::-webkit-scrollbar-thumb {
+    @apply bg-gray-300 rounded-full;
+  }
+  
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-gray-400;
+  }
+  
+  .dark ::-webkit-scrollbar-track {
+    @apply bg-dark-300;
+  }
+  
+  .dark ::-webkit-scrollbar-thumb {
+    @apply bg-dark-100;
+  }
+  
+  ::selection {
+    @apply bg-primary-500/30 text-light-text;
+  }
+  
+  .dark ::selection {
+    @apply bg-primary-500/30 text-white;
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@layer components {
+  .glass {
+    @apply bg-white/80 backdrop-blur-xl border border-light-border shadow-card;
+  }
+  
+  .dark .glass {
+    @apply bg-dark-300/80 backdrop-blur-xl border-white/10;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
+  }
+  
+  .glass-dark {
+    @apply bg-light-card/95 backdrop-blur-xl border-light-border shadow-card;
+  }
+  
+  .dark .glass-dark {
+    @apply bg-dark-300/95 border-dark-100/50;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
+  }
+  
+  .gradient-text {
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-primary-500 via-primary-400 to-secondary-500;
+  }
+  
+  .btn {
+    @apply relative inline-flex items-center justify-center px-6 py-3 rounded-xl font-semibold transition-all duration-200 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  
+  .btn-primary {
+    @apply btn bg-gradient-to-r from-primary-500 to-primary-600 text-white shadow-card hover:shadow-card-hover hover:scale-[1.02];
+  }
+  
+  .dark .btn-primary {
+    @apply shadow-glow hover:shadow-glow-lg;
+  }
+  
+  .btn-secondary {
+    @apply btn bg-light-card text-light-text border border-light-border shadow-card hover:bg-gray-50 hover:border-primary-500/50;
+  }
+  
+  .dark .btn-secondary {
+    @apply bg-dark-300 text-white border-dark-100 hover:bg-dark-200;
+  }
+  
+  .btn-glow {
+    @apply btn bg-gradient-to-r from-secondary-500 to-secondary-600 text-white shadow-card hover:scale-[1.02];
+  }
+  
+  .card {
+    @apply bg-light-card rounded-2xl overflow-hidden border border-light-border shadow-card transition-all duration-300 hover:shadow-card-hover;
+  }
+  
+  .dark .card {
+    @apply bg-dark-300 border-white/10 hover:border-primary-500/30 hover:shadow-glow;
+  }
+  
+  .card-hover {
+    @apply card hover:scale-[1.02] hover:-translate-y-1;
+  }
+  
+  .input {
+    @apply w-full bg-white border border-light-border rounded-xl px-4 py-3 text-light-text placeholder-gray-400 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 transition-all duration-200 shadow-sm;
+  }
+  
+  .dark .input {
+    @apply bg-dark-300 border-dark-100 text-white placeholder-gray-500;
+  }
+  
+  .badge {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+  }
+  
+  .badge-primary {
+    @apply badge bg-primary-500/10 text-primary-600 border border-primary-500/20;
+  }
+  
+  .dark .badge-primary {
+    @apply bg-primary-500/20 text-primary-400 border-primary-500/30;
+  }
+  
+  .badge-success {
+    @apply badge bg-green-500/10 text-green-600 border border-green-500/20;
+  }
+  
+  .dark .badge-success {
+    @apply bg-green-500/20 text-green-400 border-green-500/30;
+  }
+  
+  .badge-danger {
+    @apply badge bg-red-500/10 text-red-600 border border-red-500/20;
+  }
+  
+  .dark .badge-danger {
+    @apply bg-red-500/20 text-red-400 border-red-500/30;
+  }
+  
+  .game-card {
+    @apply relative overflow-hidden rounded-2xl bg-light-card border border-light-border shadow-card transition-all duration-300 hover:shadow-card-hover hover:scale-[1.02] cursor-pointer;
+  }
+  
+  .dark .game-card {
+    @apply bg-dark-300 border-white/10 hover:border-primary-500/30 hover:shadow-glow;
+  }
+  
+  .jackpot-card {
+    @apply relative overflow-hidden rounded-2xl bg-gradient-to-br from-jackpot-amber to-jackpot-orange border-2 border-jackpot-gold shadow-glow-gold transition-all duration-300 hover:scale-[1.02];
+  }
+  
+  .live-indicator {
+    @apply flex items-center gap-2;
+  }
+  
+  .live-indicator::before {
+    content: '';
+    @apply w-2 h-2 bg-red-500 rounded-full animate-pulse;
+  }
+  
+  .shimmer {
+    @apply relative overflow-hidden;
+  }
+  
+  .shimmer::after {
+    content: '';
+    @apply absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/20 to-transparent animate-shimmer;
+  }
+  
+  .dark .shimmer::after {
+    @apply via-white/10;
+  }
+}
+
+@layer utilities {
+  .text-shadow {
+    text-shadow: 0 0 10px currentColor;
+  }
+  
+  .text-shadow-glow {
+    text-shadow: 0 0 20px currentColor, 0 0 40px currentColor;
+  }
+  
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+  
+  .gradient-border {
+    @apply relative;
+  }
+  
+  .gradient-border::before {
+    content: '';
+    @apply absolute inset-0 rounded-2xl p-[1px] bg-gradient-to-r from-primary-500 via-secondary-500 to-jackpot-gold;
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+  }
+  
+  @media (min-width: 768px) {
+    .hide-desktop {
+      display: none;
+    }
+  }
+  
+  @media (min-width: 768px) {
+    .show-desktop-only {
+      display: block;
+    }
+  }
+  
+  @media (max-width: 767px) {
+    .mobile-only {
+      display: block;
+    }
+  }
+}
