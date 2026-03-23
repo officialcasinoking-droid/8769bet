@@ -6,8 +6,31 @@ services:
     rootDir: frontend
     buildCommand: echo "Using pre-built dist"
     staticPublishPath: dist
+    headers:
+      - path: /*
+        name: X-Frame-Options
+        value: sameorigin
+
+  - type: web
+    name: 8769bet-admin
+    env: static
+    branch: main
+    rootDir: admin
+    buildCommand: echo "Using pre-built dist"
+    staticPublishPath: dist
+    headers:
+      - path: /*
+        name: X-Frame-Options
+        value: sameorigin
+
+  - type: web
+    name: 8769bet-backend
+    env: node
+    region: oregon
+    branch: main
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: node src/index.js
     envVars:
-      - key: VITE_SUPABASE_URL
-        sync: false
-      - key: VITE_SUPABASE_ANON_KEY
-        sync: false
+      - key: NODE_ENV
+        value: production
