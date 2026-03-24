@@ -16,7 +16,7 @@ import SupportPage from './pages/SupportPage'
 
 function App() {
   return (
-    <BrowserRouter basename="/admin">
+    <BrowserRouter>
       <AuthProvider>
         <ToastProvider>
           <Routes>
