@@ -13,6 +13,8 @@ import SettingsPage from './pages/SettingsPage'
 import AviatorAdmin from './pages/AviatorAdmin'
 import ReferralsPage from './pages/ReferralsPage'
 import SupportPage from './pages/SupportPage'
+import TransactionsPage from './pages/TransactionsPage'
+import AiAgentPage from './pages/AiAgentPage'
 
 function App() {
   return (
@@ -32,8 +34,8 @@ function App() {
               <Route path="announcements" element={<AnnouncementsPage />} />
               <Route path="categories" element={<GamesPage />} />
               <Route path="users" element={<UsersPage />} />
-              <Route path="transactions" element={<Dashboard />} />
-              <Route path="ai-agent" element={<Dashboard />} />
+              <Route path="transactions" element={<TransactionsPage />} />
+              <Route path="ai-agent" element={<AiAgentPage />} />
               <Route path="theme" element={<SettingsPage />} />
               <Route path="settings" element={<SettingsPage />} />
             </Route>
