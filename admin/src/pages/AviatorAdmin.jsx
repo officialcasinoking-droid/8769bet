@@ -15,6 +15,75 @@ import {
   Wallet 
 } from 'lucide-react'
 
+async function getGameState() {
+  try {
+    const { data } = await supabase.from('aviator_game_state').select('*').eq('id', 'current').single()
+    if (data) return data
+  } catch {}
+  return null
+}
+
+async function getLiveBets() {
+  try {
+    const { data } = await supabase.from('aviator_live_bets').select('*').order('created_at', { ascending: true })
+    return data || []
+  } catch { return [] }
+}
+
+async function getCrashHistory() {
+  try {
+    const { data } = await supabase.from('aviator_crash_history').select('crash_point').order('created_at', { ascending: false }).limit(20)
+    return (data || []).map(d => d.crash_point)
+  } catch { return [] }
+}
+
+async function getSettingsFromDB() {
+  try {
+    const { data } = await supabase.from('aviator_settings').select('*').eq('id', 'config').single()
+    return data || null
+  } catch { return null }
+}
+
+async function saveSettingsToDB(settings) {
+  try {
+    await supabase.from('aviator_settings').upsert({
+      id: 'config',
+      house_edge: settings.houseEdge || 0.05,
+      bias_strength: settings.biasStrength || 50,
+      he_mode: settings.heMode || 'off',
+      he_target_pct: settings.heTargetPct || 5,
+      he_min_secs: settings.heMinSecs || 3,
+      he_max_secs: settings.heMaxSecs || 50,
+      auto_target_secs: settings.autoTargetSecs || 8,
+      updated_at: new Date().toISOString()
+    })
+  } catch (e) { console.warn('[saveSettingsToDB]', e?.message) }
+}
+
+async function getLiveHEMetrics() {
+  try {
+    const { data } = await supabase.from('aviator_live_he').select('*').eq('id', 'metrics').single()
+    return data
+  } catch { return null }
+}
+
+async function setManualCrashSignal() {
+  try {
+    await supabase.from('aviator_signals').upsert({
+      id: 'crash',
+      signal: 'crash',
+      timestamp: Date.now(),
+      processed: false
+    })
+  } catch (e) { console.warn('[setManualCrashSignal]', e?.message) }
+}
+
+async function getHouseEdgePool() {
+  const { data } = await supabase.from('aviator_house_edge').select('*').eq('id', 'pool').single()
+  if (data && data.id) return data
+  return { total_deposits: 0, total_bets: 0, total_winnings_paid: 0, house_edge_pool: 0, total_withdrawals_paid: 0, gross_pnl: 0, rounds_played: 0 }
+}
+
 const BetRow = React.memo(function BetRow({ bet }) {
   const time = useMemo(() => {
     try {
@@ -75,19 +144,6 @@ function loadSettingsFromStorage() {
   } catch { return null }
 }
 
-async function getHouseEdgePool() {
-  const { data, error } = await supabase
-    .from('aviator_house_edge')
-    .select('*')
-    .eq('id', 'pool')
-    .single()
-  if (error && error.code !== 'PGRST116') return null
-  return data || {
-    total_deposits: 0, total_bets: 0, total_winnings_paid: 0,
-    house_edge_pool: 0, total_withdrawals_paid: 0, gross_pnl: 0, rounds_played: 0,
-  }
-}
-
 export default function AviatorAdmin() {
   const toast = useToast()
   const savedSettings = useRef(loadSettingsFromStorage())
@@ -118,6 +174,54 @@ export default function AviatorAdmin() {
     refetchInterval: 3000,
   })
 
+  useEffect(() => {
+    const pollGameState = async () => {
+      try {
+        const [gameState, bets, hist, heMetrics, settings] = await Promise.all([
+          getGameState(),
+          getLiveBets(),
+          getCrashHistory(),
+          getLiveHEMetrics(),
+          getSettingsFromDB(),
+        ])
+
+        if (gameState) {
+          setPhase(gameState.phase || 'betting')
+          setMult(parseFloat(gameState.mult) || 1.00)
+          setCd(gameState.countdown || 8)
+          setCrashedAt(gameState.crash_point ? parseFloat(gameState.crash_point) : null)
+          setSynced(true)
+        }
+
+        if (bets) {
+          setLiveBets(bets)
+        }
+
+        if (hist) {
+          setHistory(hist)
+        }
+
+        if (heMetrics) {
+          setLiveHE(heMetrics)
+        }
+
+        if (settings) {
+          if (settings.he_mode && settings.he_mode !== heMode) setHeMode(settings.he_mode)
+          if (settings.he_target_pct && settings.he_target_pct !== heTargetPct) setHeTargetPct(settings.he_target_pct)
+          if (settings.he_min_secs && settings.he_min_secs !== heMinSecs) setHeMinSecs(settings.he_min_secs)
+          if (settings.he_max_secs && settings.he_max_secs !== heMaxSecs) setHeMaxSecs(settings.he_max_secs)
+          if (settings.auto_target_secs && settings.auto_target_secs !== autoTargetSecs) setAutoTargetSecs(settings.auto_target_secs)
+        }
+      } catch (e) {
+        console.warn('[pollGameState]', e?.message)
+      }
+    }
+
+    pollGameState()
+    const id = setInterval(pollGameState, 500)
+    return () => clearInterval(id)
+  }, [])
+
   const canvasRef = useRef(null)
   const rafRef = useRef(null)
   const planeRef = useRef({ x: 0, y: 0, fr: 0 })
@@ -132,25 +236,24 @@ export default function AviatorAdmin() {
   const prevBetsSnapshotRef = useRef([])
   const cumulativePLRef = useRef(0)
 
-  const handleManualCrash = useCallback(() => {
-    try {
-      localStorage.setItem('aviator_manual_crash', JSON.stringify({ v: true, ts: Date.now() }))
-      toast.success('Crash signal sent to game engine')
-    } catch {}
+  const handleManualCrash = useCallback(async () => {
+    await setManualCrashSignal()
+    toast.success('Crash signal sent to game engine')
   }, [toast])
 
-  const handleSaveSettings = useCallback(() => {
+  const handleSaveSettings = useCallback(async () => {
+    const settings = {
+      houseEdge: houseEdge / 100,
+      biasStrength,
+      heMode,
+      heTargetPct,
+      heMinSecs,
+      heMaxSecs,
+      autoTargetSecs,
+    }
     try {
-      localStorage.setItem('aviator_settings', JSON.stringify({
-        houseEdge: houseEdge / 100,
-        biasStrength,
-        heMode,
-        heTargetPct,
-        heMinSecs,
-        heMaxSecs,
-        autoTargetSecs,
-        ts: Date.now(),
-      }))
+      localStorage.setItem('aviator_settings', JSON.stringify({ ...settings, ts: Date.now() }))
+      await saveSettingsToDB(settings)
       toast.success('Settings saved to game engine')
     } catch {}
   }, [houseEdge, biasStrength, heMode, heTargetPct, heMinSecs, heMaxSecs, autoTargetSecs, toast])

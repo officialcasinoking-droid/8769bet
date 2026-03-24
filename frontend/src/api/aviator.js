@@ -110,6 +110,168 @@ export function broadcastLiveHE(metrics) {
 }
 
 // ──────────────────────────────────────────────
+// Supabase Real-time Sync (for multi-device support)
+// ──────────────────────────────────────────────
+
+export async function broadcastGameState(state) {
+  try {
+    await supabase
+      .from('aviator_game_state')
+      .upsert({
+        id: 'current',
+        phase: state.phase,
+        mult: state.mult,
+        countdown: state.countdown,
+        crash_point: state.crashPoint,
+        start_time: state.startTime,
+        timestamp: Date.now(),
+        updated_at: new Date().toISOString()
+      })
+    localStorage.setItem('aviator_game_state', JSON.stringify({ ...state, timestamp: Date.now() }))
+  } catch (e) {
+    console.warn('[broadcastGameState]', e?.message)
+  }
+}
+
+export async function getGameState() {
+  try {
+    const { data } = await supabase
+      .from('aviator_game_state')
+      .select('*')
+      .eq('id', 'current')
+      .single()
+    if (data) return data
+  } catch {}
+  return null
+}
+
+export async function broadcastLiveBets(bets) {
+  try {
+    localStorage.setItem('aviator_live_bets', JSON.stringify(bets))
+  } catch {}
+}
+
+export async function getLiveBets() {
+  try {
+    const { data } = await supabase
+      .from('aviator_live_bets')
+      .select('*')
+      .order('created_at', { ascending: true })
+    return data || []
+  } catch { return [] }
+}
+
+export async function broadcastCrashHistory(history) {
+  try {
+    localStorage.setItem('aviator_crash_history', JSON.stringify(history))
+  } catch {}
+}
+
+export async function getCrashHistory() {
+  try {
+    const { data } = await supabase
+      .from('aviator_crash_history')
+      .select('crash_point')
+      .order('created_at', { ascending: false })
+      .limit(20)
+    return (data || []).map(d => d.crash_point)
+  } catch { return [] }
+}
+
+export async function checkManualCrash() {
+  try {
+    const { data } = await supabase
+      .from('aviator_signals')
+      .select('*')
+      .eq('id', 'crash')
+      .single()
+    if (data && data.signal === 'crash' && !data.processed) {
+      await supabase.from('aviator_signals').update({ processed: true }).eq('id', 'crash')
+      return true
+    }
+  } catch {}
+  return false
+}
+
+export async function setManualCrashSignal() {
+  try {
+    await supabase
+      .from('aviator_signals')
+      .upsert({
+        id: 'crash',
+        signal: 'crash',
+        timestamp: Date.now(),
+        processed: false
+      })
+  } catch (e) {
+    console.warn('[setManualCrashSignal]', e?.message)
+  }
+}
+
+export async function getSettingsFromDB() {
+  try {
+    const { data } = await supabase
+      .from('aviator_settings')
+      .select('*')
+      .eq('id', 'config')
+      .single()
+    return data || null
+  } catch { return null }
+}
+
+export async function saveSettingsToDB(settings) {
+  try {
+    await supabase
+      .from('aviator_settings')
+      .upsert({
+        id: 'config',
+        house_edge: settings.houseEdge || 0.05,
+        bias_strength: settings.biasStrength || 50,
+        he_mode: settings.heMode || 'off',
+        he_target_pct: settings.heTargetPct || 5,
+        he_min_secs: settings.heMinSecs || 3,
+        he_max_secs: settings.heMaxSecs || 50,
+        auto_target_secs: settings.autoTargetSecs || 8,
+        updated_at: new Date().toISOString()
+      })
+  } catch (e) {
+    console.warn('[saveSettingsToDB]', e?.message)
+  }
+}
+
+export async function broadcastLiveHEMetrics(metrics) {
+  try {
+    await supabase
+      .from('aviator_live_he')
+      .upsert({
+        id: 'metrics',
+        event: 'live',
+        real_bets: metrics.realBets || 0,
+        exited_amt: metrics.exitedAmt || 0,
+        pending_amt: metrics.pendingAmt || 0,
+        target_mult: metrics.targetMult || null,
+        live_edge: metrics.liveEdge || 0,
+        exit_rate: metrics.exitRate || 0,
+        elapsed: metrics.elapsed || 0,
+        timestamp: Date.now()
+      })
+  } catch (e) {
+    console.warn('[broadcastLiveHEMetrics]', e?.message)
+  }
+}
+
+export async function getLiveHEMetrics() {
+  try {
+    const { data } = await supabase
+      .from('aviator_live_he')
+      .select('*')
+      .eq('id', 'metrics')
+      .single()
+    return data
+  } catch { return null }
+}
+
+// ──────────────────────────────────────────────
 // House Edge Pool & P&L Tracking
 // ──────────────────────────────────────────────
 
