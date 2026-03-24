@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { EyeIcon, EyeSlashIcon, LockClosedIcon, UserIcon, ArrowRightIcon, SparklesIcon, ShieldCheckIcon } from '@heroicons/react/24/outline'
+import { EyeIcon, EyeSlashIcon, LockClosedIcon, UserIcon, ArrowRightIcon } from '@heroicons/react/24/outline'
 import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../components/ui/Toast'
 import AuthFormWrapper from '../../components/auth/AuthFormWrapper'
@@ -83,34 +83,7 @@ export default function LoginPage() {
     }
   }
 
-  const handleDemoLogin = async (type) => {
-    setLoading(true)
-    setError('')
-    
-    try {
-      let result
-      if (type === 'admin') {
-        result = await login('admin', 'admin123')
-        if (result.success) {
-          toast.success('Admin access granted!', 3000)
-          navigate('/admin', { replace: true })
-          return
-        }
-      } else {
-        result = await login('demo', 'demo123')
-        if (result.success) {
-          toast.success('Welcome back!', 3000)
-          navigate('/', { replace: true })
-          return
-        }
-      }
-      setError(result?.error || 'Login failed')
-    } catch (err) {
-      setError('Demo login failed')
-    } finally {
-      setLoading(false)
-    }
-  }
+
 
   const handleGoogleLogin = () => {
     toast.info('Google OAuth coming soon!')
@@ -252,44 +225,6 @@ export default function LoginPage() {
               )}
             </motion.button>
           </form>
-
-          {/* Demo Login Buttons */}
-          <div className="mt-6 space-y-3">
-            <div className="relative">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-gray-200 dark:border-gray-700" />
-              </div>
-              <div className="relative flex justify-center text-sm">
-                <span className="px-2 bg-white dark:bg-dark-400 text-gray-500">Demo Access</span>
-              </div>
-            </div>
-            
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <motion.button
-                type="button"
-                onClick={() => handleDemoLogin('user')}
-                disabled={loading}
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                className="flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-400 font-medium disabled:opacity-50 transition-all"
-              >
-                <SparklesIcon className="w-5 h-5" />
-                <span className="text-sm">Demo User</span>
-              </motion.button>
-              
-              <motion.button
-                type="button"
-                onClick={() => handleDemoLogin('admin')}
-                disabled={loading}
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                className="flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 text-purple-700 dark:text-purple-400 font-medium disabled:opacity-50 transition-all"
-              >
-                <ShieldCheckIcon className="w-5 h-5" />
-                <span className="text-sm">Demo Admin</span>
-              </motion.button>
-            </div>
-          </div>
 
           {/* Social Login */}
           <div className="mt-6">
