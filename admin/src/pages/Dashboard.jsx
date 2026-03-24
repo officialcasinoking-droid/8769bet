@@ -25,9 +25,9 @@ const recentActivity = [
 ]
 
 const quickActions = [
-  { name: 'Edit Landing Page', description: 'God Mode controls', icon: SparklesIcon, path: '/admin/landing' },
-  { name: 'Add New Game', description: 'Expand your catalog', icon: CubeIcon, path: '/admin/games' },
-  { name: 'Send Announcement', description: 'Notify all users', icon: SparklesIcon, path: '/admin/announcements' },
+  { name: 'Edit Landing Page', description: 'God Mode controls', icon: SparklesIcon, path: '/landing' },
+  { name: 'Add New Game', description: 'Expand your catalog', icon: CubeIcon, path: '/games' },
+  { name: 'Send Announcement', description: 'Notify all users', icon: SparklesIcon, path: '/announcements' },
 ]
 
 export default function Dashboard() {

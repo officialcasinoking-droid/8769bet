@@ -21,7 +21,7 @@ export default function AdminLayout() {
   }
 
   if (!isAuthenticated) {
-    return <Navigate to="/admin/login" replace />
+    return <Navigate to="/login" replace />
   }
 
   return (

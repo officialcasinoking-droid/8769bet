@@ -26,7 +26,7 @@ export default function LoginPage() {
     
     if (result.success) {
       toast.success('Welcome back, God!')
-      navigate('/admin')
+      navigate('/')
     } else {
       toast.error(result.error || 'Invalid credentials')
     }

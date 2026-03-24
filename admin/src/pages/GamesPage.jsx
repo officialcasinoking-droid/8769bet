@@ -245,7 +245,7 @@ export default function GamesPage() {
                         <span className="font-medium text-white">{game.name}</span>
                         {game.slug === 'aviator' && (
                           <Link
-                            to="/admin/aviator"
+                            to="/aviator"
                             className="ml-2 px-2 py-0.5 text-[10px] bg-emerald-500/20 text-emerald-400 rounded hover:bg-emerald-500/30"
                           >
                             LIVE
@@ -283,7 +283,7 @@ export default function GamesPage() {
                     <div className="flex items-center justify-end gap-1">
                       {game.slug === 'aviator' && (
                         <Link
-                          to="/admin/aviator"
+                          to="/aviator"
                           className="p-2 rounded hover:bg-emerald-500/20 text-emerald-400 transition-colors"
                           title="Game Controls"
                         >

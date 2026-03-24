@@ -22,20 +22,20 @@ import {
 } from '@heroicons/react/24/outline'
 
 const menuItems = [
-  { id: 'dashboard', name: 'Dashboard', icon: HomeIcon, path: '/admin' },
-  { id: 'landing', name: 'Landing Page Editor', icon: PencilSquareIcon, path: '/admin/landing', highlight: true },
-  { id: 'games', name: 'Game Management', icon: CubeIcon, path: '/admin/games' },
-  { id: 'aviator', name: 'Aviator Control', icon: RocketLaunchIcon, path: '/admin/aviator' },
-  { id: 'jackpot', name: 'Jackpot Settings', icon: CurrencyRupeeIcon, path: '/admin/jackpot' },
-  { id: 'referrals', name: 'Referrals & Bonus', icon: GiftIcon, path: '/admin/referrals' },
-  { id: 'support', name: 'Support Settings', icon: ChatBubbleLeftIcon, path: '/admin/support' },
-  { id: 'announcements', name: 'Announcements', icon: MegaphoneIcon, path: '/admin/announcements' },
-  { id: 'categories', name: 'Categories', icon: TagIcon, path: '/admin/categories' },
-  { id: 'users', name: 'User Management', icon: UsersIcon, path: '/admin/users' },
-  { id: 'transactions', name: 'Transactions', icon: WalletIcon, path: '/admin/transactions' },
-  { id: 'ai-agent', name: 'AI Agent Settings', icon: SparklesIcon, path: '/admin/ai-agent' },
-  { id: 'theme', name: 'Theme & Colors', icon: PaintBrushIcon, path: '/admin/theme' },
-  { id: 'settings', name: 'Settings', icon: CogIcon, path: '/admin/settings' },
+  { id: 'dashboard', name: 'Dashboard', icon: HomeIcon, path: '/' },
+  { id: 'landing', name: 'Landing Page Editor', icon: PencilSquareIcon, path: '/landing', highlight: true },
+  { id: 'games', name: 'Game Management', icon: CubeIcon, path: '/games' },
+  { id: 'aviator', name: 'Aviator Control', icon: RocketLaunchIcon, path: '/aviator' },
+  { id: 'jackpot', name: 'Jackpot Settings', icon: CurrencyRupeeIcon, path: '/jackpot' },
+  { id: 'referrals', name: 'Referrals & Bonus', icon: GiftIcon, path: '/referrals' },
+  { id: 'support', name: 'Support Settings', icon: ChatBubbleLeftIcon, path: '/support' },
+  { id: 'announcements', name: 'Announcements', icon: MegaphoneIcon, path: '/announcements' },
+  { id: 'categories', name: 'Categories', icon: TagIcon, path: '/categories' },
+  { id: 'users', name: 'User Management', icon: UsersIcon, path: '/users' },
+  { id: 'transactions', name: 'Transactions', icon: WalletIcon, path: '/transactions' },
+  { id: 'ai-agent', name: 'AI Agent Settings', icon: SparklesIcon, path: '/ai-agent' },
+  { id: 'theme', name: 'Theme & Colors', icon: PaintBrushIcon, path: '/theme' },
+  { id: 'settings', name: 'Settings', icon: CogIcon, path: '/settings' },
 ]
 
 export default function Sidebar({ collapsed, onToggle }) {
@@ -50,7 +50,7 @@ export default function Sidebar({ collapsed, onToggle }) {
       {/* Logo */}
       <div className="h-16 flex items-center justify-between px-4 border-b border-admin-border">
         {!collapsed && (
-          <Link to="/admin" className="flex items-center gap-2">
+          <Link to="/" className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center">
               <span className="text-sm font-bold text-white">8</span>
             </div>

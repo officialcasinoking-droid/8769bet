@@ -45,7 +45,7 @@ export default function Topbar({ onMenuClick }) {
         </button>
 
         {/* User */}
-        <Link to="/admin/settings" className="flex items-center gap-3">
+        <Link to="/settings" className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center text-white font-bold text-sm">
             {user?.name?.charAt(0) || 'A'}
           </div>
