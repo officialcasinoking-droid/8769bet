@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { toast } from 'react-hot-toast'
 import { supabase } from '../lib/supabase'
