@@ -17,30 +17,33 @@ import {
 
 async function getGameState() {
   try {
-    const { data } = await supabase.from('aviator_game_state').select('*').eq('id', 'current').single()
-    if (data) return data
-  } catch {}
-  return null
+    const { data, error } = await supabase.from('aviator_game_state').select('*').eq('id', 'current').single()
+    if (error) return null
+    return data
+  } catch { return null }
 }
 
 async function getLiveBets() {
   try {
-    const { data } = await supabase.from('aviator_live_bets').select('*').order('created_at', { ascending: true })
+    const { data, error } = await supabase.from('aviator_live_bets').select('*').order('created_at', { ascending: true })
+    if (error) return []
     return data || []
   } catch { return [] }
 }
 
 async function getCrashHistory() {
   try {
-    const { data } = await supabase.from('aviator_crash_history').select('crash_point').order('created_at', { ascending: false }).limit(20)
+    const { data, error } = await supabase.from('aviator_crash_history').select('crash_point').order('created_at', { ascending: false }).limit(20)
+    if (error) return []
     return (data || []).map(d => d.crash_point)
   } catch { return [] }
 }
 
 async function getSettingsFromDB() {
   try {
-    const { data } = await supabase.from('aviator_settings').select('*').eq('id', 'config').single()
-    return data || null
+    const { data, error } = await supabase.from('aviator_settings').select('*').eq('id', 'config').single()
+    if (error) return null
+    return data
   } catch { return null }
 }
 
@@ -62,7 +65,8 @@ async function saveSettingsToDB(settings) {
 
 async function getLiveHEMetrics() {
   try {
-    const { data } = await supabase.from('aviator_live_he').select('*').eq('id', 'metrics').single()
+    const { data, error } = await supabase.from('aviator_live_he').select('*').eq('id', 'metrics').single()
+    if (error) return null
     return data
   } catch { return null }
 }
@@ -79,8 +83,11 @@ async function setManualCrashSignal() {
 }
 
 async function getHouseEdgePool() {
-  const { data } = await supabase.from('aviator_house_edge').select('*').eq('id', 'pool').single()
-  if (data && data.id) return data
+  try {
+    const { data, error } = await supabase.from('aviator_house_edge').select('*').eq('id', 'pool').single()
+    if (error) return { total_deposits: 0, total_bets: 0, total_winnings_paid: 0, house_edge_pool: 0, total_withdrawals_paid: 0, gross_pnl: 0, rounds_played: 0 }
+    if (data && data.id) return data
+  } catch {}
   return { total_deposits: 0, total_bets: 0, total_winnings_paid: 0, house_edge_pool: 0, total_withdrawals_paid: 0, gross_pnl: 0, rounds_played: 0 }
 }
 
