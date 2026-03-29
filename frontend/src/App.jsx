@@ -19,20 +19,7 @@ import OffersPage from './pages/offers/OffersPage'
 import ProfilePage from './pages/profile/ProfilePage'
 import BetHistoryPage from './pages/profile/BetHistoryPage'
 import ReferralPage from './pages/referral/ReferralPage'
-import AdminLayout from './components/admin/AdminLayout'
-import AdminDashboard from './components/admin/AdminDashboard'
-import AviatorControlPanel from './components/admin/AviatorControlPanel'
 
-import GamesPageAdmin from './components/admin/GamesPage'
-import UsersPage from './components/admin/UsersPage'
-import LandingPageEditor from './pages/admin/LandingPageEditor'
-import DepositWithdrawalSection from './pages/admin/DepositWithdrawalSection'
-import JackpotSettings from './pages/admin/JackpotSettings'
-import AnnouncementsPage from './pages/admin/AnnouncementsPage'
-import AiAgentSettings from './pages/admin/AiAgentSettings'
-import ReferralsPage from './pages/admin/ReferralsPage'
-import Settings from './pages/admin/Settings'
-import SupportSection from './pages/admin/SupportSection'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -93,25 +80,6 @@ function AppRoutes() {
             <AviatorGame />
           </ProtectedRoute>
         } />
-      </Route>
-
-      <Route path="/admin" element={
-        <ProtectedRoute requireAdmin>
-          <AdminLayout />
-        </ProtectedRoute>
-      }>
-        <Route index element={<AdminDashboard />} />
-        <Route path="aviator" element={<AviatorControlPanel />} />
-        <Route path="landing" element={<LandingPageEditor />} />
-        <Route path="deposit-withdrawal" element={<DepositWithdrawalSection />} />
-        <Route path="games" element={<GamesPageAdmin />} />
-        <Route path="jackpot" element={<JackpotSettings />} />
-        <Route path="announcements" element={<AnnouncementsPage />} />
-        <Route path="users" element={<UsersPage />} />
-        <Route path="support" element={<SupportSection />} />
-        <Route path="ai-agent" element={<AiAgentSettings />} />
-        <Route path="settings" element={<Settings />} />
-        <Route path="referrals" element={<ReferralsPage />} />
       </Route>
 
       <Route path="*" element={<Navigate to="/" replace />} />
