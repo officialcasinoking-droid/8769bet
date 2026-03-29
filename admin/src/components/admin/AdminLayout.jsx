@@ -150,15 +150,15 @@ export default function AdminLayout() {
 
       const { data: transactions } = await supabase
         .from('transactions')
-        .select('id, user_id, type, amount, description')
-        .or(`user_id.ilike.%${q}%,description.ilike.%${q}%`)
+        .select('id, user_id, type, amount, note')
+        .or(`user_id.ilike.%${q}%,note.ilike.%${q}%`)
         .limit(5)
       
       if (transactions && transactions.length > 0) {
         transactions.forEach(tx => results.push({
           type: 'transaction',
           title: `${tx.type}: ₨${Number(tx.amount || 0).toLocaleString()}`,
-          subtitle: tx.description || tx.note || 'Transaction',
+          subtitle: tx.note || tx.reference || 'Transaction',
           extra: `User ID: ${tx.user_id?.slice(0, 8)}...`,
           path: '/deposit-withdrawal',
           id: tx.id
