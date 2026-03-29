@@ -5,7 +5,6 @@ import { ToastProvider } from './context/ToastContext'
 import AdminLayout from './components/admin/AdminLayout'
 import LoginPage from './pages/LoginPage'
 import AdminDashboard from './components/admin/AdminDashboard'
-import AviatorControlPanel from './components/admin/AviatorControlPanel'
 import LandingPageEditor from './components/admin/LandingPageEditor'
 import GamesPage from './components/admin/GamesPage'
 import UsersPage from './components/admin/UsersPage'
@@ -45,7 +44,6 @@ function AppRoutes() {
         </ProtectedRoute>
       }>
         <Route index element={<AdminDashboard />} />
-        <Route path="aviator" element={<AviatorControlPanel />} />
         <Route path="landing" element={<LandingPageEditor />} />
         <Route path="deposit-withdrawal" element={<DepositWithdrawalSection />} />
         <Route path="games" element={<GamesPage />} />
