@@ -22,7 +22,7 @@ import {
 import { useAuth } from '../../context/AuthContext'
 import { useTheme } from '../../context/ThemeContext'
 import UserBadge, { UserBadgeMobile } from '../ui/UserBadge'
-import { supabase } from '../../lib/supabase'
+import { supabase, getLanding } from '../../api/landing'
 
 const navigation = [
   { id: 'home', name: 'Home', href: '/', icon: HomeIcon },
@@ -36,6 +36,13 @@ const navigation = [
 export default function Navbar() {
   const [isOpen, setIsOpen] = useState(false)
   const [showNotifications, setShowNotifications] = useState(false)
+  const [headerSettings, setHeaderSettings] = useState({
+    headerBg: null,
+    headerLogoUrl: null,
+    headerSearchPlaceholder: null,
+    headerShowLogin: true,
+    headerShowSignup: true,
+  })
   const location = useLocation()
   const navigate = useNavigate()
   const { user, isLoggedIn, formatBalance, logout } = useAuth()
@@ -49,6 +56,42 @@ export default function Navbar() {
       subscribeToNotifications()
     }
   }, [isLoggedIn, user?.id])
+
+  useEffect(() => {
+    const loadHeaderSettings = async () => {
+      try {
+        const data = await getLanding()
+        if (data) {
+          setHeaderSettings({
+            headerBg: data.headerBg || null,
+            headerLogoUrl: data.headerLogoUrl || null,
+            headerSearchPlaceholder: data.headerSearchPlaceholder || null,
+            headerShowLogin: data.headerShowLogin !== false,
+            headerShowSignup: data.headerShowSignup !== false,
+          })
+        }
+      } catch {}
+    }
+    loadHeaderSettings()
+
+    const channel = supabase
+      .channel('nav-header-rt')
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'landing_content', filter: 'id=eq.main' }, (payload) => {
+        const ld = payload.new?.live_json
+        if (ld) {
+          setHeaderSettings({
+            headerBg: ld.headerBg || null,
+            headerLogoUrl: ld.headerLogoUrl || null,
+            headerSearchPlaceholder: ld.headerSearchPlaceholder || null,
+            headerShowLogin: ld.headerShowLogin !== false,
+            headerShowSignup: ld.headerShowSignup !== false,
+          })
+        }
+      })
+      .subscribe()
+
+    return () => { supabase.removeChannel(channel) }
+  }, [])
 
   useEffect(() => {
     const handleClickOutside = (e) => {
@@ -154,18 +197,23 @@ export default function Navbar() {
   }
 
   return (
-    <nav className="fixed top-0 left-0 right-0 z-50 bg-white/95 dark:bg-dark-400/95 backdrop-blur-xl border-b border-gray-200 dark:border-dark-100 shadow-sm">
+    <nav className="fixed top-0 left-0 right-0 z-50 backdrop-blur-xl border-b border-gray-200 dark:border-dark-100 shadow-sm"
+      style={headerSettings.headerBg ? { backgroundColor: headerSettings.headerBg } : {}}>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
           <Link to="/" className="flex items-center gap-2 group flex-shrink-0">
-            <motion.div
-              whileHover={{ scale: 1.1, rotate: 5 }}
-              whileTap={{ scale: 0.95 }}
-              className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center shadow-lg group-hover:shadow-emerald-500/30 transition-shadow"
-            >
-              <span className="text-lg font-bold text-white">8</span>
-            </motion.div>
+            {headerSettings.headerLogoUrl ? (
+              <img src={headerSettings.headerLogoUrl} alt="Logo" className="w-9 h-9 rounded-xl object-contain" />
+            ) : (
+              <motion.div
+                whileHover={{ scale: 1.1, rotate: 5 }}
+                whileTap={{ scale: 0.95 }}
+                className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center shadow-lg group-hover:shadow-emerald-500/30 transition-shadow"
+              >
+                <span className="text-lg font-bold text-white">8</span>
+              </motion.div>
+            )}
             <span className="text-lg font-bold text-gray-900 dark:text-white font-display hidden sm:block">8769bet</span>
           </Link>
 
@@ -322,30 +370,38 @@ export default function Navbar() {
               </div>
             ) : (
               <div className="hidden sm:flex items-center gap-2">
-                <Link to="/login" className="px-4 py-2 rounded-xl text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/5 transition-colors">
-                  Login
-                </Link>
-                <Link to="/register" className="px-4 py-2 rounded-xl text-sm font-semibold bg-gradient-to-r from-emerald-500 to-emerald-600 text-white hover:shadow-lg hover:shadow-emerald-500/30 transition-shadow">
-                  Sign Up
-                </Link>
+                {headerSettings.headerShowLogin && (
+                  <Link to="/login" className="px-4 py-2 rounded-xl text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/5 transition-colors">
+                    Login
+                  </Link>
+                )}
+                {headerSettings.headerShowSignup && (
+                  <Link to="/register" className="px-4 py-2 rounded-xl text-sm font-semibold bg-gradient-to-r from-emerald-500 to-emerald-600 text-white hover:shadow-lg hover:shadow-emerald-500/30 transition-shadow">
+                    Sign Up
+                  </Link>
+                )}
               </div>
             )}
 
             {/* Mobile Auth buttons */}
             {!isLoggedIn && (
               <div className="flex sm:hidden items-center gap-1.5">
-                <Link 
-                  to="/login" 
-                  className="px-2.5 py-1.5 rounded-lg text-xs font-medium text-gray-700 dark:text-gray-300"
-                >
-                  Login
-                </Link>
-                <Link 
-                  to="/register" 
-                  className="px-2.5 py-1.5 rounded-lg bg-gradient-to-r from-emerald-500 to-emerald-600 text-white text-xs font-semibold"
-                >
-                  Sign Up
-                </Link>
+                {headerSettings.headerShowLogin && (
+                  <Link 
+                    to="/login" 
+                    className="px-2.5 py-1.5 rounded-lg text-xs font-medium text-gray-700 dark:text-gray-300"
+                  >
+                    Login
+                  </Link>
+                )}
+                {headerSettings.headerShowSignup && (
+                  <Link 
+                    to="/register" 
+                    className="px-2.5 py-1.5 rounded-lg bg-gradient-to-r from-emerald-500 to-emerald-600 text-white text-xs font-semibold"
+                  >
+                    Sign Up
+                  </Link>
+                )}
               </div>
             )}
 

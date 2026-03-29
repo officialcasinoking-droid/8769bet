@@ -6,7 +6,7 @@ import { supabase } from '../lib/supabase'
 import { Button, FormField, Input, Toggle } from '../components/ui/FormElements'
 import {
   Settings, Sparkles, ShieldCheck, Loader2, Check, Eye, EyeOff,
-  DollarSign, Mail, Globe, Shield, Key
+  DollarSign, Shield, Key, User, Lock, Mail
 } from 'lucide-react'
 
 // ── API ──────────────────────────────────────────────────────
@@ -37,6 +37,13 @@ export default function SettingsPage() {
   const [groqKey, setGroqKey] = useState('')
   const [showKey, setShowKey] = useState(false)
 
+  // Admin credentials
+  const [adminUsername, setAdminUsername] = useState('')
+  const [adminPassword, setAdminPassword] = useState('')
+  const [adminNewPassword, setAdminNewPassword] = useState('')
+  const [showAdminPassword, setShowAdminPassword] = useState(false)
+  const [showNewPassword, setShowNewPassword] = useState(false)
+
   // Wallet settings
   const [walletSettings, setWalletSettings] = useState({
     min_deposit: 10,
@@ -58,7 +65,10 @@ export default function SettingsPage() {
   })
 
   useEffect(() => {
-    if (settings?.groq_api_key) setGroqKey(settings.groq_api_key)
+    if (settings) {
+      if (settings.groq_api_key) setGroqKey(settings.groq_api_key)
+      if (settings.admin_username) setAdminUsername(settings.admin_username)
+    }
   }, [settings])
 
   useEffect(() => {
@@ -80,6 +90,26 @@ export default function SettingsPage() {
       await updateSettings({ groq_api_key: groqKey })
       toast.success('API key saved')
       qc.invalidateQueries({ queryKey: ['platform-settings'] })
+    } catch (e) {
+      toast.error(e.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleSaveCredentials = async () => {
+    if (!adminUsername.trim()) return toast.error('Username is required')
+    setSaving(true)
+    try {
+      const updates = { admin_username: adminUsername }
+      if (adminNewPassword.trim()) {
+        updates.admin_password = adminNewPassword
+      }
+      await updateSettings(updates)
+      toast.success('Admin credentials updated')
+      qc.invalidateQueries({ queryKey: ['platform-settings'] })
+      setAdminPassword('')
+      setAdminNewPassword('')
     } catch (e) {
       toast.error(e.message)
     } finally {
@@ -116,12 +146,53 @@ export default function SettingsPage() {
           </div>
           Platform Settings
         </h2>
-        <p className="text-slate-400 mt-1">Configure API keys, wallet limits, and platform behavior</p>
+        <p className="text-slate-400 mt-1">Configure API keys, wallet limits, and admin credentials</p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* AI API Key */}
+        {/* Admin Credentials */}
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="bg-slate-900/60 backdrop-blur-xl border border-slate-800/50 rounded-2xl p-6">
+          <div className="flex items-center gap-2 mb-1">
+            <Shield className="w-5 h-5 text-amber-400" />
+            <h3 className="text-lg font-semibold text-white">Admin Credentials</h3>
+          </div>
+          <p className="text-sm text-slate-400 mb-4">Change your admin login username and password</p>
+          <div className="space-y-4">
+            <FormField label="Admin Username">
+              <div className="relative">
+                <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                <Input
+                  value={adminUsername}
+                  onChange={(e) => setAdminUsername(e.target.value)}
+                  placeholder="admin"
+                  className="pl-10"
+                />
+              </div>
+            </FormField>
+            <FormField label="New Password" hint="Leave empty to keep current password">
+              <div className="relative">
+                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                <Input
+                  type={showNewPassword ? 'text' : 'password'}
+                  value={adminNewPassword}
+                  onChange={(e) => setAdminNewPassword(e.target.value)}
+                  placeholder="Enter new password"
+                  className="pl-10 pr-10"
+                />
+                <button type="button" onClick={() => setShowNewPassword(!showNewPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white">
+                  {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </FormField>
+            <Button onClick={handleSaveCredentials} disabled={saving}>
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+              Update Credentials
+            </Button>
+          </div>
+        </motion.div>
+
+        {/* AI API Key */}
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }} className="bg-slate-900/60 backdrop-blur-xl border border-slate-800/50 rounded-2xl p-6">
           <div className="flex items-center gap-2 mb-1">
             <Sparkles className="w-5 h-5 text-indigo-400" />
             <h3 className="text-lg font-semibold text-white">AI Agent Configuration</h3>
@@ -220,30 +291,6 @@ export default function SettingsPage() {
             </p>
           </div>
           <p className="text-xs text-slate-500 mt-3">This balance is used for payouts and is reduced by approved withdrawals.</p>
-        </motion.div>
-
-        {/* Security Info */}
-        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }} className="bg-slate-900/60 backdrop-blur-xl border border-slate-800/50 rounded-2xl p-6">
-          <div className="flex items-center gap-2 mb-1">
-            <Shield className="w-5 h-5 text-amber-400" />
-            <h3 className="text-lg font-semibold text-white">Security</h3>
-          </div>
-          <p className="text-sm text-slate-400 mb-4">Platform security status</p>
-          <div className="space-y-3">
-            {[
-              { label: 'Supabase RLS', status: 'Enabled', ok: true },
-              { label: 'Admin Authentication', status: 'Active', ok: true },
-              { label: 'API Key Storage', status: 'Encrypted', ok: true },
-              { label: 'HTTPS', status: 'Enforced', ok: true },
-            ].map(({ label, status, ok }) => (
-              <div key={label} className="flex items-center justify-between py-2 border-b border-slate-800/50 last:border-0">
-                <span className="text-sm text-slate-300">{label}</span>
-                <span className={`text-xs font-medium px-2 py-0.5 rounded ${ok ? 'bg-emerald-500/15 text-emerald-400' : 'bg-red-500/15 text-red-400'}`}>
-                  {status}
-                </span>
-              </div>
-            ))}
-          </div>
         </motion.div>
       </div>
     </div>
