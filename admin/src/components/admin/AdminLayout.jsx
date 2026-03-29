@@ -100,7 +100,7 @@ export default function AdminLayout() {
       const { data: users } = await supabase
         .from('users')
         .select('id, username, email, balance, is_active')
-        .or(`username.ilike.%${q}%,email.ilike.%${q}%,id.ilike.%${q}%`)
+        .or(`username.ilike.%${q}%,email.ilike.%${q}%`)
         .limit(5)
       
       if (users && users.length > 0) {
@@ -117,8 +117,8 @@ export default function AdminLayout() {
       const { data: withdrawals } = await supabase
         .from('withdrawals')
         .select('id, user_id, amount, status')
-        .or(`user_id.ilike.%${q}%`)
-        .limit(5)
+        .order('created_at', { ascending: false })
+        .limit(10)
 
       if (withdrawals && withdrawals.length > 0) {
         withdrawals.forEach(w => results.push({
@@ -134,7 +134,7 @@ export default function AdminLayout() {
       const { data: tickets } = await supabase
         .from('support_tickets')
         .select('id, user_name, subject, status')
-        .or(`user_name.ilike.%${q}%,subject.ilike.%${q}%`)
+        .or(`subject.ilike.%${q}%`)
         .limit(5)
       
       if (tickets && tickets.length > 0) {
@@ -151,7 +151,7 @@ export default function AdminLayout() {
       const { data: transactions } = await supabase
         .from('transactions')
         .select('id, user_id, type, amount, note')
-        .or(`user_id.ilike.%${q}%,note.ilike.%${q}%`)
+        .ilike('note', `%${q}%`)
         .limit(5)
       
       if (transactions && transactions.length > 0) {
