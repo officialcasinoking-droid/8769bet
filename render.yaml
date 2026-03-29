@@ -4,32 +4,24 @@ services:
     env: static
     branch: main
     rootDir: frontend
-    buildCommand: echo "Using pre-built dist"
+    buildCommand: npm install && npm run build
     staticPublishPath: dist
     headers:
       - path: /*
         name: X-Frame-Options
         value: sameorigin
-    routes:
-      - type: rewrite
-        source: /*
-        destination: /index.html
 
   - type: web
     name: 8769bet-admin
     env: static
     branch: main
     rootDir: admin
-    buildCommand: echo "Using pre-built dist"
+    buildCommand: npm install && npm run build
     staticPublishPath: dist
     headers:
       - path: /*
         name: X-Frame-Options
         value: sameorigin
-    routes:
-      - type: rewrite
-        source: /*
-        destination: /index.html
 
   - type: web
     name: 8769bet-backend
