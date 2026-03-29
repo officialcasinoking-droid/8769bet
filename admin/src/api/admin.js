@@ -43,11 +43,11 @@ export async function uploadImage(file) {
 export async function getAdminLanding() {
   const { data, error } = await supabase
     .from('landing_content')
-    .select('draft_json, live_json')
+    .select('draft_json, live_json, updated_at')
     .eq('id', 'main')
     .single()
   if (error) return null
-  return data?.draft_json || data?.live_json || {}
+  return data
 }
 
 export async function getAllTransactions() {

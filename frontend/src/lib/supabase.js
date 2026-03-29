@@ -7,7 +7,12 @@ export const supabase = createClient(supabaseUrl, supabaseKey, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
-  }
+  },
+  global: {
+    headers: {
+      'Accept': 'application/json',
+    },
+  },
 })
 
 export const supabaseAnon = createClient(supabaseUrl, supabaseKey, {
@@ -15,5 +20,10 @@ export const supabaseAnon = createClient(supabaseUrl, supabaseKey, {
     persistSession: false,
     autoRefreshToken: false,
     storageKey: 'sb-anon',
-  }
+  },
+  global: {
+    headers: {
+      'Accept': 'application/json',
+    },
+  },
 })

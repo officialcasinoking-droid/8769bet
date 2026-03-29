@@ -3,13 +3,38 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'react-hot-toast'
 import { motion } from 'framer-motion'
 import { supabase } from '../lib/supabase'
-import { getAdminLanding, saveDraft, publishContent } from '../api/admin'
 import { Button, FormField, Input, Badge } from '../components/ui/FormElements'
-import { Bell, Plus, Pencil, Trash2, X, Save, Rocket, Eye } from 'lucide-react'
+import { Bell, Plus, Pencil, Trash2, Save, Rocket } from 'lucide-react'
 import { Dialog, DialogHeader, DialogTitle, DialogContent, DialogFooter } from '../components/ui/Dialog'
 
 function generateId() {
   return Date.now().toString(36) + Math.random().toString(36).substring(2)
+}
+
+async function getLandingRow() {
+  const { data, error } = await supabase
+    .from('landing_content')
+    .select('draft_json, live_json, updated_at')
+    .eq('id', 'main')
+    .single()
+  if (error) return null
+  return data
+}
+
+async function saveDraftContent(draftJson) {
+  const { error } = await supabase
+    .from('landing_content')
+    .update({ draft_json: draftJson, updated_at: new Date().toISOString() })
+    .eq('id', 'main')
+  if (error) throw error
+}
+
+async function publishLive(draftJson) {
+  const { error } = await supabase
+    .from('landing_content')
+    .update({ live_json: draftJson, draft_json: draftJson, updated_at: new Date().toISOString() })
+    .eq('id', 'main')
+  if (error) throw error
 }
 
 export default function AnnouncementsPage() {
@@ -19,18 +44,20 @@ export default function AnnouncementsPage() {
   const [newText, setNewText] = useState('')
   const [newExpiry, setNewExpiry] = useState('')
 
-  const { data: landing, isLoading } = useQuery({
+  const { data: landingRow, isLoading } = useQuery({
     queryKey: ['admin-landing-announcements'],
-    queryFn: getAdminLanding,
+    queryFn: getLandingRow,
   })
 
-  const announcements = landing?.announcements || []
-  const hasDraft = JSON.stringify(landing?.draft_json) !== JSON.stringify(landing?.live_json)
+  const draftData = landingRow?.draft_json || {}
+  const liveData = landingRow?.live_json || {}
+  const announcements = draftData?.announcements || []
+  const hasDraft = JSON.stringify(draftData) !== JSON.stringify(liveData)
 
   const saveMutation = useMutation({
-    mutationFn: async (announcements) => {
-      const updated = { ...landing, announcements }
-      await saveDraft(updated)
+    mutationFn: async (newAnnouncements) => {
+      const updatedDraft = { ...draftData, announcements: newAnnouncements }
+      await saveDraftContent(updatedDraft)
     },
     onSuccess: () => {
       toast.success('Announcements saved as draft')
@@ -41,11 +68,12 @@ export default function AnnouncementsPage() {
 
   const publishMutation = useMutation({
     mutationFn: async () => {
-      await publishContent()
+      await publishLive(draftData)
     },
     onSuccess: () => {
       toast.success('Announcements published!')
       qc.invalidateQueries({ queryKey: ['admin-landing-announcements'] })
+      qc.invalidateQueries({ queryKey: ['landing-content'] })
     },
     onError: (e) => toast.error(e.message),
   })
@@ -108,7 +136,7 @@ export default function AnnouncementsPage() {
       {hasDraft && (
         <div className="flex items-center gap-2 p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl">
           <div className="w-2 h-2 bg-amber-400 rounded-full animate-pulse" />
-          <p className="text-sm text-amber-400">You have unpublished changes. Save them first.</p>
+          <p className="text-sm text-amber-400">You have unpublished changes.</p>
           <Button
             variant="ghost"
             size="sm"
