@@ -12,6 +12,7 @@ export default function ThemeProviderWrapper({ children }) {
       Object.entries(colors).forEach(([key, value]) => {
         if (value) {
           document.documentElement.style.setProperty(`--color-${key}`, value)
+          document.documentElement.style.setProperty(`--${key}`, value)
         }
       })
     }

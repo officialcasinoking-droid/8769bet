@@ -5,6 +5,18 @@
 @layer base {
   :root {
     color-scheme: light dark;
+    --color-primary: #10b981;
+    --color-accent: #6366f1;
+    --color-background: #0f172a;
+    --color-text: #f1f5f9;
+    --color-success: #22c55e;
+    --color-warning: #f59e0b;
+    --primary: #10b981;
+    --accent: #6366f1;
+    --background: #0f172a;
+    --text: #f1f5f9;
+    --success: #22c55e;
+    --warning: #f59e0b;
   }
   
   * {
