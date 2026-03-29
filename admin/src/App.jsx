@@ -15,6 +15,7 @@ import AnnouncementsPage from './pages/AnnouncementsPage'
 import ReferralsPage from './pages/ReferralsPage'
 import Settings from './pages/Settings'
 import SupportSection from './pages/SupportSection'
+import PaymentMethods from './components/admin/PaymentMethods'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -46,6 +47,7 @@ function AppRoutes() {
         <Route index element={<AdminDashboard />} />
         <Route path="aviator" element={<AviatorControlPanel />} />
         <Route path="landing" element={<LandingPageEditor />} />
+        <Route path="deposit-withdrawal" element={<PaymentMethods />} />
         <Route path="games" element={<GamesPage />} />
         <Route path="users" element={<UsersPage />} />
         <Route path="support" element={<SupportSection />} />

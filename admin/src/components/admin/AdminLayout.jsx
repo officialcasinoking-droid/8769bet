@@ -2,58 +2,58 @@ import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom'
 import { useState, useEffect } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import {
-  HomeIcon, PencilSquareIcon, CubeIcon, CurrencyRupeeIcon,
+  HomeIcon, PencilSquareIcon, CubeIcon, WalletIcon,
   MegaphoneIcon, UsersIcon, CogIcon, ChevronLeftIcon,
   ChevronRightIcon, EyeIcon, ArrowRightOnRectangleIcon,
   BanknotesIcon, SparklesIcon, ArrowLeftIcon, UserGroupIcon,
-  ChatBubbleLeftRightIcon, MagnifyingGlassIcon, RocketLaunchIcon
+  ChatBubbleLeftRightIcon, MagnifyingGlassIcon, PaperAirplaneIcon
 } from '@heroicons/react/24/outline'
 import { supabase } from '../../lib/supabase'
 
 
 const menuItems = [
-  { id: 'dashboard', name: 'Dashboard', icon: HomeIcon, path: '/admin' },
-  { id: 'aviator', name: 'Aviator Game', icon: RocketLaunchIcon, path: '/admin/aviator' },
-  { id: 'landing', name: 'Landing Page', icon: PencilSquareIcon, path: '/admin/landing' },
-  { id: 'deposit-withdrawal', name: 'Deposit & Withdrawal', icon: BanknotesIcon, path: '/admin/deposit-withdrawal' },
-  { id: 'games', name: 'Games', icon: CubeIcon, path: '/admin/games' },
-  { id: 'jackpot', name: 'Jackpot', icon: CurrencyRupeeIcon, path: '/admin/jackpot' },
-  { id: 'announcements', name: 'Announcements', icon: MegaphoneIcon, path: '/admin/announcements' },
-  { id: 'referrals', name: 'Referrals', icon: UserGroupIcon, path: '/admin/referrals' },
-  { id: 'users', name: 'Users', icon: UsersIcon, path: '/admin/users' },
-  { id: 'support', name: 'Support', icon: ChatBubbleLeftRightIcon, path: '/admin/support' },
-  { id: 'ai-agent', name: 'AI Agent', icon: SparklesIcon, path: '/admin/ai-agent' },
-  { id: 'settings', name: 'Settings', icon: CogIcon, path: '/admin/settings' },
+  { id: 'dashboard', name: 'Dashboard', icon: HomeIcon, path: '/' },
+  { id: 'aviator', name: 'Aviator Game', icon: PaperAirplaneIcon, path: '/aviator' },
+  { id: 'landing', name: 'Landing Page', icon: PencilSquareIcon, path: '/landing' },
+  { id: 'deposit-withdrawal', name: 'Deposit & Withdrawal', icon: BanknotesIcon, path: '/deposit-withdrawal' },
+  { id: 'games', name: 'Games', icon: CubeIcon, path: '/games' },
+  { id: 'jackpot', name: 'Jackpot', icon: WalletIcon, path: '/jackpot' },
+  { id: 'announcements', name: 'Announcements', icon: MegaphoneIcon, path: '/announcements' },
+  { id: 'referrals', name: 'Referrals', icon: UserGroupIcon, path: '/referrals' },
+  { id: 'users', name: 'Users', icon: UsersIcon, path: '/users' },
+  { id: 'support', name: 'Support', icon: ChatBubbleLeftRightIcon, path: '/support' },
+  { id: 'ai-agent', name: 'AI Agent', icon: SparklesIcon, path: '/ai-agent' },
+  { id: 'settings', name: 'Settings', icon: CogIcon, path: '/settings' },
 ]
 
 const PAGE_TITLES = {
-  '/admin': 'Admin Dashboard',
-  '/admin/aviator': 'Aviator Game Control',
-  '/admin/landing': 'Landing Page Editor',
-  '/admin/deposit-withdrawal': 'Deposit & Withdrawal',
-  '/admin/games': 'Game Management',
-  '/admin/jackpot': 'Jackpot Settings',
-  '/admin/announcements': 'Announcements',
-  '/admin/referrals': 'Referral Management',
-  '/admin/users': 'User Management',
-  '/admin/support': 'Support Center',
-  '/admin/settings': 'Settings',
-  '/admin/ai-agent': 'AI Agent Settings',
+  '/': 'Admin Dashboard',
+  '/aviator': 'Aviator Game Control',
+  '/landing': 'Landing Page Editor',
+  '/deposit-withdrawal': 'Deposit & Withdrawal',
+  '/games': 'Game Management',
+  '/jackpot': 'Jackpot Settings',
+  '/announcements': 'Announcements',
+  '/referrals': 'Referral Management',
+  '/users': 'User Management',
+  '/support': 'Support Center',
+  '/settings': 'Settings',
+  '/ai-agent': 'AI Agent Settings',
 }
 
 const IS_SECTION = {
-  '/admin': false,
-  '/admin/aviator': true,
-  '/admin/landing': true,
-  '/admin/deposit-withdrawal': true,
-  '/admin/games': true,
-  '/admin/jackpot': true,
-  '/admin/announcements': true,
-  '/admin/referrals': true,
-  '/admin/users': true,
-  '/admin/support': true,
-  '/admin/settings': true,
-  '/admin/ai-agent': true,
+  '/': false,
+  '/aviator': true,
+  '/landing': true,
+  '/deposit-withdrawal': true,
+  '/games': true,
+  '/jackpot': true,
+  '/announcements': true,
+  '/referrals': true,
+  '/users': true,
+  '/support': true,
+  '/settings': true,
+  '/ai-agent': true,
 }
 
 export default function AdminLayout() {
