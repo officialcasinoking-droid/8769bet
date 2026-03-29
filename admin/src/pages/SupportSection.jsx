@@ -8,7 +8,7 @@ import {
   getPlatformSettings, updatePlatformSettings
 } from '../api/referrals'
 import { Button } from '../components/ui/FormElements'
-import { useToast } from '../components/ui/Toast'
+import { useToast } from '../context/ToastContext'
 import {
   MessageCircle, Send, RefreshCw, CheckCircle, XCircle,
   ChevronLeft, Sparkles, User, Bot, MoreVertical,

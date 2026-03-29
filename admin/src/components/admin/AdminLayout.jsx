@@ -79,7 +79,7 @@ export default function AdminLayout() {
     if (window.history.length > 2 && document.referrer) {
       navigate(-1)
     } else {
-      navigate('/admin')
+      navigate('/')
     }
   }
 
@@ -97,7 +97,6 @@ export default function AdminLayout() {
     const q = query.toLowerCase()
 
     try {
-      // Search users
       const { data: users } = await supabase
         .from('users')
         .select('id, username, email, balance, is_active')
@@ -110,12 +109,11 @@ export default function AdminLayout() {
           title: u.username,
           subtitle: u.email || 'No email',
           extra: `Balance: ₨${Number(u.balance || 0).toLocaleString()}`,
-          path: '/admin/users',
+          path: '/users',
           id: u.id
         }))
       }
 
-      // Search withdrawals
       const { data: withdrawals } = await supabase
         .from('withdrawals')
         .select('id, user_id, amount, status')
@@ -128,12 +126,11 @@ export default function AdminLayout() {
           title: `Withdrawal: ₨${Number(w.amount || 0).toLocaleString()}`,
           subtitle: `User: ${w.user_id?.slice(0, 8) || 'Unknown'}`,
           status: w.status,
-          path: '/admin/deposits',
+          path: '/deposit-withdrawal',
           id: w.id
         }))
       }
 
-      // Search support tickets
       const { data: tickets } = await supabase
         .from('support_tickets')
         .select('id, user_name, subject, status')
@@ -146,12 +143,11 @@ export default function AdminLayout() {
           title: t.subject || 'Support Ticket',
           subtitle: `From: ${t.user_name || 'Unknown'}`,
           extra: `Status: ${t.status}`,
-          path: '/admin/support',
+          path: '/support',
           id: t.id
         }))
       }
 
-      // Search transactions
       const { data: transactions } = await supabase
         .from('transactions')
         .select('id, user_id, type, amount, description')
@@ -164,7 +160,7 @@ export default function AdminLayout() {
           title: `${tx.type}: ₨${Number(tx.amount || 0).toLocaleString()}`,
           subtitle: tx.description || tx.note || 'Transaction',
           extra: `User ID: ${tx.user_id?.slice(0, 8)}...`,
-          path: '/admin/deposit-withdrawal',
+          path: '/deposit-withdrawal',
           id: tx.id
         }))
       }
@@ -196,14 +192,12 @@ export default function AdminLayout() {
 
   return (
     <div className="min-h-screen bg-slate-950 flex">
-      {/* Sidebar */}
       <aside
         className={`fixed left-0 top-0 h-screen bg-slate-900/80 backdrop-blur-xl border-r border-slate-800/50 z-50 flex flex-col transition-all duration-300 ${collapsed ? 'w-20' : 'w-64'}`}
       >
-        {/* Logo */}
         <div className="h-16 flex items-center justify-between px-4 border-b border-slate-800/50">
           {!collapsed && (
-            <Link to="/admin" className="flex items-center gap-2">
+            <Link to="/" className="flex items-center gap-2">
               <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center shadow-lg shadow-emerald-500/20">
                 <span className="text-sm font-bold text-white">8</span>
               </div>
@@ -218,7 +212,6 @@ export default function AdminLayout() {
           </button>
         </div>
 
-        {/* Menu */}
         <nav className="flex-1 overflow-y-auto py-4 px-3">
           <div className="space-y-1">
             {menuItems.map((item) => {
@@ -242,7 +235,6 @@ export default function AdminLayout() {
           </div>
         </nav>
 
-        {/* Bottom */}
         <div className="p-3 border-t border-slate-800/50 space-y-1">
           <Link
             to="/"
@@ -261,9 +253,7 @@ export default function AdminLayout() {
         </div>
       </aside>
 
-      {/* Main Content */}
       <main className={`flex-1 min-h-screen transition-all duration-300 ${collapsed ? 'ml-20' : 'ml-64'}`}>
-        {/* Top Bar */}
         <header className="sticky top-0 z-40 h-16 bg-slate-950/80 backdrop-blur-xl border-b border-slate-800/50 flex items-center justify-between px-6">
           <div className="flex items-center gap-3">
             {isSection && (
@@ -280,7 +270,6 @@ export default function AdminLayout() {
             </h1>
           </div>
           
-          {/* Global Search */}
           <div className="relative global-search-container flex-1 max-w-md mx-4">
             <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
             <input
@@ -291,7 +280,6 @@ export default function AdminLayout() {
               className="w-full bg-slate-800/80 border border-slate-700/50 rounded-xl pl-10 pr-4 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500/50 transition-all"
             />
             
-            {/* Search Results Dropdown */}
             {showResults && (
               <div className="absolute top-full left-0 right-0 mt-2 bg-slate-900 border border-slate-700/50 rounded-xl shadow-xl overflow-hidden max-h-96 overflow-y-auto z-50">
                 {searching ? (
@@ -347,7 +335,6 @@ export default function AdminLayout() {
           </div>
         </header>
 
-        {/* Page Content */}
         <div className="p-6">
           <Outlet />
         </div>
