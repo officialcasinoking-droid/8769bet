@@ -12,6 +12,7 @@ export default defineConfig({
   server: {
     port: 3005,
     host: true,
+    historyApiFallback: true,
     proxy: {
       '/api': {
         target: 'http://localhost:3006',
@@ -19,5 +20,10 @@ export default defineConfig({
         secure: false,
       },
     },
+  },
+  preview: {
+    port: 4173,
+    host: true,
+    strictPort: false,
   },
 })
