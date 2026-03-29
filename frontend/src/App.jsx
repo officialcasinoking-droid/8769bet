@@ -21,6 +21,7 @@ import BetHistoryPage from './pages/profile/BetHistoryPage'
 import ReferralPage from './pages/referral/ReferralPage'
 import AdminLayout from './components/admin/AdminLayout'
 import AdminDashboard from './components/admin/AdminDashboard'
+import AviatorControlPanel from './components/admin/AviatorControlPanel'
 
 import GamesPageAdmin from './components/admin/GamesPage'
 import UsersPage from './components/admin/UsersPage'
@@ -100,6 +101,7 @@ function AppRoutes() {
         </ProtectedRoute>
       }>
         <Route index element={<AdminDashboard />} />
+        <Route path="aviator" element={<AviatorControlPanel />} />
         <Route path="landing" element={<LandingPageEditor />} />
         <Route path="deposit-withdrawal" element={<DepositWithdrawalSection />} />
         <Route path="games" element={<GamesPageAdmin />} />

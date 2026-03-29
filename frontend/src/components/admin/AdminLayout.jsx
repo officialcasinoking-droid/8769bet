@@ -6,13 +6,14 @@ import {
   MegaphoneIcon, UsersIcon, CogIcon, ChevronLeftIcon,
   ChevronRightIcon, EyeIcon, ArrowRightOnRectangleIcon,
   BanknotesIcon, SparklesIcon, ArrowLeftIcon, UserGroupIcon,
-  ChatBubbleLeftRightIcon, MagnifyingGlassIcon
+  ChatBubbleLeftRightIcon, MagnifyingGlassIcon, RocketLaunchIcon
 } from '@heroicons/react/24/outline'
 import { supabase } from '../../lib/supabase'
 
 
 const menuItems = [
   { id: 'dashboard', name: 'Dashboard', icon: HomeIcon, path: '/admin' },
+  { id: 'aviator', name: 'Aviator Game', icon: RocketLaunchIcon, path: '/admin/aviator' },
   { id: 'landing', name: 'Landing Page', icon: PencilSquareIcon, path: '/admin/landing' },
   { id: 'deposit-withdrawal', name: 'Deposit & Withdrawal', icon: BanknotesIcon, path: '/admin/deposit-withdrawal' },
   { id: 'games', name: 'Games', icon: CubeIcon, path: '/admin/games' },
@@ -27,6 +28,7 @@ const menuItems = [
 
 const PAGE_TITLES = {
   '/admin': 'Admin Dashboard',
+  '/admin/aviator': 'Aviator Game Control',
   '/admin/landing': 'Landing Page Editor',
   '/admin/deposit-withdrawal': 'Deposit & Withdrawal',
   '/admin/games': 'Game Management',
@@ -41,6 +43,7 @@ const PAGE_TITLES = {
 
 const IS_SECTION = {
   '/admin': false,
+  '/admin/aviator': true,
   '/admin/landing': true,
   '/admin/deposit-withdrawal': true,
   '/admin/games': true,
