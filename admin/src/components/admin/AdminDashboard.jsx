@@ -5,58 +5,68 @@ import { useQuery } from '@tanstack/react-query'
 import AdminDashboardOverview from './AdminDashboardOverview'
 import {
   Users, DollarSign, Gamepad2, TrendingUp,
-  ArrowDownRight, ArrowUpRight, Check, Clock, Trophy
+  ArrowDownRight, ArrowUpRight, Clock, Trophy
 } from 'lucide-react'
 
 // ── API Functions ────────────────────────────────────────────
 async function fetchStats() {
-  const [usersRes, walletRes, gamesRes, txRes] = await Promise.all([
-    supabase.from('users').select('*', { count: 'exact', head: true }),
-    supabase.from('admin_wallet').select('balance').eq('id', 'main').single(),
-    supabase.from('games').select('*', { count: 'exact', head: true }).eq('is_active', true),
-    supabase.from('transactions').select('type, amount, status').order('created_at', { ascending: false }).limit(100),
-  ])
+  try {
+    const [usersRes, walletRes, gamesRes, txRes] = await Promise.all([
+      supabase.from('users').select('*', { count: 'exact', head: true }),
+      supabase.from('admin_wallet').select('balance').eq('id', 'main').single(),
+      supabase.from('games').select('*', { count: 'exact', head: true }).eq('is_active', true),
+      supabase.from('transactions').select('type, amount, status').order('created_at', { ascending: false }).limit(100),
+    ])
 
-  const txData = txRes.data || []
-  const totalRevenue = txData.filter(t => t.type === 'deposit' && t.status === 'completed').reduce((s, t) => s + Number(t.amount), 0)
-  const totalWithdrawals = txData.filter(t => t.type === 'withdrawal' && t.status === 'approved').reduce((s, t) => s + Number(t.amount), 0)
+    const txData = txRes.data || []
+    const totalRevenue = txData.filter(t => t.type === 'deposit' && t.status === 'completed').reduce((s, t) => s + Number(t.amount), 0)
+    const totalWithdrawals = txData.filter(t => t.type === 'withdrawal' && t.status === 'approved').reduce((s, t) => s + Number(t.amount), 0)
 
-  return {
-    totalUsers: usersRes.count || 0,
-    walletBalance: walletRes.data?.balance || 0,
-    activeGames: gamesRes.count || 0,
-    totalRevenue,
-    totalWithdrawals,
-    netRevenue: totalRevenue - totalWithdrawals,
+    return {
+      totalUsers: usersRes.count || 0,
+      walletBalance: walletRes.data?.balance || 0,
+      activeGames: gamesRes.count || 0,
+      totalRevenue,
+      totalWithdrawals,
+      netRevenue: totalRevenue - totalWithdrawals,
+    }
+  } catch {
+    return { totalUsers: 0, walletBalance: 0, activeGames: 0, totalRevenue: 0, totalWithdrawals: 0, netRevenue: 0 }
   }
 }
 
 async function fetchRecentActivity() {
-  const { data } = await supabase
-    .from('transactions')
-    .select('id, type, amount, status, note, created_at, user_id')
-    .order('created_at', { ascending: false })
-    .limit(10)
-  return data || []
+  try {
+    const { data } = await supabase
+      .from('transactions')
+      .select('id, type, amount, status, note, created_at, user_id')
+      .order('created_at', { ascending: false })
+      .limit(10)
+    return data || []
+  } catch { return [] }
 }
 
 async function fetchTopGames() {
-  const { data } = await supabase
-    .from('games')
-    .select('id, name, provider, category, is_active')
-    .eq('is_active', true)
-    .order('created_at', { ascending: false })
-    .limit(6)
-  return data || []
+  try {
+    const { data } = await supabase
+      .from('games')
+      .select('id, name, provider, category, is_active')
+      .eq('is_active', true)
+      .order('created_at', { ascending: false })
+      .limit(6)
+    return data || []
+  } catch { return [] }
 }
 
 async function fetchJackpotTiers() {
-  const { data } = await supabase
-    .from('jackpot_tiers')
-    .select('*')
-    .eq('is_active', true)
-    .order('seed_amount', { ascending: true })
-  return data || []
+  try {
+    const { data } = await supabase
+      .from('jackpot_tiers')
+      .select('*')
+      .eq('is_active', true)
+      .order('seed_amount', { ascending: true })
+    return data || []
+  } catch { return [] }
 }
 
 // ── LiveStats ────────────────────────────────────────────────
@@ -65,7 +75,8 @@ function LiveStats() {
     queryKey: ['dashboard-stats'],
     queryFn: fetchStats,
     refetchInterval: 30000,
-    staleTime: 0,
+    staleTime: 10000,
+    retry: 1,
   })
 
   const statCards = [
@@ -93,18 +104,18 @@ function LiveStats() {
     )
   }
 
+  const colorMap = {
+    emerald: { bg: 'bg-emerald-500/15', text: 'text-emerald-400', border: 'border-emerald-500/25' },
+    cyan: { bg: 'bg-cyan-500/15', text: 'text-cyan-400', border: 'border-cyan-500/25' },
+    purple: { bg: 'bg-purple-500/15', text: 'text-purple-400', border: 'border-purple-500/25' },
+    amber: { bg: 'bg-amber-500/15', text: 'text-amber-400', border: 'border-amber-500/25' },
+  }
+
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
       {statCards.map((stat, i) => {
         const Icon = stat.icon
-        const colorMap = {
-          emerald: { bg: 'bg-emerald-500/15', text: 'text-emerald-400', border: 'border-emerald-500/25' },
-          cyan: { bg: 'bg-cyan-500/15', text: 'text-cyan-400', border: 'border-cyan-500/25' },
-          purple: { bg: 'bg-purple-500/15', text: 'text-purple-400', border: 'border-purple-500/25' },
-          amber: { bg: 'bg-amber-500/15', text: 'text-amber-400', border: 'border-amber-500/25' },
-        }
         const c = colorMap[stat.color]
-
         return (
           <motion.div
             key={stat.name}
@@ -134,7 +145,8 @@ function RecentActivity() {
     queryKey: ['dashboard-activity'],
     queryFn: fetchRecentActivity,
     refetchInterval: 15000,
-    staleTime: 0,
+    staleTime: 5000,
+    retry: 1,
   })
 
   const typeConfig = {
@@ -143,7 +155,6 @@ function RecentActivity() {
     bet: { color: 'text-amber-400', bg: 'bg-amber-500/15', icon: ArrowUpRight },
     win: { color: 'text-emerald-400', bg: 'bg-emerald-500/15', icon: ArrowDownRight },
     bonus: { color: 'text-blue-400', bg: 'bg-blue-500/15', icon: ArrowDownRight },
-    refund: { color: 'text-purple-400', bg: 'bg-purple-500/15', icon: ArrowDownRight },
   }
 
   const getTimeAgo = (date) => {
@@ -164,7 +175,7 @@ function RecentActivity() {
         <span className="text-[10px] text-slate-500">{transactions.length} items</span>
       </div>
       {isLoading ? (
-        <div className="p-8 text-center text-slate-500">
+        <div className="p-8 text-center">
           <div className="w-5 h-5 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto" />
         </div>
       ) : transactions.length === 0 ? (
@@ -214,7 +225,8 @@ function TopGames() {
     queryKey: ['dashboard-games'],
     queryFn: fetchTopGames,
     refetchInterval: 60000,
-    staleTime: 0,
+    staleTime: 10000,
+    retry: 1,
   })
 
   const categoryColors = {
@@ -236,7 +248,7 @@ function TopGames() {
         <span className="text-[10px] text-slate-500">{games.length} games</span>
       </div>
       {isLoading ? (
-        <div className="p-8 text-center text-slate-500">
+        <div className="p-8 text-center">
           <div className="w-5 h-5 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto" />
         </div>
       ) : games.length === 0 ? (
@@ -277,15 +289,14 @@ function JackpotOverview() {
     queryKey: ['dashboard-jackpot'],
     queryFn: fetchJackpotTiers,
     refetchInterval: 10000,
-    staleTime: 0,
+    staleTime: 5000,
+    retry: 1,
   })
 
   const tierEmojis = { mini: '🥉', minor: '🥈', major: '🥇', grand: '💎' }
 
   if (isLoading) {
-    return (
-      <div className="h-32 bg-slate-800/50 rounded-xl animate-pulse" />
-    )
+    return <div className="h-32 bg-slate-800/50 rounded-xl animate-pulse" />
   }
 
   return (
@@ -310,7 +321,7 @@ function JackpotOverview() {
             <p className="text-xl mb-0.5">{tierEmojis[tier.id] || '💎'}</p>
             <p className="text-[10px] text-slate-400 uppercase tracking-wider">{tier.name}</p>
             <p className="text-sm font-bold text-amber-400 mt-1">
-              ₹{Number(tier.current_amount).toLocaleString('en-IN')}
+              ₹{Number(tier.current_amount || 0).toLocaleString('en-IN')}
             </p>
           </motion.div>
         ))}
@@ -329,17 +340,11 @@ export default function AdminDashboard() {
       className="space-y-8"
     >
       <AdminDashboardOverview />
-
-      {/* ── Stats Row ── */}
       <LiveStats />
-
-      {/* ── Recent Activity + Top Games ── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <RecentActivity />
         <TopGames />
       </div>
-
-      {/* ── Jackpot Overview ── */}
       <JackpotOverview />
     </motion.div>
   )
