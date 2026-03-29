@@ -1,6 +1,6 @@
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom'
 import { useState, useEffect } from 'react'
-import { useAuth } from '../context/AuthContext'
+import { useAuth } from '../../context/AuthContext'
 import {
   HomeIcon, PencilSquareIcon, CubeIcon, CurrencyRupeeIcon,
   MegaphoneIcon, UsersIcon, CogIcon, ChevronLeftIcon,
@@ -8,12 +8,12 @@ import {
   BanknotesIcon, SparklesIcon, ArrowLeftIcon, UserGroupIcon,
   ChatBubbleLeftRightIcon, MagnifyingGlassIcon, RocketLaunchIcon
 } from '@heroicons/react/24/outline'
-import { RocketIcon } from 'lucide-react'
-import { supabase } from '../lib/supabase'
+import { supabase } from '../../lib/supabase'
+
 
 const menuItems = [
   { id: 'dashboard', name: 'Dashboard', icon: HomeIcon, path: '/admin' },
-  { id: 'aviator', name: 'Aviator Game', icon: RocketIcon, path: '/admin/aviator' },
+  { id: 'aviator', name: 'Aviator Game', icon: RocketLaunchIcon, path: '/admin/aviator' },
   { id: 'landing', name: 'Landing Page', icon: PencilSquareIcon, path: '/admin/landing' },
   { id: 'deposit-withdrawal', name: 'Deposit & Withdrawal', icon: BanknotesIcon, path: '/admin/deposit-withdrawal' },
   { id: 'games', name: 'Games', icon: CubeIcon, path: '/admin/games' },
@@ -97,6 +97,7 @@ export default function AdminLayout() {
     const q = query.toLowerCase()
 
     try {
+      // Search users
       const { data: users } = await supabase
         .from('users')
         .select('id, username, email, balance, is_active')
@@ -114,6 +115,7 @@ export default function AdminLayout() {
         }))
       }
 
+      // Search withdrawals
       const { data: withdrawals } = await supabase
         .from('withdrawals')
         .select('id, user_id, amount, status')
@@ -126,11 +128,30 @@ export default function AdminLayout() {
           title: `Withdrawal: ₨${Number(w.amount || 0).toLocaleString()}`,
           subtitle: `User: ${w.user_id?.slice(0, 8) || 'Unknown'}`,
           status: w.status,
-          path: '/admin/deposit-withdrawal',
+          path: '/admin/deposits',
           id: w.id
         }))
       }
 
+      // Search support tickets
+      const { data: tickets } = await supabase
+        .from('support_tickets')
+        .select('id, user_name, subject, status')
+        .or(`user_name.ilike.%${q}%,subject.ilike.%${q}%`)
+        .limit(5)
+      
+      if (tickets && tickets.length > 0) {
+        tickets.forEach(t => results.push({
+          type: 'ticket',
+          title: t.subject || 'Support Ticket',
+          subtitle: `From: ${t.user_name || 'Unknown'}`,
+          extra: `Status: ${t.status}`,
+          path: '/admin/support',
+          id: t.id
+        }))
+      }
+
+      // Search transactions
       const { data: transactions } = await supabase
         .from('transactions')
         .select('id, user_id, type, amount, description')
@@ -175,16 +196,18 @@ export default function AdminLayout() {
 
   return (
     <div className="min-h-screen bg-slate-950 flex">
+      {/* Sidebar */}
       <aside
         className={`fixed left-0 top-0 h-screen bg-slate-900/80 backdrop-blur-xl border-r border-slate-800/50 z-50 flex flex-col transition-all duration-300 ${collapsed ? 'w-20' : 'w-64'}`}
       >
+        {/* Logo */}
         <div className="h-16 flex items-center justify-between px-4 border-b border-slate-800/50">
           {!collapsed && (
             <Link to="/admin" className="flex items-center gap-2">
               <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center shadow-lg shadow-emerald-500/20">
                 <span className="text-sm font-bold text-white">8</span>
               </div>
-              <span className="text-lg font-bold text-white">8769bet</span>
+              <span className="text-lg font-bold text-white">399bet</span>
             </Link>
           )}
           <button
@@ -195,6 +218,7 @@ export default function AdminLayout() {
           </button>
         </div>
 
+        {/* Menu */}
         <nav className="flex-1 overflow-y-auto py-4 px-3">
           <div className="space-y-1">
             {menuItems.map((item) => {
@@ -218,10 +242,10 @@ export default function AdminLayout() {
           </div>
         </nav>
 
+        {/* Bottom */}
         <div className="p-3 border-t border-slate-800/50 space-y-1">
           <Link
-            to="https://8769bet.com"
-            target="_blank"
+            to="/"
             className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-slate-400 hover:bg-slate-800/50 hover:text-white transition-all border border-transparent"
           >
             <EyeIcon className="w-5 h-5 flex-shrink-0" />
@@ -237,7 +261,9 @@ export default function AdminLayout() {
         </div>
       </aside>
 
+      {/* Main Content */}
       <main className={`flex-1 min-h-screen transition-all duration-300 ${collapsed ? 'ml-20' : 'ml-64'}`}>
+        {/* Top Bar */}
         <header className="sticky top-0 z-40 h-16 bg-slate-950/80 backdrop-blur-xl border-b border-slate-800/50 flex items-center justify-between px-6">
           <div className="flex items-center gap-3">
             {isSection && (
@@ -254,6 +280,7 @@ export default function AdminLayout() {
             </h1>
           </div>
           
+          {/* Global Search */}
           <div className="relative global-search-container flex-1 max-w-md mx-4">
             <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
             <input
@@ -264,6 +291,7 @@ export default function AdminLayout() {
               className="w-full bg-slate-800/80 border border-slate-700/50 rounded-xl pl-10 pr-4 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500/50 transition-all"
             />
             
+            {/* Search Results Dropdown */}
             {showResults && (
               <div className="absolute top-full left-0 right-0 mt-2 bg-slate-900 border border-slate-700/50 rounded-xl shadow-xl overflow-hidden max-h-96 overflow-y-auto z-50">
                 {searching ? (
@@ -285,6 +313,7 @@ export default function AdminLayout() {
                         <span className={`px-2 py-1 rounded text-xs font-medium ${
                           result.type === 'user' ? 'bg-emerald-500/20 text-emerald-400' :
                           result.type === 'withdrawal' ? 'bg-blue-500/20 text-blue-400' :
+                          result.type === 'ticket' ? 'bg-purple-500/20 text-purple-400' :
                           'bg-slate-500/20 text-slate-400'
                         }`}>
                           {result.type.toUpperCase()}
@@ -318,6 +347,7 @@ export default function AdminLayout() {
           </div>
         </header>
 
+        {/* Page Content */}
         <div className="p-6">
           <Outlet />
         </div>

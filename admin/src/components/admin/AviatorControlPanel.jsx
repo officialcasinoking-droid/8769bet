@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { toast } from 'react-hot-toast'
-import { Button } from '../components/ui/FormElements'
+import { Button } from '../../components/ui/FormElements'
 import { Octagon, Settings, BarChart3, ChevronDown, ChevronUp, Loader2, TrendingUp, TrendingDown, Wallet } from 'lucide-react'
-import { getHouseEdgePool } from '../api/aviator'
+import { getHouseEdgePool } from '../../api/aviator'
 
 const BetRow = React.memo(function BetRow({ bet }) {
   const time = useMemo(() => {
@@ -86,7 +87,7 @@ export default function AviatorControlPanel() {
   const [crashedAt, setCrashedAt] = useState(null)
   const [liveHE, setLiveHE] = useState(null)
 
-  const { data: hePool } = React.useQuery({
+  const { data: hePool } = useQuery({
     queryKey: ['aviator-he-pool'],
     queryFn: getHouseEdgePool,
     staleTime: 5000,

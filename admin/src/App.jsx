@@ -2,10 +2,19 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AuthProvider } from './context/AuthContext'
 import { ToastProvider } from './context/ToastContext'
-import AdminLayout from './components/AdminLayout'
+import AdminLayout from './components/admin/AdminLayout'
 import LoginPage from './pages/LoginPage'
-import Dashboard from './pages/Dashboard'
-import AviatorControlPanel from './pages/AviatorControlPanel'
+import AdminDashboard from './components/admin/AdminDashboard'
+import AviatorControlPanel from './components/admin/AviatorControlPanel'
+import LandingPageEditor from './components/admin/LandingPageEditor'
+import GamesPage from './components/admin/GamesPage'
+import UsersPage from './components/admin/UsersPage'
+import AiAgentSettings from './pages/AiAgentSettings'
+import JackpotSettings from './pages/JackpotSettings'
+import AnnouncementsPage from './pages/AnnouncementsPage'
+import ReferralsPage from './pages/ReferralsPage'
+import Settings from './pages/Settings'
+import SupportSection from './pages/SupportSection'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -34,18 +43,17 @@ function AppRoutes() {
           <AdminLayout />
         </ProtectedRoute>
       }>
-        <Route index element={<Dashboard />} />
+        <Route index element={<AdminDashboard />} />
         <Route path="aviator" element={<AviatorControlPanel />} />
-        <Route path="landing" element={<div className="text-white">Landing Page Editor</div>} />
-        <Route path="deposit-withdrawal" element={<div className="text-white">Deposit & Withdrawal</div>} />
-        <Route path="games" element={<div className="text-white">Games</div>} />
-        <Route path="jackpot" element={<div className="text-white">Jackpot</div>} />
-        <Route path="announcements" element={<div className="text-white">Announcements</div>} />
-        <Route path="referrals" element={<div className="text-white">Referrals</div>} />
-        <Route path="users" element={<div className="text-white">Users</div>} />
-        <Route path="support" element={<div className="text-white">Support</div>} />
-        <Route path="ai-agent" element={<div className="text-white">AI Agent</div>} />
-        <Route path="settings" element={<div className="text-white">Settings</div>} />
+        <Route path="landing" element={<LandingPageEditor />} />
+        <Route path="games" element={<GamesPage />} />
+        <Route path="users" element={<UsersPage />} />
+        <Route path="support" element={<SupportSection />} />
+        <Route path="ai-agent" element={<AiAgentSettings />} />
+        <Route path="jackpot" element={<JackpotSettings />} />
+        <Route path="announcements" element={<AnnouncementsPage />} />
+        <Route path="referrals" element={<ReferralsPage />} />
+        <Route path="settings" element={<Settings />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
