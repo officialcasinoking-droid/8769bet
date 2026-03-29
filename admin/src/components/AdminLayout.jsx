@@ -8,11 +8,12 @@ import {
   BanknotesIcon, SparklesIcon, ArrowLeftIcon, UserGroupIcon,
   ChatBubbleLeftRightIcon, MagnifyingGlassIcon, RocketLaunchIcon
 } from '@heroicons/react/24/outline'
+import { RocketIcon } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 
 const menuItems = [
   { id: 'dashboard', name: 'Dashboard', icon: HomeIcon, path: '/admin' },
-  { id: 'aviator', name: 'Aviator Game', icon: RocketLaunchIcon, path: '/admin/aviator' },
+  { id: 'aviator', name: 'Aviator Game', icon: RocketIcon, path: '/admin/aviator' },
   { id: 'landing', name: 'Landing Page', icon: PencilSquareIcon, path: '/admin/landing' },
   { id: 'deposit-withdrawal', name: 'Deposit & Withdrawal', icon: BanknotesIcon, path: '/admin/deposit-withdrawal' },
   { id: 'games', name: 'Games', icon: CubeIcon, path: '/admin/games' },
