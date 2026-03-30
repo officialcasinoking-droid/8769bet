@@ -158,7 +158,7 @@ function ControlBar({ settings, onCrash, onSettingsChange, bets }) {
           </div>
         </div>
 
-        <a href={window.location.origin + '/play/aviator'} target="_blank" rel="noreferrer"
+        <a href="https://8769bet.onrender.com/play/aviator" target="_blank" rel="noreferrer"
           className="ml-auto flex items-center gap-1 text-xs text-emerald-400 hover:text-emerald-300">
           Open in new tab <ExternalLink className="w-3 h-3" />
         </a>
