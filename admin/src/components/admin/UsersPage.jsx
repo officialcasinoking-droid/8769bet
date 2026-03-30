@@ -11,12 +11,9 @@ import { Search, User, Shield, X, Ban, CheckCircle, Eye, Wallet, Lock, CreditCar
 async function getUsers() {
   const { data, error } = await supabase
     .from('users')
-    .select('id, username, email, full_name, balance, role, is_active, created_at, withdrawal_pin_set, withdrawal_pin_hash, withdrawal_accounts')
+    .select('id, username, email, full_name, balance, role, is_active, created_at')
     .order('created_at', { ascending: false })
-  if (error) {
-    console.error('getUsers error:', error)
-    throw error
-  }
+  if (error) throw error
   return data || []
 }
 
@@ -42,17 +39,6 @@ async function updateUserBalance(id, balance) {
   return data
 }
 
-async function resetUserPIN(id) {
-  const { data, error } = await supabase
-    .from('users')
-    .update({ withdrawal_pin_set: false, withdrawal_pin_hash: null, updated_at: new Date().toISOString() })
-    .eq('id', id)
-    .select()
-    .single()
-  if (error) throw error
-  return data
-}
-
 async function updateUserInfo(id, updates) {
   const { data, error } = await supabase
     .from('users')
@@ -72,12 +58,26 @@ export default function UsersPage() {
   const [editMode, setEditMode] = useState(false)
   const [editForm, setEditForm] = useState({})
   const [balanceInput, setBalanceInput] = useState('')
-  const [adminNote, setAdminNote] = useState('')
 
   const { data: users = [], isLoading } = useQuery({
     queryKey: ['admin-users'],
     queryFn: getUsers,
+    staleTime: 30000,
+    refetchOnWindowFocus: true,
+    retry: 1,
   })
+
+  // Realtime subscription
+  useEffect(() => {
+    const channel = supabase
+      .channel('users-rt')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, () => {
+        qc.invalidateQueries({ queryKey: ['admin-users'] })
+      })
+      .subscribe()
+
+    return () => { supabase.removeChannel(channel) }
+  }, [qc])
 
   const toggleMutation = useMutation({
     mutationFn: ({ id, isActive }) => toggleUserStatus(id, isActive),
@@ -93,16 +93,6 @@ export default function UsersPage() {
     onSuccess: () => {
       toast.success('Balance updated')
       qc.invalidateQueries({ queryKey: ['admin-users'] })
-    },
-    onError: (e) => toast.error(e.message),
-  })
-
-  const resetPINMutation = useMutation({
-    mutationFn: (id) => resetUserPIN(id),
-    onSuccess: () => {
-      toast.success('User PIN reset')
-      qc.invalidateQueries({ queryKey: ['admin-users'] })
-      setSelectedUser(null)
     },
     onError: (e) => toast.error(e.message),
   })
@@ -126,17 +116,13 @@ export default function UsersPage() {
     const matchFilter =
       filter === 'all' ||
       (filter === 'active' && u.is_active !== false) ||
-      (filter === 'blocked' && u.is_active === false) ||
-      (filter === 'pin_set' && u.withdrawal_pin_set) ||
-      (filter === 'no_pin' && !u.withdrawal_pin_set)
+      (filter === 'blocked' && u.is_active === false)
     return matchSearch && matchFilter
   })
 
   const totalUsers = users.length
   const activeUsers = users.filter(u => u.is_active !== false).length
   const blockedUsers = users.filter(u => u.is_active === false).length
-  const withPIN = users.filter(u => u.withdrawal_pin_set).length
-  const withAccounts = users.filter(u => u.withdrawal_accounts?.length > 0).length
 
   const handleEditUser = () => {
     if (selectedUser) {
@@ -144,7 +130,6 @@ export default function UsersPage() {
         username: selectedUser.username || '',
         full_name: selectedUser.full_name || '',
         email: selectedUser.email || '',
-        phone: selectedUser.phone || '',
       })
       setEditMode(true)
     }
@@ -162,17 +147,19 @@ export default function UsersPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-white">User Management</h2>
+        <h2 className="text-2xl font-bold text-white flex items-center gap-2">
+          <User className="w-6 h-6 text-blue-400" />
+          User Management
+        </h2>
         <p className="text-slate-400 mt-1">Manage and monitor all registered users</p>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+      {/* Stats */}
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
         {[
-          { label: 'Total Users', value: totalUsers, color: 'text-blue-400' },
-          { label: 'Active', value: activeUsers, color: 'text-emerald-400' },
-          { label: 'Blocked', value: blockedUsers, color: 'text-red-400' },
-          { label: 'PIN Set', value: withPIN, color: 'text-yellow-400' },
-          { label: 'With Accounts', value: withAccounts, color: 'text-purple-400' },
+          { label: 'Total Users', value: totalUsers, color: 'text-blue-400', bg: 'bg-blue-500/15' },
+          { label: 'Active', value: activeUsers, color: 'text-emerald-400', bg: 'bg-emerald-500/15' },
+          { label: 'Blocked', value: blockedUsers, color: 'text-red-400', bg: 'bg-red-500/15' },
         ].map((stat) => (
           <div key={stat.label} className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-4">
             <p className="text-sm text-slate-400">{stat.label}</p>
@@ -181,6 +168,7 @@ export default function UsersPage() {
         ))}
       </div>
 
+      {/* Search + Filters */}
       <div className="flex flex-col sm:flex-row gap-4">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
@@ -193,7 +181,7 @@ export default function UsersPage() {
           />
         </div>
         <div className="flex flex-wrap gap-2">
-          {['all', 'active', 'blocked', 'pin_set', 'no_pin'].map((status) => (
+          {['all', 'active', 'blocked'].map((status) => (
             <button
               key={status}
               onClick={() => setFilter(status)}
@@ -203,15 +191,13 @@ export default function UsersPage() {
                   : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white border border-slate-700/50'
               }`}
             >
-              {status === 'all' ? 'All' : 
-               status === 'active' ? 'Active' :
-               status === 'blocked' ? 'Blocked' :
-               status === 'pin_set' ? 'PIN Set' : 'No PIN'}
+              {status === 'all' ? 'All' : status === 'active' ? 'Active' : 'Blocked'}
             </button>
           ))}
         </div>
       </div>
 
+      {/* Table */}
       <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
@@ -219,8 +205,6 @@ export default function UsersPage() {
               <tr className="border-b border-slate-700/50">
                 <th className="text-left px-6 py-4 text-xs font-semibold text-slate-400 uppercase">User</th>
                 <th className="text-left px-6 py-4 text-xs font-semibold text-slate-400 uppercase">Balance</th>
-                <th className="text-left px-6 py-4 text-xs font-semibold text-slate-400 uppercase">Security</th>
-                <th className="text-left px-6 py-4 text-xs font-semibold text-slate-400 uppercase">Accounts</th>
                 <th className="text-left px-6 py-4 text-xs font-semibold text-slate-400 uppercase">Status</th>
                 <th className="text-left px-6 py-4 text-xs font-semibold text-slate-400 uppercase">Registered</th>
                 <th className="text-right px-6 py-4 text-xs font-semibold text-slate-400 uppercase">Actions</th>
@@ -228,19 +212,29 @@ export default function UsersPage() {
             </thead>
             <tbody className="divide-y divide-slate-700/30">
               {isLoading ? (
-                <tr>
-                  <td colSpan={7} className="px-6 py-12 text-center text-slate-500">Loading users...</td>
-                </tr>
+                [...Array(5)].map((_, i) => (
+                  <tr key={i}><td colSpan={5} className="px-6 py-4">
+                    <div className="h-12 bg-slate-700/30 rounded animate-pulse" />
+                  </td></tr>
+                ))
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-6 py-12 text-center text-slate-500">No users found</td>
+                  <td colSpan={5} className="px-6 py-12 text-center text-slate-500">
+                    <User className="w-12 h-12 mx-auto mb-2 text-slate-700" />
+                    <p>No users found</p>
+                  </td>
                 </tr>
               ) : filtered.map((user) => (
-                <tr key={user.id} className="hover:bg-slate-700/30 transition-colors">
+                <motion.tr
+                  key={user.id}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="hover:bg-slate-700/30 transition-colors"
+                >
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center text-white font-bold text-sm">
-                        {user.username?.charAt(0).toUpperCase()}
+                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white font-bold text-sm">
+                        {user.username?.charAt(0).toUpperCase() || 'U'}
                       </div>
                       <div>
                         <p className="font-medium text-white">{user.username}</p>
@@ -249,19 +243,7 @@ export default function UsersPage() {
                     </div>
                   </td>
                   <td className="px-6 py-4">
-                    <p className="text-white font-medium">₨{Number(user.balance || 0).toLocaleString()}</p>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="flex gap-1">
-                      {user.withdrawal_pin_set ? (
-                        <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 text-xs">PIN</span>
-                      ) : (
-                        <span className="px-2 py-0.5 rounded-full bg-slate-600/50 text-slate-400 text-xs">No PIN</span>
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <span className="text-white">{user.withdrawal_accounts?.length || 0}</span>
+                    <p className="text-white font-medium">₹{Number(user.balance || 0).toLocaleString('en-IN')}</p>
                   </td>
                   <td className="px-6 py-4">
                     <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${
@@ -286,6 +268,7 @@ export default function UsersPage() {
                           setEditMode(false)
                         }}
                         className="text-slate-400 hover:text-white"
+                        title="View Details"
                       >
                         <Eye className="w-4 h-4" />
                       </Button>
@@ -294,23 +277,26 @@ export default function UsersPage() {
                         size="sm"
                         onClick={() => toggleMutation.mutate({ id: user.id, isActive: user.is_active !== false })}
                         className={user.is_active !== false ? 'text-slate-400 hover:text-red-400' : 'text-emerald-400 hover:text-emerald-300'}
+                        title={user.is_active !== false ? 'Block' : 'Unblock'}
                       >
                         {user.is_active !== false ? <Ban className="w-4 h-4" /> : <CheckCircle className="w-4 h-4" />}
                       </Button>
                     </div>
                   </td>
-                </tr>
+                </motion.tr>
               ))}
             </tbody>
           </table>
         </div>
+        <div className="px-6 py-3 border-t border-slate-700/50">
+          <p className="text-sm text-slate-500">Showing {filtered.length} of {totalUsers} users</p>
+        </div>
       </div>
 
-      <Dialog open={!!selectedUser} onClose={() => { setSelectedUser(null); setEditMode(false) }} className="max-w-2xl">
+      {/* User Detail Modal */}
+      <Dialog open={!!selectedUser} onClose={() => { setSelectedUser(null); setEditMode(false) }} className="max-w-lg">
         <DialogHeader onClose={() => { setSelectedUser(null); setEditMode(false) }}>
-          <DialogTitle>
-            {editMode ? 'Edit User' : 'User Details'}
-          </DialogTitle>
+          <DialogTitle>{editMode ? 'Edit User' : 'User Details'}</DialogTitle>
         </DialogHeader>
         <DialogContent>
           {selectedUser && (
@@ -318,36 +304,20 @@ export default function UsersPage() {
               {editMode ? (
                 <div className="space-y-4">
                   <FormField label="Username">
-                    <Input
-                      value={editForm.username}
-                      onChange={(e) => setEditForm({ ...editForm, username: e.target.value })}
-                    />
+                    <Input value={editForm.username} onChange={(e) => setEditForm({ ...editForm, username: e.target.value })} />
                   </FormField>
                   <FormField label="Full Name">
-                    <Input
-                      value={editForm.full_name}
-                      onChange={(e) => setEditForm({ ...editForm, full_name: e.target.value })}
-                    />
+                    <Input value={editForm.full_name} onChange={(e) => setEditForm({ ...editForm, full_name: e.target.value })} />
                   </FormField>
                   <FormField label="Email">
-                    <Input
-                      type="email"
-                      value={editForm.email}
-                      onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
-                    />
-                  </FormField>
-                  <FormField label="Phone">
-                    <Input
-                      value={editForm.phone || ''}
-                      onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
-                    />
+                    <Input type="email" value={editForm.email} onChange={(e) => setEditForm({ ...editForm, email: e.target.value })} />
                   </FormField>
                 </div>
               ) : (
                 <>
                   <div className="flex items-center gap-4 p-4 bg-slate-700/30 rounded-xl">
-                    <div className="w-16 h-16 rounded-full bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center text-white font-bold text-xl">
-                      {selectedUser.username?.charAt(0).toUpperCase()}
+                    <div className="w-16 h-16 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white font-bold text-xl">
+                      {selectedUser.username?.charAt(0).toUpperCase() || 'U'}
                     </div>
                     <div>
                       <h3 className="text-lg font-bold text-white">{selectedUser.username}</h3>
@@ -363,66 +333,12 @@ export default function UsersPage() {
                   <div className="grid grid-cols-2 gap-4">
                     <div className="p-3 bg-slate-700/30 rounded-lg">
                       <p className="text-xs text-slate-400">Balance</p>
-                      <p className="text-lg font-bold text-white">₨{Number(selectedUser.balance || 0).toLocaleString()}</p>
+                      <p className="text-lg font-bold text-white">₹{Number(selectedUser.balance || 0).toLocaleString('en-IN')}</p>
                     </div>
                     <div className="p-3 bg-slate-700/30 rounded-lg">
                       <p className="text-xs text-slate-400">Role</p>
                       <p className="text-lg font-bold text-white capitalize">{selectedUser.role || 'User'}</p>
                     </div>
-                  </div>
-
-                  <div className="p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-xl">
-                    <h4 className="text-sm font-semibold text-yellow-400 mb-3 flex items-center gap-2">
-                      <Lock className="w-4 h-4" /> Security
-                    </h4>
-                    <div className="space-y-2">
-                      <div className="flex justify-between">
-                        <span className="text-sm text-slate-400">Withdrawal PIN:</span>
-                        <span className={`text-sm font-medium ${selectedUser.withdrawal_pin_set ? 'text-emerald-400' : 'text-red-400'}`}>
-                          {selectedUser.withdrawal_pin_set ? '✓ Set' : 'Not Set'}
-                        </span>
-                      </div>
-                      {selectedUser.withdrawal_pin_hash && (
-                        <div className="flex justify-between items-center">
-                          <span className="text-sm text-slate-400">PIN:</span>
-                          <span className="text-sm font-mono text-emerald-300 bg-slate-700 px-3 py-1 rounded-lg">
-                            {(() => {
-                              try {
-                                return atob(selectedUser.withdrawal_pin_hash)
-                              } catch {
-                                return selectedUser.withdrawal_pin_hash.slice(0, 6) + '******'
-                              }
-                            })()}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-xl">
-                    <h4 className="text-sm font-semibold text-emerald-400 mb-3 flex items-center gap-2">
-                      <CreditCard className="w-4 h-4" /> Withdrawal Accounts ({selectedUser.withdrawal_accounts?.length || 0})
-                    </h4>
-                    {selectedUser.withdrawal_accounts?.length > 0 ? (
-                      <div className="space-y-2">
-                        {selectedUser.withdrawal_accounts.map((acc, i) => (
-                          <div key={i} className="p-3 bg-slate-700/50 rounded-lg">
-                            <div className="flex justify-between mb-1">
-                              <span className="text-sm font-medium text-white capitalize">{acc.type}</span>
-                            </div>
-                            <div className="text-xs text-slate-400 space-y-1">
-                              <p>CNIC: {acc.cnic || 'N/A'}</p>
-                              <p>Real Name: {acc.real_name || 'N/A'}</p>
-                              <p>Account: {acc.account_number || 'N/A'}</p>
-                              <p>Holder: {acc.account_name || 'N/A'}</p>
-                              {acc.bank_name && <p>Bank: {acc.bank_name}</p>}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="text-sm text-slate-400">No withdrawal accounts</p>
-                    )}
                   </div>
 
                   <div className="p-4 bg-slate-700/30 rounded-xl">
@@ -433,12 +349,8 @@ export default function UsersPage() {
                         <p className="text-white">{selectedUser.full_name || 'N/A'}</p>
                       </div>
                       <div>
-                        <p className="text-slate-500">Phone</p>
-                        <p className="text-white">{selectedUser.phone || 'N/A'}</p>
-                      </div>
-                      <div>
                         <p className="text-slate-500">User ID</p>
-                        <p className="text-white text-xs">{selectedUser.id}</p>
+                        <p className="text-white text-xs font-mono">{selectedUser.id?.slice(0, 12)}...</p>
                       </div>
                       <div>
                         <p className="text-slate-500">Registered</p>
@@ -447,7 +359,7 @@ export default function UsersPage() {
                     </div>
                   </div>
 
-                  <FormField label="Adjust Balance ($)">
+                  <FormField label="Adjust Balance (₹)" hint="Enter new balance amount">
                     <Input
                       type="number"
                       step="0.01"
@@ -464,37 +376,15 @@ export default function UsersPage() {
         <DialogFooter className="flex-col sm:flex-row gap-2">
           {editMode ? (
             <>
-              <Button variant="outline" onClick={() => setEditMode(false)} className="w-full sm:w-auto">
-                Cancel
-              </Button>
+              <Button variant="outline" onClick={() => setEditMode(false)} className="w-full sm:w-auto">Cancel</Button>
               <Button onClick={handleSaveEdit} disabled={updateUserMutation.isPending} className="w-full sm:w-auto flex-1">
                 {updateUserMutation.isPending ? 'Saving...' : 'Save Changes'}
               </Button>
             </>
           ) : (
             <>
-              {selectedUser?.withdrawal_pin_set && (
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    if (confirm('Reset this user\'s withdrawal PIN?')) {
-                      resetPINMutation.mutate(selectedUser.id)
-                    }
-                  }}
-                  disabled={resetPINMutation.isPending}
-                  className="w-full sm:w-auto border-red-500/50 text-red-400 hover:bg-red-500/10"
-                >
-                  <Lock className="w-4 h-4 mr-2" />
-                  Reset PIN
-                </Button>
-              )}
-              <Button
-                variant="outline"
-                onClick={handleEditUser}
-                className="w-full sm:w-auto"
-              >
-                <Edit className="w-4 h-4 mr-2" />
-                Edit
+              <Button variant="outline" onClick={handleEditUser} className="w-full sm:w-auto">
+                <Edit className="w-4 h-4 mr-2" /> Edit
               </Button>
               <Button
                 variant="outline"
@@ -502,22 +392,16 @@ export default function UsersPage() {
                 disabled={balanceMutation.isPending}
                 className="w-full sm:w-auto flex-1"
               >
-                Update Balance
+                <Wallet className="w-4 h-4 mr-2" /> Update Balance
               </Button>
               <Button
                 onClick={() => toggleMutation.mutate({ id: selectedUser.id, isActive: selectedUser.is_active !== false })}
-                className={`w-full sm:w-auto ${selectedUser?.is_active !== false ? 'border-red-500/50 text-red-400 hover:bg-red-500/10' : 'border-emerald-500/50 text-emerald-400 hover:bg-emerald-500/10'}`}
+                className={`w-full sm:w-auto ${selectedUser?.is_active !== false ? 'bg-red-500 hover:bg-red-600' : 'bg-emerald-500 hover:bg-emerald-600'}`}
               >
                 {selectedUser?.is_active !== false ? (
-                  <>
-                    <Ban className="w-4 h-4 mr-2" />
-                    Block
-                  </>
+                  <><Ban className="w-4 h-4 mr-2" /> Block</>
                 ) : (
-                  <>
-                    <CheckCircle className="w-4 h-4 mr-2" />
-                    Unblock
-                  </>
+                  <><CheckCircle className="w-4 h-4 mr-2" /> Unblock</>
                 )}
               </Button>
             </>
