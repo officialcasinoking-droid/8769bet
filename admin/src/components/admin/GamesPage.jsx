@@ -6,12 +6,13 @@ import { supabase } from '../../lib/supabase'
 import { uploadImage } from '../../api/admin'
 import { Dialog, DialogHeader, DialogTitle, DialogDescription, DialogContent, DialogFooter } from '../../components/ui/Dialog'
 import { Button, FormField, Input, Select, Textarea, Toggle, Badge } from '../../components/ui/FormElements'
+import { useNavigate } from 'react-router-dom'
 import {
   Plus, Pencil, Trash2, Search, Download, Eye, EyeOff,
   Gamepad2, Filter, ChevronLeft, ChevronRight, X, Check,
   Upload, Loader2, AlertTriangle, Shield, Zap, BarChart3,
   Users, TrendingUp, Clock, Star, GripVertical, Image, FileText,
-  Settings, Gauge
+  Settings, Gauge, ExternalLink
 } from 'lucide-react'
 
 // ── Constants ────────────────────────────────────────────────
@@ -526,6 +527,7 @@ function exportCSV(games) {
 // ── Main Component ───────────────────────────────────────────
 export default function GamesPageAdmin() {
   const qc = useQueryClient()
+  const navigate = useNavigate()
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState('all')
   const [sortBy, setSortBy] = useState('order_index')
@@ -723,6 +725,10 @@ export default function GamesPageAdmin() {
                   </td>
                   <td className="px-6 py-4">
                     <div className="flex items-center justify-end gap-1">
+                      <Button variant="ghost" size="sm" onClick={() => navigate(`/games/${game.slug || game.id}`)}
+                        className="text-emerald-400 hover:text-emerald-300" title="Game Control">
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      </Button>
                       <Button variant="ghost" size="sm" onClick={() => { setEditGame(game); setShowModal(true) }}
                         className="text-slate-400 hover:text-white" title="Edit">
                         <Pencil className="w-3.5 h-3.5" />

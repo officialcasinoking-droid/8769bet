@@ -7,6 +7,7 @@ import LoginPage from './pages/LoginPage'
 import AdminDashboard from './components/admin/AdminDashboard'
 import LandingPageEditor from './components/admin/LandingPageEditor'
 import GamesPage from './components/admin/GamesPage'
+import GameDetailView from './components/admin/GameDetailView'
 import UsersPage from './components/admin/UsersPage'
 import AiAgentSettings from './pages/AiAgentSettings'
 import JackpotSettings from './pages/JackpotSettings'
@@ -47,6 +48,7 @@ function AppRoutes() {
         <Route path="landing" element={<LandingPageEditor />} />
         <Route path="deposit-withdrawal" element={<DepositWithdrawalSection />} />
         <Route path="games" element={<GamesPage />} />
+        <Route path="games/:slug" element={<GameDetailView />} />
         <Route path="users" element={<UsersPage />} />
         <Route path="support" element={<SupportSection />} />
         <Route path="ai-agent" element={<AiAgentSettings />} />
