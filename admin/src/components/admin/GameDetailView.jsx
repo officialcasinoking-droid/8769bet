@@ -14,11 +14,11 @@ import {
 } from 'lucide-react'
 
 // ── API Functions ────────────────────────────────────────────
-async function getGameBySlug(slug) {
+async function getGameById(id) {
   const { data, error } = await supabase
     .from('games')
     .select('*')
-    .eq('slug', slug)
+    .eq('id', id)
     .single()
   if (error) throw error
   return data
@@ -590,6 +590,7 @@ export default function GameDetailView() {
   const { slug } = useParams()
   const navigate = useNavigate()
   const qc = useQueryClient()
+  const gameId = slug // slug is actually the game ID now
   const [activeTab, setActiveTab] = useState('overview')
   const [gameState, setGameState] = useState(null)
   const [liveBets, setLiveBets] = useState([])
@@ -600,9 +601,9 @@ export default function GameDetailView() {
 
   // Fetch game data
   const { data: game, isLoading } = useQuery({
-    queryKey: ['admin-game', slug],
-    queryFn: () => getGameBySlug(slug),
-    enabled: !!slug,
+    queryKey: ['admin-game', gameId],
+    queryFn: () => getGameById(gameId),
+    enabled: !!gameId,
   })
 
   // Load initial data
