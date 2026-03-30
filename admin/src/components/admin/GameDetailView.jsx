@@ -2,13 +2,12 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'react-hot-toast'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion } from 'framer-motion'
 import { supabase } from '../../lib/supabase'
-import { Button, FormField, Input, Select, Toggle, Badge } from '../../components/ui/FormElements'
+import { Button, FormField, Input, Badge } from '../../components/ui/FormElements'
 import {
   ArrowLeft, Zap, Users, Bot, TrendingUp, TrendingDown,
-  Clock, DollarSign, BarChart3, Settings, Shield, Eye,
-  Gauge, Loader2, ArrowDown, ArrowUp, RefreshCw
+  Clock, DollarSign, Settings, Shield, Eye, Loader2, ExternalLink
 } from 'lucide-react'
 
 // ── API ──────────────────────────────────────────────────────
@@ -16,13 +15,6 @@ async function getGameById(id) {
   try {
     const { data } = await supabase.from('games').select('*').eq('id', id).single()
     return data
-  } catch { return null }
-}
-
-async function fetchGameState() {
-  try {
-    const { data } = await supabase.from('aviator_game_state').select('*').eq('id', 'current').single()
-    return data || null
   } catch { return null }
 }
 
@@ -67,185 +59,46 @@ async function saveSettings(s) {
       he_max_secs: s.he_max_secs || 50,
       updated_at: new Date().toISOString()
     })
-    localStorage.setItem('aviator_settings', JSON.stringify({ ...s, ts: Date.now() }))
   } catch (e) { console.warn('[saveSettings]', e?.message) }
 }
 
 async function sendCrashSignal() {
   try {
-    localStorage.setItem('aviator_manual_crash', JSON.stringify({ v: true, ts: Date.now() }))
     await supabase.from('aviator_signals').upsert({ id: 'crash', signal: 'crash', timestamp: Date.now(), processed: false })
   } catch (e) { console.warn('[sendCrashSignal]', e?.message) }
 }
 
-// ── Live Preview (ANIMATES locally like the real game) ───────
-function LivePreview({ gameState, crashes }) {
-  const canvasRef = useRef(null)
-  const animRef = useRef(null)
-  const localMultRef = useRef(1.0)
-  const phaseRef = useRef('betting')
-  const crashPointRef = useRef(2.0)
-  const startTimeRef = useRef(Date.now())
-  const lastSyncRef = useRef(0)
+// ── Live Game Iframe (Shows ACTUAL game) ─────────────────────
+function GameIframe({ game }) {
+  const [loading, setLoading] = useState(true)
+  const gameSlug = game?.slug || game?.name?.toLowerCase().replace(/\s+/g, '-') || 'aviator'
+  const gameUrl = `https://8769bet.onrender.com/play/${gameSlug}`
 
-  // Sync with incoming game state
-  useEffect(() => {
-    if (!gameState) return
-    const now = Date.now()
-
-    if (gameState.phase === 'running' || gameState.phase === 'flying') {
-      phaseRef.current = 'flying'
-      crashPointRef.current = gameState.crash_point || 10.0
-      // Only update start time if it's a new round
-      if (gameState.start_time && gameState.start_time !== lastSyncRef.current) {
-        startTimeRef.current = new Date(gameState.start_time).getTime()
-        lastSyncRef.current = gameState.start_time
-      }
-    } else if (gameState.phase === 'crashed') {
-      phaseRef.current = 'crashed'
-      localMultRef.current = gameState.crash_point || gameState.mult || 1.0
-    } else {
-      phaseRef.current = 'betting'
-      localMultRef.current = 1.0
-    }
-  }, [gameState])
-
-  const draw = useCallback(() => {
-    const canvas = canvasRef.current
-    if (!canvas) { animRef.current = requestAnimationFrame(draw); return }
-
-    const ctx = canvas.getContext('2d')
-    const dpr = 2
-    const cw = canvas.offsetWidth
-    const ch = canvas.offsetHeight
-    canvas.width = cw * dpr
-    canvas.height = ch * dpr
-    ctx.scale(dpr, dpr)
-
-    // Background
-    ctx.fillStyle = '#0c1220'
-    ctx.fillRect(0, 0, cw, ch)
-
-    // Grid
-    ctx.strokeStyle = 'rgba(255,255,255,0.03)'
-    ctx.lineWidth = 0.5
-    for (let i = 1; i < 10; i++) {
-      ctx.beginPath(); ctx.moveTo(0, (ch / 10) * i); ctx.lineTo(cw, (ch / 10) * i); ctx.stroke()
-      ctx.beginPath(); ctx.moveTo((cw / 10) * i, 0); ctx.lineTo((cw / 10) * i, ch); ctx.stroke()
-    }
-
-    const phase = phaseRef.current
-
-    // ANIMATE multiplier when flying
-    if (phase === 'flying') {
-      const elapsed = (Date.now() - startTimeRef.current) / 1000
-      const m = Math.pow(Math.E, 0.06 * elapsed)
-      localMultRef.current = Math.min(parseFloat(m.toFixed(2)), 100)
-
-      // Draw curve
-      const maxM = Math.max(localMultRef.current * 1.2, 5)
-      ctx.beginPath()
-      ctx.strokeStyle = '#00e887'
-      ctx.lineWidth = 2.5
-      ctx.shadowColor = '#00e887'
-      ctx.shadowBlur = 10
-
-      for (let i = 0; i <= 200; i++) {
-        const t = i / 200
-        const elapsedT = elapsed * t
-        const mT = Math.pow(Math.E, 0.06 * elapsedT)
-        const x = 40 + (cw - 80) * t
-        const y = ch - 40 - (ch - 80) * (Math.log(mT) / Math.log(maxM))
-        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y)
-      }
-      ctx.stroke()
-      ctx.shadowBlur = 0
-
-      // Plane
-      const planeX = 40 + (cw - 80)
-      const planeY = ch - 40 - (ch - 80) * (Math.log(localMultRef.current) / Math.log(maxM))
-      ctx.beginPath()
-      ctx.arc(planeX, planeY, 10, 0, Math.PI * 2)
-      ctx.fillStyle = 'rgba(0,232,135,0.3)'
-      ctx.fill()
-      ctx.font = '14px sans-serif'
-      ctx.textAlign = 'center'
-      ctx.textBaseline = 'middle'
-      ctx.fillText('✈️', planeX, planeY)
-
-      // Multiplier text
-      ctx.font = 'bold 48px sans-serif'
-      ctx.fillStyle = '#00e887'
-      ctx.shadowColor = '#00e887'
-      ctx.shadowBlur = 20
-      ctx.textAlign = 'center'
-      ctx.textBaseline = 'middle'
-      ctx.fillText(`${localMultRef.current.toFixed(2)}x`, cw / 2, ch / 2)
-      ctx.shadowBlur = 0
-    } else if (phase === 'crashed') {
-      // Crashed state
-      ctx.font = 'bold 36px sans-serif'
-      ctx.fillStyle = '#ff4d4d'
-      ctx.shadowColor = '#ff4d4d'
-      ctx.shadowBlur = 20
-      ctx.textAlign = 'center'
-      ctx.textBaseline = 'middle'
-      ctx.fillText('CRASHED', cw / 2, ch / 2 - 10)
-      ctx.font = 'bold 24px sans-serif'
-      ctx.fillText(`${localMultRef.current.toFixed(2)}x`, cw / 2, ch / 2 + 25)
-      ctx.shadowBlur = 0
-    } else {
-      // Betting phase
-      ctx.font = 'bold 32px sans-serif'
-      ctx.fillStyle = '#ffffff'
-      ctx.textAlign = 'center'
-      ctx.textBaseline = 'middle'
-      ctx.fillText('NEXT ROUND', cw / 2, ch / 2 - 10)
-      ctx.font = '14px sans-serif'
-      ctx.fillStyle = 'rgba(255,255,255,0.4)'
-      ctx.fillText('Waiting for bets...', cw / 2, ch / 2 + 20)
-    }
-
-    // Crash history bar
-    if (crashes?.length > 0) {
-      crashes.slice(0, Math.min(15, Math.floor(cw / 40))).forEach((c, i) => {
-        const cp = Number(c.crash_point)
-        ctx.font = '10px sans-serif'
-        ctx.fillStyle = cp >= 10 ? '#00e887' : cp >= 2 ? '#ffd600' : '#ff4d4d'
-        ctx.textAlign = 'center'
-        ctx.fillText(`${cp.toFixed(1)}x`, 20 + i * 40, ch - 20)
-      })
-    }
-
-    animRef.current = requestAnimationFrame(draw)
-  }, [crashes])
-
-  useEffect(() => {
-    animRef.current = requestAnimationFrame(draw)
-    return () => { if (animRef.current) cancelAnimationFrame(animRef.current) }
-  }, [draw])
-
-  const phase = phaseRef.current
   return (
     <div className="relative w-full aspect-video bg-slate-950 rounded-xl overflow-hidden border border-slate-700/50">
-      <canvas ref={canvasRef} className="w-full h-full" />
-      <div className="absolute top-3 left-3">
-        <span className={`px-2 py-1 rounded-lg text-xs font-bold ${
-          phase === 'flying' ? 'bg-emerald-500/20 text-emerald-400' :
-          phase === 'crashed' ? 'bg-red-500/20 text-red-400' :
-          'bg-amber-500/20 text-amber-400'
-        }`}>
-          {phase === 'flying' ? 'FLYING' : phase === 'crashed' ? 'CRASHED' : 'BETTING'}
-        </span>
-      </div>
+      {loading && (
+        <div className="absolute inset-0 flex items-center justify-center bg-slate-950 z-10">
+          <div className="text-center">
+            <Loader2 className="w-8 h-8 text-emerald-500 animate-spin mx-auto mb-2" />
+            <p className="text-sm text-slate-400">Loading live game...</p>
+          </div>
+        </div>
+      )}
+      <iframe
+        src={gameUrl}
+        className="w-full h-full border-0"
+        onLoad={() => setLoading(false)}
+        allow="autoplay"
+        sandbox="allow-scripts allow-same-origin allow-forms"
+        title="Live Game Preview"
+      />
     </div>
   )
 }
 
 // ── Control Bar ──────────────────────────────────────────────
-function ControlBar({ gameState, settings, onCrash, onSettingsChange, bets }) {
+function ControlBar({ settings, onCrash, onSettingsChange, bets }) {
   const [saving, setSaving] = useState(false)
-  const isFlying = gameState?.phase === 'running' || gameState?.phase === 'flying'
   const isAuto = settings?.he_mode !== 'off'
 
   const realBets = bets.filter(b => !b.is_bot)
@@ -263,20 +116,16 @@ function ControlBar({ gameState, settings, onCrash, onSettingsChange, bets }) {
     await saveSettings(newSettings)
     onSettingsChange?.(newSettings)
     setSaving(false)
-    toast.success(newMode === 'off' ? 'Auto OFF' : 'Auto ON – Monitoring')
+    toast.success(newMode === 'off' ? 'Auto OFF' : 'Auto ON')
   }
 
   return (
     <div className="bg-slate-900/80 backdrop-blur-xl border border-slate-700/50 rounded-xl p-4">
       <div className="flex flex-wrap items-center gap-4">
-        {/* Manual Crash */}
-        <Button variant="danger" onClick={onCrash} disabled={!isFlying}
-          className={`font-bold px-5 py-2.5 ${isFlying ? 'animate-pulse shadow-lg shadow-red-500/30' : ''}`}>
-          <Zap className="w-5 h-5" />
-          {isFlying ? 'CRASH NOW' : 'Waiting...'}
+        <Button variant="danger" onClick={onCrash} className="font-bold px-5 py-2.5 animate-pulse shadow-lg shadow-red-500/30">
+          <Zap className="w-5 h-5" /> CRASH NOW
         </Button>
 
-        {/* Auto Toggle */}
         <div className="flex items-center gap-2">
           <div className={`px-3 py-2 rounded-lg border ${isAuto ? 'bg-emerald-500/15 border-emerald-500/30' : 'bg-slate-800/50 border-slate-700/50'}`}>
             <div className="flex items-center gap-2">
@@ -292,7 +141,6 @@ function ControlBar({ gameState, settings, onCrash, onSettingsChange, bets }) {
           </button>
         </div>
 
-        {/* Status */}
         <div className="flex items-center gap-3 text-xs">
           <div className="px-2 py-1 bg-slate-800/50 rounded">
             <span className="text-slate-500">Real:</span>
@@ -309,6 +157,11 @@ function ControlBar({ gameState, settings, onCrash, onSettingsChange, bets }) {
             <span className="text-amber-400 font-bold ml-1">{targetPct}%</span>
           </div>
         </div>
+
+        <a href={window.location.origin + '/play/aviator'} target="_blank" rel="noreferrer"
+          className="ml-auto flex items-center gap-1 text-xs text-emerald-400 hover:text-emerald-300">
+          Open in new tab <ExternalLink className="w-3 h-3" />
+        </a>
       </div>
     </div>
   )
@@ -365,14 +218,13 @@ function HEPanel({ settings, onSettingsChange, pool, crashes }) {
 
   return (
     <div className="space-y-6">
-      {/* Current Round */}
       <div className="grid grid-cols-3 gap-3">
         <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-4 text-center">
           <p className="text-[10px] text-slate-400 uppercase">Last 10 Rounds</p>
           <p className="text-2xl font-bold text-white">₹{last10Income.toLocaleString('en-IN')}</p>
         </div>
         <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-4 text-center">
-          <p className="text-[10px] text-slate-400 uppercase">Income Today</p>
+          <p className="text-[10px] text-slate-400 uppercase">Today</p>
           <p className="text-2xl font-bold text-white">₹{todayIncome.toLocaleString('en-IN')}</p>
         </div>
         <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-4 text-center">
@@ -381,7 +233,6 @@ function HEPanel({ settings, onSettingsChange, pool, crashes }) {
         </div>
       </div>
 
-      {/* Pool */}
       <div className="grid grid-cols-4 gap-3">
         {[
           { label: 'Total Bets', val: `₹${Number(pool.total_bets || 0).toLocaleString()}`, c: 'text-blue-400' },
@@ -396,7 +247,6 @@ function HEPanel({ settings, onSettingsChange, pool, crashes }) {
         ))}
       </div>
 
-      {/* P&L */}
       <div className={`p-4 rounded-xl border ${(pool.gross_pnl || 0) >= 0 ? 'bg-emerald-500/10 border-emerald-500/20' : 'bg-red-500/10 border-red-500/20'}`}>
         <p className="text-xs text-slate-400">Gross P&L</p>
         <p className={`text-2xl font-bold ${(pool.gross_pnl || 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
@@ -404,7 +254,6 @@ function HEPanel({ settings, onSettingsChange, pool, crashes }) {
         </p>
       </div>
 
-      {/* Settings */}
       <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5 space-y-4">
         <h4 className="text-sm font-bold text-white">HE Configuration</h4>
         <FormField label={`House Edge (${((localSettings.house_edge || 0.05) * 100).toFixed(1)}%)`}>
@@ -439,9 +288,8 @@ function HEPanel({ settings, onSettingsChange, pool, crashes }) {
         </Button>
       </div>
 
-      {/* Info */}
       <div className="p-3 bg-slate-800/30 border border-slate-700/50 rounded-xl text-xs text-slate-400">
-        <strong className="text-slate-300">Auto Logic:</strong> When enabled, monitors real user cashouts. When only <strong className="text-amber-400">{localSettings.he_target_pct || 5}%</strong> of real pot remains uncashed, auto-crashes. All bot traffic excluded.
+        <strong className="text-slate-300">Auto Logic:</strong> When enabled, monitors real user cashouts. When only <strong className="text-amber-400">{localSettings.he_target_pct || 5}%</strong> of real pot remains uncashed, auto-crashes. Bot traffic excluded.
       </div>
     </div>
   )
@@ -476,7 +324,6 @@ export default function GameDetailView() {
   const qc = useQueryClient()
   const gameId = slug
   const [tab, setTab] = useState('house-edge')
-  const [gs, setGs] = useState(null)
   const [bets, setBets] = useState([])
   const [crashes, setCrashes] = useState([])
   const [pool, setPool] = useState({})
@@ -491,36 +338,28 @@ export default function GameDetailView() {
   // Load all data
   useEffect(() => {
     const load = async () => {
-      const [g, b, c, p, s] = await Promise.all([
-        fetchGameState(), fetchBets(), fetchCrashes(30), fetchPool(), fetchSettings()
+      const [b, c, p, s] = await Promise.all([
+        fetchBets(), fetchCrashes(30), fetchPool(), fetchSettings()
       ])
-      setGs(g); setBets(b); setCrashes(c); setPool(p); setSettings(s)
+      setBets(b); setCrashes(c); setPool(p); setSettings(s)
     }
     load()
   }, [])
 
-  // Realtime + polling
+  // Poll for updates
   useEffect(() => {
-    // Poll game state every 1 second (Supabase Realtime can be slow)
-    const gsIv = setInterval(async () => {
-      const g = await fetchGameState()
-      if (g) setGs(g)
-    }, 1000)
-
-    // Poll bets every 2 seconds
     const betsIv = setInterval(async () => {
       const b = await fetchBets()
       setBets(b)
-    }, 2000)
+    }, 3000)
 
-    // Realtime channels (backup)
+    const crashesIv = setInterval(async () => {
+      const c = await fetchCrashes(30)
+      setCrashes(c)
+    }, 5000)
+
+    // Realtime channels
     const channels = []
-    try {
-      channels.push(supabase.channel('gs-rt').on('postgres_changes',
-        { event: '*', schema: 'public', table: 'aviator_game_state' },
-        (p) => { if (p.new) setGs(p.new) }
-      ).subscribe())
-    } catch {}
     try {
       channels.push(supabase.channel('bets-rt').on('postgres_changes',
         { event: '*', schema: 'public', table: 'game_bets' },
@@ -535,13 +374,12 @@ export default function GameDetailView() {
     } catch {}
 
     return () => {
-      clearInterval(gsIv)
       clearInterval(betsIv)
+      clearInterval(crashesIv)
       channels.forEach(ch => { try { supabase.removeChannel(ch) } catch {} })
     }
   }, [])
 
-  // INSTANT crash - NO confirmation
   const handleCrash = async () => {
     toast.loading('Crashing...', { duration: 300 })
     await sendCrashSignal()
@@ -574,12 +412,12 @@ export default function GameDetailView() {
       </div>
 
       {/* Control Bar */}
-      <ControlBar gameState={gs} settings={settings} onCrash={handleCrash} onSettingsChange={setSettings} bets={bets} />
+      <ControlBar settings={settings} onCrash={handleCrash} onSettingsChange={setSettings} bets={bets} />
 
-      {/* Preview + Bets */}
+      {/* Live Game (Iframe) + Bets */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="lg:col-span-2">
-          <LivePreview gameState={gs} crashes={crashes} />
+          <GameIframe game={game} />
         </div>
         <div className="bg-slate-900/60 border border-slate-800/50 rounded-xl p-4">
           <div className="flex items-center justify-between mb-3">
