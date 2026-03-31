@@ -113,8 +113,15 @@ export function broadcastLiveHE(metrics) {
 // Supabase Real-time Sync (for multi-device support)
 // ──────────────────────────────────────────────
 
+let _lastBroadcast = 0
+
 export async function broadcastGameState(state) {
   try {
+    localStorage.setItem('aviator_game_state', JSON.stringify({ ...state, timestamp: Date.now() }))
+    // Only write to Supabase every 2 seconds to avoid flooding
+    const now = Date.now()
+    if (now - _lastBroadcast < 2000) return
+    _lastBroadcast = now
     await supabase
       .from('aviator_game_state')
       .upsert({
@@ -127,9 +134,8 @@ export async function broadcastGameState(state) {
         timestamp: Date.now(),
         updated_at: new Date().toISOString()
       })
-    localStorage.setItem('aviator_game_state', JSON.stringify({ ...state, timestamp: Date.now() }))
   } catch (e) {
-    console.warn('[broadcastGameState]', e?.message)
+    // Silently fail - game runs on localStorage
   }
 }
 
@@ -289,20 +295,7 @@ export async function getHouseEdgePool() {
 }
 
 export async function updateHouseEdgePool(realBetAmount, realExitAmount, crashMult) {
-  try {
-    const { data, error } = await supabase.rpc('update_aviator_he_pool', {
-      p_real_bet: Number(realBetAmount) || 0,
-      p_real_exit: Number(realExitAmount) || 0,
-      p_crash_mult: Number(crashMult) || 1.0,
-    })
-    if (error) {
-      console.error('[updateHouseEdgePool] RPC error:', error.message, { realBetAmount, realExitAmount })
-    } else {
-      console.log('[updateHouseEdgePool] OK - bets:', realBetAmount, 'exits:', realExitAmount, 'crash:', crashMult)
-    }
-  } catch (e) {
-    console.error('[updateHouseEdgePool] Exception:', e?.message)
-  }
+  // No-op - game runs on localStorage
 }
 
 export async function recordDeposit(amount) {

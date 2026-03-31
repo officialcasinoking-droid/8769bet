@@ -444,8 +444,6 @@ const MIN_SMART_CRASH_SECS = 3
 const MIN_REAL_BETS_FOR_SMART = 1
 const DEFAULT_HE_MAX_SECS = 50
 
-let _engineRunning = false
-
 function LoadingScreen({ progress }) {
   return (
     <div className="av-loading">
@@ -774,8 +772,6 @@ export default function AviatorGame() {
   // Game engine — starts when loading is done, runs continuously
   useEffect(() => {
     if (showLoading) return
-    if (_engineRunning) return
-    _engineRunning = true
 
     const crashTimer = { id: null }
     const cdIv = { id: null }
