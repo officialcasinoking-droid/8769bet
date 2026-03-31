@@ -1184,11 +1184,20 @@ export default function AviatorGame() {
   }, [phase, checkAutoCashout])
 
   const place = useCallback((num) => {
-    if (!isLoggedIn) { toast.error('Login to bet'); return }
+    if (!isLoggedIn) { 
+      // Show login prompt - redirect to login with return URL
+      navigate('/login', { state: { from: '/play/aviator' } })
+      return 
+    }
     const a = num === 1 ? b1a : b2a
-    if (a < MIN_BET) { toast.error(`Min ₨${MIN_BET}`); return }
-    if (a > MAX_BET) { toast.error(`Max ₨${MAX_BET}`); return }
-    if (a > bal) { toast.error('Low balance'); return }
+    if (a < MIN_BET) { toast.error(`Min PKR ${MIN_BET}`); return }
+    if (a > MAX_BET) { toast.error(`Max PKR ${MAX_BET}`); return }
+    if (bal <= 0) { 
+      toast.error('Balance is 0 - please deposit to play')
+      navigate('/deposit')
+      return 
+    }
+    if (a > bal) { toast.error('Low balance - please deposit'); return }
     const autoVal = (num === 1 ? b1o : b2o) ? (num === 1 ? b1v : b2v) : null
     const betId = `u_${Date.now()}`
 
