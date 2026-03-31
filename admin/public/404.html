@@ -1,25 +1,12 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
   <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/img/favicon.png" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta charset="utf-8">
     <title>8769bet Admin</title>
     <script>
-      // SPA fallback: redirect to index.html while preserving the URL
-      // This ensures React Router can handle the route
-      (function() {
-        var redirect = sessionStorage.redirect;
-        delete sessionStorage.redirect;
-        if (redirect && redirect !== location.href) {
-          history.replaceState(null, null, redirect);
-        }
-      })();
+      var path = window.location.pathname + window.location.search + window.location.hash;
+      window.location.href = '/#' + path;
     </script>
   </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/assets/index-DVN1yft4.js"></script>
-    <link rel="stylesheet" href="/assets/index-CfRl7C5R.css">
-  </body>
+  <body>Redirecting...</body>
 </html>

@@ -5,6 +5,7 @@ import { toast } from 'react-hot-toast'
 import { motion } from 'framer-motion'
 import { supabase } from '../../lib/supabase'
 import { Button, FormField, Input, Badge } from '../../components/ui/FormElements'
+import AviatorControlPanel from './AviatorControlPanel'
 import {
   ArrowLeft, Zap, Users, Bot, TrendingUp, TrendingDown,
   Clock, DollarSign, Settings, Shield, Eye, Loader2, ExternalLink
@@ -71,11 +72,12 @@ async function sendCrashSignal() {
 // ── Live Game Iframe ─────────────────────────────────────────
 function GameIframe() {
   const [loading, setLoading] = useState(true)
-  const gameUrl = 'https://eight769bet-frontend.onrender.com/play/aviator'
+  const [error, setError] = useState(false)
+  const gameUrl = 'https://8769bet.onrender.com/play/aviator'
 
   return (
     <div className="relative w-full aspect-video bg-slate-950 rounded-xl overflow-hidden border border-slate-700/50">
-      {loading && (
+      {loading && !error && (
         <div className="absolute inset-0 flex items-center justify-center bg-slate-950 z-10">
           <div className="text-center">
             <Loader2 className="w-8 h-8 text-emerald-500 animate-spin mx-auto mb-2" />
@@ -83,10 +85,22 @@ function GameIframe() {
           </div>
         </div>
       )}
+      {error && (
+        <div className="absolute inset-0 flex items-center justify-center bg-slate-950 z-10">
+          <div className="text-center">
+            <p className="text-sm text-slate-400 mb-3">Game loading...</p>
+            <a href={gameUrl} target="_blank" rel="noreferrer"
+              className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-500 text-white rounded-lg text-sm">
+              Open Game in New Tab
+            </a>
+          </div>
+        </div>
+      )}
       <iframe
         src={gameUrl}
         className="w-full h-full border-0"
-        onLoad={() => setLoading(false)}
+        onLoad={() => { setLoading(false); setError(false) }}
+        onError={() => { setLoading(false); setError(true) }}
         allow="autoplay"
         sandbox="allow-scripts allow-same-origin allow-forms"
         title="Live Aviator Game"

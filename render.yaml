@@ -6,10 +6,6 @@ services:
     rootDir: frontend
     buildCommand: npm install && npm run build
     staticPublishPath: dist
-    routes:
-      - type: rewrite
-        source: /*
-        destination: /index.html
 
   - type: web
     name: 8769bet-admin
@@ -18,14 +14,6 @@ services:
     rootDir: admin
     buildCommand: npm install && npm run build
     staticPublishPath: dist
-    headers:
-      - path: /*
-        name: X-Frame-Options
-        value: sameorigin
-    routes:
-      - type: rewrite
-        source: /*
-        destination: /index.html
 
   - type: web
     name: 8769bet-backend
