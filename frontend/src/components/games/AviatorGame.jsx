@@ -635,8 +635,11 @@ export default function AviatorGame() {
     if (user?.balance !== undefined) setBal(user.balance)
   }, [user])
   useEffect(() => {
-    if (!isLoggedIn) navigate('/login')
-  }, [isLoggedIn, navigate])
+    if (!isLoggedIn) {
+      // Don't redirect for admin preview - just run in demo mode
+      setBal(10000)
+    }
+  }, [isLoggedIn, user])
   useEffect(() => { multRef.current = mult }, [mult])
   useEffect(() => { phaseRef.current = phase }, [phase])
 

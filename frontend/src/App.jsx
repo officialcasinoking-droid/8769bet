@@ -75,11 +75,7 @@ function AppRoutes() {
             <ReferralPage />
           </ProtectedRoute>
         } />
-        <Route path="play/aviator" element={
-          <ProtectedRoute>
-            <AviatorGame />
-          </ProtectedRoute>
-        } />
+        <Route path="play/aviator" element={<AviatorGame />} />
       </Route>
 
       <Route path="*" element={<Navigate to="/" replace />} />
