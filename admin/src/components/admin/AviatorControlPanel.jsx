@@ -1,233 +1,115 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'react-hot-toast'
-import { Button } from '../../components/ui/FormElements'
-import { Octagon, Settings, BarChart3, ChevronDown, ChevronUp, Loader2, TrendingUp, TrendingDown, Wallet } from 'lucide-react'
-import { getHouseEdgePool } from '../../api/aviator'
+import { supabase } from '../../lib/supabase'
+import { Button, FormField, Input, Select, Toggle } from '../../components/ui/FormElements'
+import { Octagon, Settings, BarChart3, ChevronDown, ChevronUp, Loader2, TrendingUp, TrendingDown, Wallet, Zap } from 'lucide-react'
 
-const BetRow = React.memo(function BetRow({ bet }) {
-  const time = useMemo(() => {
-    try {
-      return new Date(bet.created_at || Date.now()).toLocaleTimeString([], {
-        hour: '2-digit', minute: '2-digit', second: '2-digit'
-      })
-    } catch { return '—' }
-  }, [bet.created_at])
-
-  return (
-    <tr className={`hover:bg-slate-800/30 transition-colors ${!bet.is_bot ? 'bg-blue-500/5' : 'opacity-60'}`}>
-      <td className="px-3 py-1.5">
-        <span className={`text-xs font-medium ${!bet.is_bot ? 'text-emerald-400' : 'text-slate-400'}`}>
-          {bet.username}
-          {bet.is_bot && <span className="text-[8px] text-slate-600 ml-1">BOT</span>}
-        </span>
-      </td>
-      <td className="px-3 py-1.5">
-        <span className="text-xs font-bold text-white">₨{Number(bet.amount || 0).toLocaleString()}</span>
-      </td>
-      <td className="px-3 py-1.5">
-        {bet.auto_cashout_at ? (
-          <span className="text-[10px] text-yellow-400/70">{Number(bet.auto_cashout_at).toFixed(2)}x</span>
-        ) : (
-          <span className="text-[10px] text-slate-600">—</span>
-        )}
-      </td>
-      <td className="px-3 py-1.5">
-        {bet.status === 'won' ? (
-          <span className="px-1.5 py-0.5 rounded bg-yellow-500/15 text-yellow-400 text-[10px] font-bold">WON</span>
-        ) : bet.status === 'lost' ? (
-          <span className="px-1.5 py-0.5 rounded bg-red-500/15 text-red-400 text-[10px] font-bold">LOST</span>
-        ) : (
-          <span className="px-1.5 py-0.5 rounded bg-slate-600/50 text-slate-400 text-[10px] font-bold">PENDING</span>
-        )}
-      </td>
-      <td className="px-3 py-1.5">
-        {bet.status === 'won' ? (
-          <span className="text-xs font-bold text-emerald-400">+₨{Number(bet.cashout_amount || 0).toLocaleString()}</span>
-        ) : bet.status === 'lost' ? (
-          <span className="text-xs font-bold text-red-400">-₨{Number(bet.amount || 0)}</span>
-        ) : (
-          <span className="text-xs text-slate-600">—</span>
-        )}
-      </td>
-      <td className="px-3 py-1.5">
-        <span className="text-[10px] text-slate-500">{time}</span>
-      </td>
-    </tr>
-  )
-})
-
-function loadSettingsFromStorage() {
+// ── API ──────────────────────────────────────────────────────
+async function fetchGameState() {
   try {
-    const raw = localStorage.getItem('aviator_settings')
-    if (!raw) return null
-    return JSON.parse(raw)
+    const { data } = await supabase.from('aviator_game_state').select('*').eq('id', 'current').single()
+    return data || { phase: 'betting', mult: 1.00, crash_point: null }
+  } catch { return { phase: 'betting', mult: 1.00, crash_point: null } }
+}
+
+async function fetchBets(limit = 50) {
+  try {
+    const { data } = await supabase.from('game_bets').select('*').order('created_at', { ascending: false }).limit(limit)
+    return data || []
+  } catch { return [] }
+}
+
+async function fetchSettings() {
+  try {
+    const { data } = await supabase.from('aviator_settings').select('*').eq('id', 'config').single()
+    return data || { house_edge: 0.05, he_mode: 'off', he_target_pct: 5, he_min_secs: 3, he_max_secs: 50 }
+  } catch { return { house_edge: 0.05, he_mode: 'off', he_target_pct: 5, he_min_secs: 3, he_max_secs: 50 } }
+}
+
+async function saveSettings(s) {
+  try {
+    await supabase.from('aviator_settings').upsert({
+      id: 'config',
+      house_edge: s.house_edge,
+      he_mode: s.he_mode,
+      he_target_pct: s.he_target_pct,
+      he_min_secs: s.he_min_secs,
+      he_max_secs: s.he_max_secs,
+      updated_at: new Date().toISOString()
+    })
+    return true
+  } catch (e) { console.warn('[saveSettings]', e?.message); return false }
+}
+
+async function sendCrashSignal() {
+  try {
+    await supabase.from('aviator_signals').upsert({ id: 'crash', signal: 'crash', timestamp: Date.now(), processed: false })
+    return true
+  } catch (e) { console.warn('[sendCrashSignal]', e?.message); return false }
+}
+
+async function fetchPool() {
+  try {
+    const { data } = await supabase.from('aviator_house_edge').select('*').eq('id', 'pool').single()
+    return data || { total_bets: 0, total_winnings_paid: 0, house_edge_pool: 0, gross_pnl: 0, rounds_played: 0 }
+  } catch { return { total_bets: 0, total_winnings_paid: 0, house_edge_pool: 0, gross_pnl: 0, rounds_played: 0 } }
+}
+
+async function fetchLiveHE() {
+  try {
+    const { data } = await supabase.from('aviator_live_he').select('*').eq('id', 'metrics').single()
+    return data
   } catch { return null }
 }
 
-export default function AviatorControlPanel() {
-  const savedSettings = useRef(loadSettingsFromStorage())
-
-  const [expanded, setExpanded] = useState(true)
-  const [houseEdge, setHouseEdge] = useState(() => savedSettings.current?.houseEdge != null ? savedSettings.current.houseEdge * 100 : 5)
-  const [biasStrength, setBiasStrength] = useState(() => savedSettings.current?.biasStrength ?? 50)
-  const [heMode, setHeMode] = useState(() => savedSettings.current?.heMode || 'off')
-  const [heTargetPct, setHeTargetPct] = useState(() => savedSettings.current?.heTargetPct ?? 5)
-  const [heMinSecs, setHeMinSecs] = useState(() => savedSettings.current?.heMinSecs ?? 3)
-  const [heMaxSecs, setHeMaxSecs] = useState(() => savedSettings.current?.heMaxSecs ?? 50)
-  const [autoTargetSecs, setAutoTargetSecs] = useState(() => savedSettings.current?.autoTargetSecs ?? 8)
-  const [synced, setSynced] = useState(false)
-  const [cumulativePL, setCumulativePL] = useState(0)
-  const [roundsPlayed, setRoundsPlayed] = useState(0)
-  const [liveBets, setLiveBets] = useState([])
-  const [history, setHistory] = useState([])
-  const [phase, setPhase] = useState('betting')
-  const [mult, setMult] = useState(1.00)
-  const [cd, setCd] = useState(8)
-  const [crashedAt, setCrashedAt] = useState(null)
-  const [liveHE, setLiveHE] = useState(null)
-
-  const { data: hePool } = useQuery({
-    queryKey: ['aviator-he-pool'],
-    queryFn: getHouseEdgePool,
-    staleTime: 5000,
-    refetchInterval: 3000,
-  })
-
+// ── Canvas Preview ───────────────────────────────────────────
+function GameCanvas({ phase, mult, crashedAt }) {
   const canvasRef = useRef(null)
-  const rafRef = useRef(null)
-  const planeRef = useRef({ x: 0, y: 0, fr: 0 })
-  const lastDrawRef = useRef(0)
-  const roundsPlayedRef = useRef(0)
-  const bgDrawnRef = useRef(false)
-  const prevPhaseRef = useRef('')
-  const prevMultRef = useRef(1.00)
-  const prevCdRef = useRef(8)
-  const prevCrashedAtRef = useRef(null)
-  const prevBetsCountRef = useRef(0)
-  const prevBetsSnapshotRef = useRef([])
-  const cumulativePLRef = useRef(0)
-
-  const handleManualCrash = useCallback(() => {
-    try {
-      localStorage.setItem('aviator_manual_crash', JSON.stringify({ v: true, ts: Date.now() }))
-      toast.success('Crash signal sent to game engine')
-    } catch {}
-  }, [])
-
-  const handleSaveSettings = useCallback(() => {
-    try {
-      localStorage.setItem('aviator_settings', JSON.stringify({
-        houseEdge: houseEdge / 100,
-        biasStrength,
-        heMode,
-        heTargetPct,
-        heMinSecs,
-        heMaxSecs,
-        autoTargetSecs,
-        ts: Date.now(),
-      }))
-      toast.success('Settings saved to game engine')
-    } catch {}
-  }, [houseEdge, biasStrength, heMode, heTargetPct, heMinSecs, heMaxSecs, autoTargetSecs])
+  const animRef = useRef(null)
+  const frameRef = useRef(0)
 
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
     const ctx = canvas.getContext('2d')
 
-    const resize = () => {
-      canvas.width = canvas.offsetWidth * 2
-      canvas.height = canvas.offsetHeight * 2
-      ctx.scale(2, 2)
-      bgDrawnRef.current = false
-    }
-    resize()
-    window.addEventListener('resize', resize)
+    const draw = () => {
+      const dpr = 2
+      const cw = canvas.offsetWidth
+      const ch = canvas.offsetHeight
+      canvas.width = cw * dpr
+      canvas.height = ch * dpr
+      ctx.scale(dpr, dpr)
 
-    const img = new Image()
-    img.src = '/img/aviator_jogo.png'
+      // Background
+      ctx.fillStyle = '#0c1220'
+      ctx.fillRect(0, 0, cw, ch)
 
-    const drawBg = (W, H) => {
-      if (bgDrawnRef.current) return
-      const bg = ctx.createLinearGradient(0, 0, 0, H)
-      bg.addColorStop(0, '#0c1220')
-      bg.addColorStop(1, '#060e1a')
-      ctx.fillStyle = bg
-      ctx.fillRect(0, 0, W, H)
-      ctx.strokeStyle = 'rgba(255,255,255,0.022)'
-      ctx.lineWidth = 1
-      for (let i = 0; i < W; i += 28) { ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, H); ctx.stroke() }
-      for (let i = 0; i < H; i += 28) { ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(W, i); ctx.stroke() }
+      // Grid
+      ctx.strokeStyle = 'rgba(255,255,255,0.03)'
+      ctx.lineWidth = 0.5
+      for (let i = 0; i < 10; i++) {
+        ctx.beginPath(); ctx.moveTo(0, (ch / 10) * i); ctx.lineTo(cw, (ch / 10) * i); ctx.stroke()
+        ctx.beginPath(); ctx.moveTo((cw / 10) * i, 0); ctx.lineTo((cw / 10) * i, ch); ctx.stroke()
+      }
+
+      // Y-axis labels
       ctx.fillStyle = 'rgba(255,255,255,0.12)'
       ctx.font = 'bold 10px monospace'
       for (let i = 1; i <= 10; i++) {
-        const y = H - (i / 10) * H * 0.84 - H * 0.07
+        const y = ch - (i / 10) * ch * 0.84 - ch * 0.07
         ctx.fillText(`${i}x`, 3, y + 3)
         ctx.strokeStyle = 'rgba(0,232,135,0.06)'
-        ctx.beginPath(); ctx.moveTo(20, y); ctx.lineTo(W, y); ctx.stroke()
+        ctx.beginPath(); ctx.moveTo(20, y); ctx.lineTo(cw, y); ctx.stroke()
       }
-      bgDrawnRef.current = true
-    }
 
-    const draw = () => {
-      const now = performance.now()
-      if (now - lastDrawRef.current < 33) {
-        rafRef.current = requestAnimationFrame(draw)
-        return
-      }
-      lastDrawRef.current = now
-
-      const W = canvas.offsetWidth
-      const H = canvas.offsetHeight
-      ctx.clearRect(0, 0, W, H)
-      drawBg(W, H)
-
-      let currentPhase = 'betting'
-      let currentMult = 1.00
-      let currentCd = 8
-      let currentCrashedAt = null
-
-      try {
-        const s = JSON.parse(localStorage.getItem('aviator_game_state') || '{}')
-        currentPhase = s.phase || 'betting'
-        currentMult = s.mult || 1.00
-        currentCd = s.countdown ?? 8
-        if (currentPhase === 'running' && s.startTime && s.crashPoint) {
-          const elapsed = (Date.now() - s.startTime) / 1000
-          const m = Math.min(100, parseFloat(Math.pow(Math.E, 0.06 * elapsed).toFixed(2)))
-          if (m >= s.crashPoint) {
-            currentPhase = 'crashed'
-            currentCrashedAt = s.crashPoint
-          }
-        } else if (currentPhase === 'crashed') {
-          currentCrashedAt = s.crashPoint || null
-        }
-      } catch {}
-
-      let didChange = false
-      if (currentPhase !== prevPhaseRef.current) { prevPhaseRef.current = currentPhase; setPhase(currentPhase); didChange = true }
-      if (Math.abs(currentMult - prevMultRef.current) > 0.001) { prevMultRef.current = currentMult; setMult(currentMult); didChange = true }
-      if (currentCd !== prevCdRef.current) { prevCdRef.current = currentCd; setCd(currentCd); didChange = true }
-      if (currentCrashedAt !== prevCrashedAtRef.current) { prevCrashedAtRef.current = currentCrashedAt; setCrashedAt(currentCrashedAt); didChange = true }
-      if (didChange) setSynced(true)
-
-      try {
-        const heRaw = localStorage.getItem('aviator_live_he')
-        if (heRaw) {
-          const he = JSON.parse(heRaw)
-          if (Date.now() - he.ts < 5000) {
-            setLiveHE(he)
-          }
-        }
-      } catch {}
-
-      if (currentPhase === 'running') {
+      if (phase === 'running') {
         const originX = 5
-        const originY = H * 0.90
-        const maxTravelX = Math.max(W - 220, W * 0.65)
-        const maxTravelY = H * 0.78
-        const progress = Math.min(1, Math.log(currentMult) / Math.log(50))
+        const originY = ch * 0.90
+        const maxTravelX = Math.max(cw - 220, cw * 0.65)
+        const maxTravelY = ch * 0.78
+        const progress = Math.min(1, Math.log(mult) / Math.log(50))
         const eased = Math.pow(progress, 0.6)
         const nx = originX + eased * maxTravelX
         const ny = originY - eased * maxTravelY
@@ -249,474 +131,375 @@ export default function AviatorControlPanel() {
         ctx.beginPath(); ctx.moveTo(originX, originY); ctx.quadraticCurveTo(cpx, cpy, endX, endY); ctx.stroke()
         ctx.restore()
 
-        if (img.complete) ctx.drawImage(img, nx - 50, ny - 32, 100, 64)
+        // Plane
+        ctx.font = '24px sans-serif'
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        ctx.fillText('✈️', nx, ny)
 
-        const displayMult = currentMult * 1.5
+        // Multiplier text
         let mc = '#00e887'
-        if (displayMult >= 10) mc = '#ff4d4d'
-        else if (displayMult >= 5) mc = '#ffd600'
+        if (mult >= 10) mc = '#ff4d4d'
+        else if (mult >= 5) mc = '#ffd600'
         ctx.fillStyle = mc
-        ctx.font = 'bold 24px "Exo 2", sans-serif'
+        ctx.font = 'bold 24px sans-serif'
         ctx.shadowColor = mc
         ctx.shadowBlur = 10
-        ctx.fillText(`${displayMult.toFixed(2)}x`, nx + 10, ny + 8)
+        ctx.fillText(`${mult.toFixed(2)}x`, nx + 10, ny + 8)
         ctx.shadowBlur = 0
-
-        planeRef.current.fr++
-      }
-
-      if (currentPhase === 'crashed' && planeRef.current.x > 0) {
+      } else if (phase === 'crashed') {
+        // Explosion particles
+        const cx = cw / 2
+        const cy = ch / 2
         for (let i = 0; i < 25; i++) {
           const ag = (i / 25) * Math.PI * 2
-          const di = 14 + Math.sin(planeRef.current.fr * 0.4 + i) * 12
+          const di = 14 + Math.sin(frameRef.current * 0.4 + i) * 12
           ctx.fillStyle = ['#dc2626', '#f97316', '#fde047'][i % 3]
-          ctx.globalAlpha = 0.35 + Math.sin(planeRef.current.fr * 0.4 + i) * 0.2
+          ctx.globalAlpha = 0.35 + Math.sin(frameRef.current * 0.4 + i) * 0.2
           ctx.beginPath()
-          ctx.arc(planeRef.current.x + Math.cos(ag) * di, planeRef.current.y + Math.sin(ag) * di, 1 + Math.random() * 2.5, 0, Math.PI * 2)
+          ctx.arc(cx + Math.cos(ag) * di, cy + Math.sin(ag) * di, 1 + Math.random() * 2.5, 0, Math.PI * 2)
           ctx.fill()
         }
         ctx.globalAlpha = 1
-        planeRef.current.fr++
+        frameRef.current++
+
+        // Crashed text
+        ctx.font = 'bold 36px sans-serif'
+        ctx.fillStyle = '#ff4d4d'
+        ctx.shadowColor = '#ff4d4d'
+        ctx.shadowBlur = 20
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        ctx.fillText('CRASHED', cw / 2, ch / 2 - 10)
+        ctx.font = 'bold 24px sans-serif'
+        ctx.fillText(`${crashedAt?.toFixed(2) || '1.00'}x`, cw / 2, ch / 2 + 25)
+        ctx.shadowBlur = 0
+      } else {
+        // Betting phase
+        ctx.font = 'bold 32px sans-serif'
+        ctx.fillStyle = '#ffffff'
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        ctx.fillText('NEXT ROUND', cw / 2, ch / 2 - 10)
+        ctx.font = '14px sans-serif'
+        ctx.fillStyle = 'rgba(255,255,255,0.4)'
+        ctx.fillText('Waiting for bets...', cw / 2, ch / 2 + 20)
       }
 
-      if (currentPhase === 'betting') {
-        if (planeRef.current.x !== 0) { planeRef.current.x = 0; planeRef.current.y = 0; planeRef.current.fr = 0 }
-        bgDrawnRef.current = false
-      }
-
-      rafRef.current = requestAnimationFrame(draw)
+      animRef.current = requestAnimationFrame(draw)
     }
 
-    rafRef.current = requestAnimationFrame(draw)
+    animRef.current = requestAnimationFrame(draw)
+    return () => { if (animRef.current) cancelAnimationFrame(animRef.current) }
+  }, [phase, mult, crashedAt])
+
+  return <canvas ref={canvasRef} className="w-full h-full" />
+}
+
+// ── Main Component ───────────────────────────────────────────
+export default function AviatorControlPanel() {
+  const qc = useQueryClient()
+  const [expanded, setExpanded] = useState(true)
+  const [settings, setSettings] = useState({})
+  const [saving, setSaving] = useState(false)
+  const [localSettings, setLocalSettings] = useState({})
+
+  // Poll for live data
+  const [gs, setGs] = useState({ phase: 'betting', mult: 1.00, crash_point: null })
+  const [bets, setBets] = useState([])
+  const [pool, setPool] = useState({})
+  const [liveHE, setLiveHE] = useState(null)
+
+  useEffect(() => {
+    const load = async () => {
+      const [g, b, p, s, he] = await Promise.all([
+        fetchGameState(), fetchBets(30), fetchPool(), fetchSettings(), fetchLiveHE()
+      ])
+      setGs(g); setBets(b); setPool(p); setSettings(s); setLocalSettings(s); setLiveHE(he)
+    }
+    load()
+  }, [])
+
+  useEffect(() => {
+    const gsIv = setInterval(async () => {
+      const g = await fetchGameState()
+      if (g) setGs(g)
+    }, 1000)
+    const betsIv = setInterval(async () => {
+      const b = await fetchBets(30)
+      setBets(b)
+    }, 3000)
+    const heIv = setInterval(async () => {
+      const he = await fetchLiveHE()
+      if (he) setLiveHE(he)
+    }, 2000)
+
+    // Realtime
+    const channels = []
+    try {
+      channels.push(supabase.channel('gs-av').on('postgres_changes',
+        { event: '*', schema: 'public', table: 'aviator_game_state' },
+        (p) => { if (p.new) setGs(p.new) }
+      ).subscribe())
+    } catch {}
+    try {
+      channels.push(supabase.channel('bets-av').on('postgres_changes',
+        { event: '*', schema: 'public', table: 'game_bets' },
+        async () => { const b = await fetchBets(30); setBets(b) }
+      ).subscribe())
+    } catch {}
+
     return () => {
-      window.removeEventListener('resize', resize)
-      cancelAnimationFrame(rafRef.current)
+      clearInterval(gsIv); clearInterval(betsIv); clearInterval(heIv)
+      channels.forEach(ch => { try { supabase.removeChannel(ch) } catch {} })
     }
   }, [])
 
-  useEffect(() => {
-    const id = setInterval(() => {
-      try {
-        const betsRaw = localStorage.getItem('aviator_live_bets')
-        const histRaw = localStorage.getItem('aviator_crash_history')
+  const handleCrash = async () => {
+    toast.loading('Crashing...', { duration: 300 })
+    await sendCrashSignal()
+    toast.success('Crash signal sent!')
+  }
 
-        if (betsRaw) {
-          const bets = JSON.parse(betsRaw)
-          if (bets.length !== prevBetsCountRef.current) {
-            prevBetsCountRef.current = bets.length
-            setLiveBets(bets)
-          }
-        }
-
-        if (histRaw) {
-          const arr = JSON.parse(histRaw)
-          if (arr.length !== roundsPlayedRef.current) {
-            roundsPlayedRef.current = arr.length
-            setRoundsPlayed(arr.length)
-            setHistory(arr)
-          }
-        }
-      } catch {}
-    }, 500)
-
-    return () => clearInterval(id)
-  }, [])
-
-  useEffect(() => {
-    if (phase === 'crashed') {
-      const bets = prevBetsSnapshotRef.current
-      const realBets = bets.filter(b => !b.is_bot)
-      const exited = realBets.filter(b => b.status === 'won')
-      const lost = realBets.filter(b => b.status === 'lost')
-      const realBetAmt = realBets.reduce((s, b) => s + Number(b.amount || 0), 0)
-      const realExitAmt = exited.reduce((s, b) => s + Number(b.cashout_amount || 0), 0)
-      const realLostAmt = lost.reduce((s, b) => s + Number(b.amount || 0), 0)
-      const roundPL = realLostAmt - (realExitAmt - realBetAmt)
-      cumulativePLRef.current += roundPL
-      setCumulativePL(cumulativePLRef.current)
-    } else if (phase === 'betting') {
-      try {
-        const bets = JSON.parse(localStorage.getItem('aviator_live_bets') || '[]')
-        prevBetsSnapshotRef.current = bets
-      } catch {
-        prevBetsSnapshotRef.current = []
-      }
+  const handleSaveSettings = async () => {
+    setSaving(true)
+    const ok = await saveSettings(localSettings)
+    if (ok) {
+      setSettings(localSettings)
+      toast.success('Settings saved')
+    } else {
+      toast.error('Failed to save')
     }
-  }, [phase])
-
-  const realBets = useMemo(() => liveBets.filter(b => !b.is_bot), [liveBets])
-  const botBets = useMemo(() => liveBets.filter(b => b.is_bot), [liveBets])
-  const exited = useMemo(() => liveBets.filter(b => b.status === 'won'), [liveBets])
-  const lost = useMemo(() => liveBets.filter(b => b.status === 'lost'), [liveBets])
-  const pending = useMemo(() => liveBets.filter(b => b.status === 'pending'), [liveBets])
-
-  const realBetAmt = useMemo(() => realBets.reduce((s, b) => s + Number(b.amount || 0), 0), [realBets])
-  const realExitAmt = useMemo(() => exited.reduce((s, b) => s + Number(b.cashout_amount || 0), 0), [exited])
-  const realLostAmt = useMemo(() => lost.reduce((s, b) => s + Number(b.amount || 0), 0), [lost])
-  const realPL = useMemo(() => realLostAmt - (realExitAmt - realBetAmt), [realLostAmt, realExitAmt, realBetAmt])
-  const botBetAmt = useMemo(() => botBets.reduce((s, b) => s + Number(b.amount || 0), 0), [botBets])
-
-  const actualHouseEdge = crashedAt ? ((crashedAt - 1) / crashedAt * 100).toFixed(2) : null
-
-  const phaseColors = {
-    betting: { label: 'BETTING', color: 'text-cyan-400', bg: 'bg-cyan-500/20' },
-    running: { label: 'RUNNING', color: 'text-emerald-400', bg: 'bg-emerald-500/20' },
-    crashed: { label: 'CRASHED', color: 'text-red-400', bg: 'bg-red-500/20' },
-  }
-  const pc = phaseColors[phase] || phaseColors.betting
-
-  const getH = (v) => {
-    const n = typeof v === 'number' ? v : parseFloat(v)
-    if (n >= 10) return 'bg-red-500/25 text-red-400 border border-red-500/30'
-    if (n >= 2) return 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/25'
-    return 'bg-white/5 text-white/40 border border-white/10'
+    setSaving(false)
   }
 
-  const poolVal = Number(hePool?.house_edge_pool || 0)
-  const grossPnl = Number(hePool?.gross_pnl || 0)
-  const totalDeposits = Number(hePool?.total_deposits || 0)
-  const totalBets = Number(hePool?.total_bets || 0)
-  const totalWinnings = Number(hePool?.total_winnings_paid || 0)
-  const totalWithdrawals = Number(hePool?.total_withdrawals_paid || 0)
-  const poolRounds = Number(hePool?.rounds_played || 0)
+  const realBets = bets.filter(b => !b.is_bot)
+  const botBets = bets.filter(b => b.is_bot)
+  const realTotal = realBets.reduce((s, b) => s + Number(b.amount || 0), 0)
+  const cashedOut = realBets.filter(b => b.status === 'won')
+  const cashedTotal = cashedOut.reduce((s, b) => s + Number(b.cashout_amount || b.won_amount || 0), 0)
+  const remainingPct = realTotal > 0 ? (((realTotal - cashedTotal) / realTotal) * 100) : 100
 
   return (
-    <div className="bg-slate-800/50 border border-slate-700/50 rounded-2xl overflow-hidden">
-      <button
-        onClick={() => setExpanded(e => !e)}
-        className="w-full flex items-center justify-between px-5 py-4 bg-slate-900/60 border-b border-slate-700/50 hover:bg-slate-900/80 transition-colors"
-      >
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-red-500 to-orange-500 flex items-center justify-center text-white text-sm shadow-lg shadow-red-500/20">
-            ✈
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <h2 className="text-2xl font-bold text-white flex items-center gap-2">
+          <Zap className="w-6 h-6 text-amber-400" />
+          Aviator Game Control
+        </h2>
+        <button onClick={() => setExpanded(!expanded)} className="text-slate-400 hover:text-white">
+          {expanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+        </button>
+      </div>
+
+      {/* Control Bar */}
+      <div className="bg-slate-900/80 backdrop-blur-xl border border-slate-700/50 rounded-xl p-4">
+        <div className="flex flex-wrap items-center gap-4">
+          <Button variant="danger" onClick={handleCrash} disabled={gs.phase !== 'running'}
+            className={`font-bold px-5 py-2.5 ${gs.phase === 'running' ? 'animate-pulse shadow-lg shadow-red-500/30' : ''}`}>
+            <Octagon className="w-5 h-5" /> CRASH NOW
+          </Button>
+
+          <div className="flex items-center gap-2">
+            <div className={`px-3 py-2 rounded-lg border ${settings.he_mode !== 'off' ? 'bg-emerald-500/15 border-emerald-500/30' : 'bg-slate-800/50 border-slate-700/50'}`}>
+              <div className="flex items-center gap-2">
+                <div className={`w-2 h-2 rounded-full ${settings.he_mode !== 'off' ? 'bg-emerald-400 animate-pulse' : 'bg-slate-600'}`} />
+                <span className={`text-xs ${settings.he_mode !== 'off' ? 'text-emerald-400' : 'text-slate-400'}`}>
+                  {settings.he_mode !== 'off' ? 'Auto Active' : 'Auto OFF'}
+                </span>
+              </div>
+            </div>
           </div>
-          <div className="text-left">
-            <h3 className="text-sm font-bold text-white">Aviator Game Control</h3>
-            <p className="text-[11px] text-slate-400">
-              {synced ? 'Synced · Manual crash available' : 'Waiting for game engine...'}
-            </p>
+
+          <div className="flex items-center gap-3 text-xs">
+            <div className="px-2 py-1 bg-slate-800/50 rounded">
+              <span className="text-slate-500">Real:</span>
+              <span className="text-white font-bold ml-1">₹{realTotal.toLocaleString()}</span>
+            </div>
+            <div className="px-2 py-1 bg-slate-800/50 rounded">
+              <span className="text-slate-500">Remaining:</span>
+              <span className={`font-bold ml-1 ${remainingPct <= (settings.he_target_pct || 5) ? 'text-red-400' : 'text-emerald-400'}`}>
+                {remainingPct.toFixed(0)}%
+              </span>
+            </div>
           </div>
-          <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${pc.bg} ${pc.color}`}>{pc.label}</span>
-          {!synced && <Loader2 className="w-3.5 h-3.5 text-cyan-400 animate-spin" />}
         </div>
-        {expanded ? <ChevronUp className="w-5 h-5 text-slate-400" /> : <ChevronDown className="w-5 h-5 text-slate-400" />}
-      </button>
+      </div>
 
+      {/* Game Preview */}
+      <div className="relative w-full aspect-video bg-slate-950 rounded-xl overflow-hidden border border-slate-700/50">
+        <GameCanvas phase={gs.phase} mult={gs.mult || 1.00} crashedAt={gs.crash_point || gs.crashed_at} />
+        <div className="absolute top-3 left-3">
+          <span className={`px-2 py-1 rounded-lg text-xs font-bold ${
+            gs.phase === 'running' ? 'bg-emerald-500/20 text-emerald-400' :
+            gs.phase === 'crashed' ? 'bg-red-500/20 text-red-400' :
+            'bg-amber-500/20 text-amber-400'
+          }`}>
+            {gs.phase?.toUpperCase() || 'BETTING'}
+          </span>
+        </div>
+      </div>
+
+      {/* Live Stats */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {[
+          { label: 'Real Users', value: realBets.length, color: 'text-blue-400', bg: 'bg-blue-500/15' },
+          { label: 'Bots', value: botBets.length, color: 'text-purple-400', bg: 'bg-purple-500/15' },
+          { label: 'Real Bets', value: `₹${realTotal.toLocaleString()}`, color: 'text-emerald-400', bg: 'bg-emerald-500/15' },
+          { label: 'Cashed Out', value: `₹${cashedTotal.toLocaleString()}`, color: 'text-cyan-400', bg: 'bg-cyan-500/15' },
+        ].map((s, i) => (
+          <div key={s.label} className={`${s.bg} border border-slate-700/50 rounded-xl p-3`}>
+            <p className="text-[10px] text-slate-400 uppercase">{s.label}</p>
+            <p className={`text-lg font-bold ${s.color}`}>{s.value}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Expandable Settings */}
       {expanded && (
-        <div className="p-4 space-y-4">
-          <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-            <div className="xl:col-span-2 bg-slate-900/60 rounded-xl border border-slate-700/50 overflow-hidden">
-              <div className="p-2 border-b border-slate-700/50 flex items-center justify-between">
-                <h4 className="text-xs font-semibold text-white uppercase tracking-wider">Live Game</h4>
-                <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${pc.bg} ${pc.color}`}>{pc.label}</span>
+        <div className="space-y-4">
+          {/* Pool Stats */}
+          <div className="grid grid-cols-4 gap-3">
+            {[
+              { label: 'Total Bets', val: `₹${Number(pool.total_bets || 0).toLocaleString()}`, c: 'text-blue-400' },
+              { label: 'Winnings', val: `₹${Number(pool.total_winnings_paid || 0).toLocaleString()}`, c: 'text-emerald-400' },
+              { label: 'HE Pool', val: `₹${Number(pool.house_edge_pool || 0).toLocaleString()}`, c: 'text-amber-400' },
+              { label: 'Rounds', val: pool.rounds_played || 0, c: 'text-purple-400' },
+            ].map(s => (
+              <div key={s.label} className="bg-slate-800/30 border border-slate-700/30 rounded-lg p-3 text-center">
+                <p className="text-[10px] text-slate-500">{s.label}</p>
+                <p className={`text-lg font-bold ${s.c}`}>{s.val}</p>
               </div>
-              <canvas ref={canvasRef} style={{ width: '100%', height: 220, display: 'block' }} />
-              {phase === 'crashed' && crashedAt && (
-                <div className="p-2 text-center border-t border-slate-700/50">
-                  <span className="text-xs text-slate-400">House Edge: {actualHouseEdge}%</span>
-                  <div className="grid grid-cols-3 gap-1 mt-1">
-                    {history.slice(0, 6).map((h, i) => (
-                      <div key={`${h}-${i}`} className={`px-1 py-0.5 rounded text-[9px] font-bold text-center ${getH(h)}`}>
-                        {typeof h === 'number' ? h.toFixed(2) : h}x
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className="bg-slate-900/60 rounded-xl p-4 border border-slate-700/50">
-              <h4 className="text-xs font-semibold text-white uppercase tracking-wider mb-3">Controls</h4>
-              <div className="space-y-2">
-                <div className="bg-slate-800/60 rounded-lg p-2.5 text-center border border-slate-700/50">
-                  <p className="text-[9px] text-slate-400 uppercase">Game State</p>
-                  <p className={`text-sm font-bold mt-0.5 ${phase === 'running' ? 'text-emerald-400' : phase === 'crashed' ? 'text-red-400' : 'text-cyan-400'}`}>
-                    {phase.toUpperCase()}
-                  </p>
-                  {phase === 'betting' && <p className="text-lg font-black text-white mt-0.5">{cd}s</p>}
-                  {phase === 'running' && <p className="text-lg font-black text-emerald-400 mt-0.5">{(mult * 1.5).toFixed(2)}x</p>}
-                  {phase === 'crashed' && <p className="text-lg font-black text-red-400 mt-0.5">{crashedAt?.toFixed(2)}x</p>}
-                </div>
-                <Button
-                  onClick={handleManualCrash}
-                  className="w-full bg-red-500/20 border border-red-500/30 text-red-400 hover:bg-red-500/30 text-xs"
-                >
-                  <Octagon className="w-3.5 h-3.5" />
-                  Manual Crash
-                </Button>
-                <div className="text-[9px] text-slate-500 text-center">
-                  Instant signal via localStorage
-                </div>
-                <div className={`rounded-lg p-2.5 text-center border ${cumulativePL >= 0 ? 'bg-emerald-500/10 border-emerald-500/20' : 'bg-red-500/10 border-red-500/20'}`}>
-                  <p className="text-[9px] text-slate-400 uppercase">Session P&L</p>
-                  <p className={`text-base font-black mt-0.5 ${cumulativePL >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                    {cumulativePL >= 0 ? '+' : ''}₨{Number(cumulativePL).toLocaleString()}
-                  </p>
-                  <p className="text-[9px] text-slate-400/60">{roundsPlayed} rounds</p>
-                </div>
-              </div>
-            </div>
+            ))}
           </div>
 
-          <div className="bg-slate-900/60 rounded-xl border border-slate-700/50 overflow-hidden">
-            <div className="p-4">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-2">
-                  <TrendingUp className="w-4 h-4 text-emerald-400" />
-                  <h4 className="text-sm font-bold text-white uppercase tracking-wider">House Edge P&L Dashboard</h4>
-                </div>
-                <div className="flex items-center gap-3 text-[10px] text-slate-500">
-                  <span>{poolRounds} rounds played</span>
-                  <span className="w-px h-3 bg-slate-700" />
-                  <span className="text-emerald-400">Auto-refreshes every 3s</span>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-                <div className="bg-slate-800/60 rounded-xl p-3 border border-slate-700/50 text-center">
-                  <p className="text-[10px] text-slate-500 uppercase font-semibold tracking-wider mb-1">Total Deposits</p>
-                  <p className="text-base font-black text-cyan-400">₨{totalDeposits.toLocaleString()}</p>
-                  <p className="text-[9px] text-slate-600 mt-0.5">User deposits tracked</p>
-                </div>
-
-                <div className="bg-slate-800/60 rounded-xl p-3 border border-slate-700/50 text-center">
-                  <p className="text-[10px] text-slate-500 uppercase font-semibold tracking-wider mb-1">Total Bets</p>
-                  <p className="text-base font-black text-white">₨{totalBets.toLocaleString()}</p>
-                  <p className="text-[9px] text-slate-600 mt-0.5">Real user bets only</p>
-                </div>
-
-                <div className="bg-slate-800/60 rounded-xl p-3 border border-slate-700/50 text-center">
-                  <p className="text-[10px] text-slate-500 uppercase font-semibold tracking-wider mb-1">Winnings Paid</p>
-                  <p className="text-base font-black text-emerald-400">₨{totalWinnings.toLocaleString()}</p>
-                  <p className="text-[9px] text-slate-600 mt-0.5">Cashed out by users</p>
-                </div>
-
-                <div className="bg-slate-800/60 rounded-xl p-3 border border-slate-700/50 text-center">
-                  <p className="text-[10px] text-slate-500 uppercase font-semibold tracking-wider mb-1">Withdrawals</p>
-                  <p className="text-base font-black text-amber-400">₨{totalWithdrawals.toLocaleString()}</p>
-                  <p className="text-[9px] text-slate-600 mt-0.5">Paid to users</p>
-                </div>
-
-                <div className={`rounded-xl p-3 border text-center ${poolVal >= 0 ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-red-500/10 border-red-500/30'}`}>
-                  <div className="flex items-center justify-center gap-1 mb-1">
-                    <Wallet className="w-3.5 h-3.5 text-emerald-400" />
-                    <p className="text-[10px] text-emerald-400 uppercase font-semibold tracking-wider">House Edge Pool</p>
-                  </div>
-                  <p className={`text-lg font-black ${poolVal >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                    {poolVal >= 0 ? '+' : ''}₨{poolVal.toLocaleString()}
-                  </p>
-                  <p className="text-[9px] text-slate-500 mt-0.5">5% of pending bets</p>
-                </div>
-
-                <div className={`rounded-xl p-3 border text-center ${grossPnl >= 0 ? 'bg-emerald-500/5 border-emerald-500/20' : 'bg-red-500/5 border-red-500/20'}`}>
-                  <p className="text-[10px] text-slate-500 uppercase font-semibold tracking-wider mb-1">Gross P&L</p>
-                  <p className={`text-lg font-black ${grossPnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                    {grossPnl >= 0 ? '+' : ''}₨{grossPnl.toLocaleString()}
-                  </p>
-                  <p className="text-[9px] text-slate-500 mt-0.5">Total platform P&L</p>
-                </div>
-              </div>
-
-              <div className="mt-3 p-3 bg-slate-800/40 rounded-xl border border-slate-700/30 flex items-start gap-2">
-                <TrendingDown className="w-3.5 h-3.5 text-slate-500 mt-0.5 flex-shrink-0" />
-                <p className="text-[10px] text-slate-500 leading-relaxed">
-                  <strong className="text-slate-400">P&L Formula:</strong> Gross P&L = Total Deposits + Total Bets − Winnings Paid − Withdrawals. 
-                  House Edge Pool grows from 5% of pending bets per round. 
-                  Bot bets are <strong className="text-slate-400">excluded</strong> from all P&L. Session P&L resets each session; HE Pool is permanent.
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-            <div className="bg-slate-900/60 rounded-xl p-4 border border-slate-700/50">
-              <h4 className="text-xs font-semibold text-white uppercase tracking-wider mb-3 flex items-center gap-1.5">
-                <Settings className="w-3.5 h-3.5 text-cyan-400" />
-                Smart Auto House Edge
-              </h4>
-              <div className="flex gap-1.5 mb-3">
-                {['off', 'smart', 'time'].map(mode => (
-                  <button
-                    key={mode}
-                    onClick={() => setHeMode(mode)}
-                    className={`flex-1 py-2 rounded-lg text-[11px] font-bold uppercase tracking-wider border transition-all ${
-                      heMode === mode
-                        ? mode === 'off' ? 'bg-slate-600 border-slate-500 text-white'
-                        : mode === 'smart' ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400'
-                        : 'bg-cyan-500/20 border-cyan-500/40 text-cyan-400'
-                        : 'bg-slate-800/60 border-slate-700/50 text-slate-400 hover:text-white'
-                    }`}
-                  >
-                    {mode === 'off' ? 'Off' : mode === 'smart' ? 'Smart' : 'Time'}
-                  </button>
-                ))}
-              </div>
-
-              {heMode === 'smart' && (
-                <>
-                  <div className="bg-slate-800/60 rounded-lg p-3 border border-slate-700/50 mb-2">
-                    <div className="flex items-center justify-between mb-2">
-                      <p className="text-[10px] text-slate-400 uppercase font-semibold">Target House Edge %</p>
-                      <span className="text-sm font-black text-emerald-400">{heTargetPct}%</span>
-                    </div>
-                    <input
-                      type="range" min={1} max={20} value={heTargetPct}
-                      onChange={e => setHeTargetPct(Number(e.target.value))}
-                      className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-emerald-500"
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-2 mb-2">
-                    <div className="bg-slate-800/60 rounded-lg p-3 border border-slate-700/50">
-                      <div className="flex items-center justify-between mb-1">
-                        <p className="text-[9px] text-slate-500 uppercase">Min Time</p>
-                        <span className="text-sm font-black text-cyan-400">{heMinSecs}s</span>
-                      </div>
-                      <input
-                        type="range" min={1} max={10} value={heMinSecs}
-                        onChange={e => setHeMinSecs(Number(e.target.value))}
-                        className="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-cyan-500"
-                      />
-                    </div>
-                    <div className="bg-slate-800/60 rounded-lg p-3 border border-slate-700/50">
-                      <div className="flex items-center justify-between mb-1">
-                        <p className="text-[9px] text-slate-500 uppercase">Max Time</p>
-                        <span className="text-sm font-black text-red-400">{heMaxSecs}s</span>
-                      </div>
-                      <input
-                        type="range" min={5} max={200} value={heMaxSecs}
-                        onChange={e => setHeMaxSecs(Number(e.target.value))}
-                        className="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-red-500"
-                      />
-                    </div>
-                  </div>
-                </>
-              )}
-
-              {heMode === 'time' && (
-                <div className="bg-slate-800/60 rounded-lg p-3 border border-slate-700/50 mb-2">
-                  <div className="flex items-center justify-between mb-1">
-                    <p className="text-[9px] text-slate-400 uppercase font-semibold">Auto Crash After (secs)</p>
-                    <span className="text-sm font-black text-cyan-400">{autoTargetSecs}s</span>
-                  </div>
-                  <input
-                    type="range" min={2} max={60} value={autoTargetSecs}
-                    onChange={e => setAutoTargetSecs(Number(e.target.value))}
-                    className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-cyan-500"
-                  />
-                </div>
-              )}
-
-              <Button onClick={handleSaveSettings} size="sm" className="w-full text-xs mt-1">
-                Save to Game Engine
-              </Button>
-
-              {phase === 'running' && heMode === 'smart' && liveHE && liveHE.event === 'live' && (
-                <div className="mt-3 rounded-lg p-3 border border-slate-700/50 bg-slate-800/40 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <p className="text-[10px] text-slate-400 uppercase font-semibold">Live Smart Metrics</p>
-                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                      liveHE.liveEdge <= heTargetPct
-                        ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                        : liveHE.liveEdge <= heTargetPct * 2
-                        ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30'
-                        : 'bg-red-500/20 text-red-400 border border-red-500/30'
-                    }`}>
-                      {liveHE.liveEdge <= heTargetPct ? 'SAFE' : liveHE.liveEdge <= heTargetPct * 2 ? 'CAUTION' : 'AT RISK'}
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-3 gap-2">
-                    <div className="text-center">
-                      <p className="text-[8px] text-slate-500 uppercase">Target Mult</p>
-                      <p className="text-sm font-black text-cyan-400">
-                        {liveHE.targetMult != null ? `≥${(liveHE.targetMult * 1.5).toFixed(2)}x` : '—'}
-                      </p>
-                    </div>
-                    <div className="text-center">
-                      <p className="text-[8px] text-slate-500 uppercase">Current Edge</p>
-                      <p className={`text-sm font-black ${liveHE.liveEdge <= heTargetPct ? 'text-emerald-400' : liveHE.liveEdge <= heTargetPct * 2 ? 'text-yellow-400' : 'text-red-400'}`}>
-                        {liveHE.liveEdge.toFixed(1)}%
-                      </p>
-                    </div>
-                    <div className="text-center">
-                      <p className="text-[8px] text-slate-500 uppercase">Exit Rate</p>
-                      <p className="text-sm font-black text-white">{liveHE.exitRate.toFixed(1)}%</p>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-3 gap-2">
-                    <div className="text-center">
-                      <p className="text-[8px] text-slate-500 uppercase">Real Bets</p>
-                      <p className="text-xs font-bold text-white">₨{liveHE.realBets.toLocaleString()}</p>
-                    </div>
-                    <div className="text-center">
-                      <p className="text-[8px] text-slate-500 uppercase">Exited</p>
-                      <p className="text-xs font-bold text-emerald-400">₨{liveHE.exitedAmt.toLocaleString()}</p>
-                    </div>
-                    <div className="text-center">
-                      <p className="text-[8px] text-slate-500 uppercase">Pending</p>
-                      <p className="text-xs font-bold text-red-400">₨{liveHE.pendingAmt.toLocaleString()}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="flex-1 h-2 bg-slate-700 rounded-full overflow-hidden">
-                      <div
-                        className={`h-full transition-all ${liveHE.liveEdge <= heTargetPct ? 'bg-emerald-400' : liveHE.liveEdge <= heTargetPct * 2 ? 'bg-yellow-400' : 'bg-red-400'}`}
-                        style={{ width: `${Math.min(100, (liveHE.liveEdge / (heTargetPct * 2)) * 100)}%` }}
-                      />
-                    </div>
-                    <span className="text-[9px] text-slate-500">{liveHE.elapsed.toFixed(1)}s</span>
-                  </div>
-                </div>
-              )}
-              {phase === 'running' && heMode === 'smart' && !liveHE && (
-                <div className="mt-3 text-center py-2 text-[9px] text-slate-500">
-                  Waiting for live metrics...
-                </div>
-              )}
-            </div>
-
-            <div className="bg-slate-900/60 rounded-xl border border-slate-700/50 overflow-hidden">
-              <div className="flex items-center justify-between px-4 py-3 border-b border-slate-700/50">
-                <div className="flex items-center gap-2">
-                  <BarChart3 className="w-4 h-4 text-cyan-400" />
-                  <h4 className="text-xs font-semibold text-white">All Bets</h4>
-                  <span className="px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-400 text-[10px] font-bold">{liveBets.length}</span>
-                </div>
-                <div className="flex items-center gap-3 text-[10px]">
-                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-slate-500" /> Pending: {pending.length}</span>
-                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-yellow-400" /> Won: {exited.length}</span>
-                  <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-400" /> Lost: {lost.length}</span>
-                  <span className="text-slate-600">· Real: {realBets.length} · Bots: {botBets.length}</span>
-                </div>
-              </div>
-              <div className="max-h-64 overflow-y-auto" style={{ scrollbarWidth: 'thin' }}>
-                <table className="w-full">
-                  <thead className="sticky top-0 bg-slate-900/90 backdrop-blur-sm z-10">
-                    <tr className="border-b border-slate-700/50">
-                      <th className="text-left px-3 py-2 text-[9px] font-semibold text-slate-500 uppercase tracking-wider">User</th>
-                      <th className="text-left px-3 py-2 text-[9px] font-semibold text-slate-500 uppercase tracking-wider">Amount</th>
-                      <th className="text-left px-3 py-2 text-[9px] font-semibold text-slate-500 uppercase tracking-wider">Auto</th>
-                      <th className="text-left px-3 py-2 text-[9px] font-semibold text-slate-500 uppercase tracking-wider">Status</th>
-                      <th className="text-left px-3 py-2 text-[9px] font-semibold text-slate-500 uppercase tracking-wider">Result</th>
-                      <th className="text-left px-3 py-2 text-[9px] font-semibold text-slate-500 uppercase tracking-wider">Time</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-700/30">
-                    {liveBets.length === 0 ? (
-                      <tr><td colSpan={6} className="px-3 py-6 text-center text-slate-600 text-xs">Waiting for bets...</td></tr>
-                    ) : liveBets.map(bet => (
-                      <BetRow key={bet.id} bet={bet} />
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-slate-900/40 rounded-xl p-3 border border-slate-700/30 flex items-start gap-2">
-            <Settings className="w-3.5 h-3.5 text-slate-500 mt-0.5 flex-shrink-0" />
-            <p className="text-[10px] text-slate-500 leading-relaxed">
-              Passive sync display — reads game state from localStorage. Manual crash sends instant signal. Bot bets are <strong className="text-slate-400">excluded</strong> from all P&L calculations. P&L shows only real user bets. Session P&L resets each refresh; House Edge Pool persists in DB.
+          <div className={`p-4 rounded-xl border ${(pool.gross_pnl || 0) >= 0 ? 'bg-emerald-500/10 border-emerald-500/20' : 'bg-red-500/10 border-red-500/20'}`}>
+            <p className="text-xs text-slate-400">Gross P&L</p>
+            <p className={`text-2xl font-bold ${(pool.gross_pnl || 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+              ₹{Number(pool.gross_pnl || 0).toLocaleString('en-IN')}
             </p>
+          </div>
+
+          {/* Settings Form */}
+          <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-5 space-y-4">
+            <h4 className="text-sm font-bold text-white flex items-center gap-2">
+              <Settings className="w-4 h-4" /> HE Configuration
+            </h4>
+            <FormField label={`House Edge (${((localSettings.house_edge || 0.05) * 100).toFixed(1)}%)`}>
+              <div className="flex items-center gap-3">
+                <input type="range" min="0.01" max="0.20" step="0.01"
+                  value={localSettings.house_edge || 0.05}
+                  onChange={e => setLocalSettings(s => ({ ...s, house_edge: parseFloat(e.target.value) }))}
+                  className="flex-1 accent-emerald-500" />
+                <Input type="number" min="1" max="20" step="0.5"
+                  value={((localSettings.house_edge || 0.05) * 100).toFixed(1)}
+                  onChange={e => setLocalSettings(s => ({ ...s, house_edge: parseFloat(e.target.value) / 100 }))}
+                  className="w-20" />
+              </div>
+            </FormField>
+            <FormField label="HE Mode">
+              <Select value={localSettings.he_mode || 'off'} onChange={e => setLocalSettings(s => ({ ...s, he_mode: e.target.value }))}>
+                <option value="off">Off (Random)</option>
+                <option value="smart">Smart Auto</option>
+                <option value="aggressive">Aggressive</option>
+              </Select>
+            </FormField>
+            {localSettings.he_mode !== 'off' && (
+              <>
+                <FormField label={`Auto-Crash Target (${localSettings.he_target_pct || 5}%)`}>
+                  <div className="flex items-center gap-3">
+                    <input type="range" min="1" max="20" step="1"
+                      value={localSettings.he_target_pct || 5}
+                      onChange={e => setLocalSettings(s => ({ ...s, he_target_pct: parseInt(e.target.value) }))}
+                      className="flex-1 accent-amber-500" />
+                    <Input type="number" min="1" max="20"
+                      value={localSettings.he_target_pct || 5}
+                      onChange={e => setLocalSettings(s => ({ ...s, he_target_pct: parseInt(e.target.value) }))}
+                      className="w-16" />
+                  </div>
+                </FormField>
+                <div className="grid grid-cols-2 gap-3">
+                  <FormField label="Min Flight (sec)">
+                    <Input type="number" min="1" max="30" value={localSettings.he_min_secs || 3}
+                      onChange={e => setLocalSettings(s => ({ ...s, he_min_secs: parseInt(e.target.value) }))} />
+                  </FormField>
+                  <FormField label="Max Flight (sec)">
+                    <Input type="number" min="5" max="120" value={localSettings.he_max_secs || 50}
+                      onChange={e => setLocalSettings(s => ({ ...s, he_max_secs: parseInt(e.target.value) }))} />
+                  </FormField>
+                </div>
+              </>
+            )}
+            <Button onClick={handleSaveSettings} disabled={saving} className="w-full">
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Settings className="w-4 h-4" />}
+              Save Settings
+            </Button>
+          </div>
+
+          {/* Live Bets Table */}
+          <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl overflow-hidden">
+            <div className="p-3 border-b border-slate-700/50 flex items-center justify-between">
+              <h4 className="text-sm font-bold text-white">Live Bets</h4>
+              <div className="flex items-center gap-2 text-xs text-slate-500">
+                <span className="text-blue-400">{realBets.length} real</span>
+                <span>•</span>
+                <span className="text-purple-400">{botBets.length} bots</span>
+              </div>
+            </div>
+            <div className="overflow-x-auto max-h-96 overflow-y-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-slate-700/50">
+                    <th className="text-left px-3 py-2 text-[10px] text-slate-400 uppercase">Player</th>
+                    <th className="text-left px-3 py-2 text-[10px] text-slate-400 uppercase">Amount</th>
+                    <th className="text-left px-3 py-2 text-[10px] text-slate-400 uppercase">Auto</th>
+                    <th className="text-left px-3 py-2 text-[10px] text-slate-400 uppercase">Status</th>
+                    <th className="text-left px-3 py-2 text-[10px] text-slate-400 uppercase">Result</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-700/30">
+                  {bets.slice(0, 20).map((bet, i) => (
+                    <tr key={bet.id || i} className={`hover:bg-slate-800/30 transition-colors ${!bet.is_bot ? 'bg-blue-500/5' : 'opacity-60'}`}>
+                      <td className="px-3 py-1.5">
+                        <span className={`text-xs font-medium ${!bet.is_bot ? 'text-emerald-400' : 'text-slate-400'}`}>
+                          {bet.username || 'Anon'}
+                          {bet.is_bot && <span className="text-[8px] text-slate-600 ml-1">BOT</span>}
+                        </span>
+                      </td>
+                      <td className="px-3 py-1.5">
+                        <span className="text-xs font-bold text-white">₹{Number(bet.amount || 0).toLocaleString()}</span>
+                      </td>
+                      <td className="px-3 py-1.5">
+                        {bet.auto_cashout_at ? (
+                          <span className="text-[10px] text-yellow-400/70">{Number(bet.auto_cashout_at).toFixed(2)}x</span>
+                        ) : (
+                          <span className="text-[10px] text-slate-600">—</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-1.5">
+                        {bet.status === 'won' ? (
+                          <span className="px-1.5 py-0.5 rounded bg-yellow-500/15 text-yellow-400 text-[10px] font-bold">WON</span>
+                        ) : bet.status === 'lost' ? (
+                          <span className="px-1.5 py-0.5 rounded bg-red-500/15 text-red-400 text-[10px] font-bold">LOST</span>
+                        ) : (
+                          <span className="px-1.5 py-0.5 rounded bg-slate-600/50 text-slate-400 text-[10px] font-bold">PENDING</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-1.5">
+                        {bet.status === 'won' ? (
+                          <span className="text-xs font-bold text-emerald-400">+₹{Number(bet.cashout_amount || 0).toLocaleString()}</span>
+                        ) : bet.status === 'lost' ? (
+                          <span className="text-xs font-bold text-red-400">-₹{Number(bet.amount || 0)}</span>
+                        ) : (
+                          <span className="text-xs text-slate-600">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}
