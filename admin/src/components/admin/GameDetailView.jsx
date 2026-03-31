@@ -68,30 +68,27 @@ async function sendCrashSignal() {
   } catch (e) { console.warn('[sendCrashSignal]', e?.message) }
 }
 
-// ── Live Game Iframe (Shows ACTUAL game) ─────────────────────
-function GameIframe({ game }) {
-  const [loading, setLoading] = useState(true)
-  const gameSlug = game?.slug || game?.name?.toLowerCase().replace(/\s+/g, '-') || 'aviator'
-  const gameUrl = `https://8769bet.onrender.com/play/${gameSlug}`
+// ── Live Game Preview (Direct Link) ──────────────────────────
+function GamePreview({ game }) {
+  const gameUrl = 'https://8769bet.onrender.com/play/aviator'
 
   return (
-    <div className="relative w-full aspect-video bg-slate-950 rounded-xl overflow-hidden border border-slate-700/50">
-      {loading && (
-        <div className="absolute inset-0 flex items-center justify-center bg-slate-950 z-10">
-          <div className="text-center">
-            <Loader2 className="w-8 h-8 text-emerald-500 animate-spin mx-auto mb-2" />
-            <p className="text-sm text-slate-400">Loading live game...</p>
-          </div>
-        </div>
-      )}
-      <iframe
-        src={gameUrl}
-        className="w-full h-full border-0"
-        onLoad={() => setLoading(false)}
-        allow="autoplay"
-        sandbox="allow-scripts allow-same-origin allow-forms"
-        title="Live Game Preview"
-      />
+    <div className="relative w-full aspect-video bg-slate-950 rounded-xl overflow-hidden border border-slate-700/50 flex items-center justify-center">
+      <div className="text-center p-8">
+        <div className="text-6xl mb-4">🎮</div>
+        <h3 className="text-lg font-bold text-white mb-2">Live Game Preview</h3>
+        <p className="text-sm text-slate-400 mb-4">
+          Open the game in a new tab to see the live preview and control it from there.
+        </p>
+        <a href={gameUrl} target="_blank" rel="noreferrer"
+          className="inline-flex items-center gap-2 px-6 py-3 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl font-medium transition-colors">
+          <ExternalLink className="w-4 h-4" />
+          Open Live Game
+        </a>
+        <p className="text-xs text-slate-500 mt-4">
+          The game runs on a separate domain. Use the controls below to manage it.
+        </p>
+      </div>
     </div>
   )
 }
@@ -417,7 +414,7 @@ export default function GameDetailView() {
       {/* Live Game (Iframe) + Bets */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="lg:col-span-2">
-          <GameIframe game={game} />
+          <GamePreview game={game} />
         </div>
         <div className="bg-slate-900/60 border border-slate-800/50 rounded-xl p-4">
           <div className="flex items-center justify-between mb-3">
