@@ -1,10 +1,10 @@
-import { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react'
+﻿import { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { processReferralSignup } from '../api/referrals'
 
 const CURRENCIES = {
   PKR: { symbol: '₨', code: 'PKR', rate: 1, name: 'Pakistani Rupee' },
-  INR: { symbol: '₹', code: 'INR', rate: 0.28, name: 'Indian Rupee' },
+  INR: { symbol: 'PKR ', code: 'INR', rate: 0.28, name: 'Indian Rupee' },
   USD: { symbol: '$', code: 'USD', rate: 0.0036, name: 'US Dollar' },
 }
 
@@ -541,3 +541,4 @@ export function AuthProvider({ children }) {
     </AuthContext.Provider>
   )
 }
+

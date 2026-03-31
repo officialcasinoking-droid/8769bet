@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+﻿import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { supabase } from '../../lib/supabase'
 import { useQuery } from '@tanstack/react-query'
@@ -88,8 +88,8 @@ function LiveStats() {
 
   const formatValue = (value, format) => {
     if (format === 'currency') {
-      if (value >= 100000) return `₹${(value / 100000).toFixed(1)}L`
-      return `₹${Number(value).toLocaleString('en-IN')}`
+      if (value >= 100000) return `PKR ${(value / 100000).toFixed(1)}L`
+      return `PKR ${Number(value).toLocaleString('en-IN')}`
     }
     return Number(value).toLocaleString('en-IN')
   }
@@ -206,7 +206,7 @@ function RecentActivity() {
                 </div>
                 <div className="text-right">
                   <p className={`text-xs font-medium ${config.color}`}>
-                    ₹{Number(tx.amount).toLocaleString('en-IN')}
+                    PKR {Number(tx.amount).toLocaleString('en-IN')}
                   </p>
                   <p className="text-[10px] text-slate-500">{getTimeAgo(tx.created_at)}</p>
                 </div>
@@ -321,7 +321,7 @@ function JackpotOverview() {
             <p className="text-xl mb-0.5">{tierEmojis[tier.id] || '💎'}</p>
             <p className="text-[10px] text-slate-400 uppercase tracking-wider">{tier.name}</p>
             <p className="text-sm font-bold text-amber-400 mt-1">
-              ₹{Number(tier.current_amount || 0).toLocaleString('en-IN')}
+              PKR {Number(tier.current_amount || 0).toLocaleString('en-IN')}
             </p>
           </motion.div>
         ))}
@@ -349,3 +349,4 @@ export default function AdminDashboard() {
     </motion.div>
   )
 }
+

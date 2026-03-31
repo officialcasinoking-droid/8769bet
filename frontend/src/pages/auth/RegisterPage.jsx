@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+﻿import { useState, useEffect } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { EyeIcon, EyeSlashIcon, UserIcon, EnvelopeIcon, LockClosedIcon, GiftIcon, ArrowRightIcon, CheckCircleIcon } from '@heroicons/react/24/outline'
@@ -173,7 +173,7 @@ export default function RegisterPage() {
             Account Created!
           </h2>
           <p className="text-gray-600 dark:text-gray-400 mb-4">
-            Welcome bonus of <span className="text-primary-600 font-bold">₹50</span> credited!
+            Welcome bonus of <span className="text-primary-600 font-bold">PKR 50</span> credited!
           </p>
           <p className="text-sm text-gray-500 dark:text-gray-400">
             Redirecting you to home...
@@ -431,7 +431,7 @@ export default function RegisterPage() {
             </div>
             <div>
               <p className="text-sm font-semibold text-primary-700 dark:text-primary-300">
-                Get ₹50 Welcome Bonus!
+                Get PKR 50 Welcome Bonus!
               </p>
               <p className="text-xs text-primary-600 dark:text-primary-400">
                 Plus extra rewards with referral code
@@ -443,3 +443,4 @@ export default function RegisterPage() {
     </AuthFormWrapper>
   )
 }
+

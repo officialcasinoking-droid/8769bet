@@ -1,4 +1,4 @@
-import { motion } from 'framer-motion'
+﻿import { motion } from 'framer-motion'
 import AdminDashboardOverview from './AdminDashboardOverview'
 
 export default function AdminDashboard() {
@@ -29,7 +29,7 @@ export default function AdminDashboard() {
 function LiveStats() {
   const stats = [
     { name: 'Total Users', value: '12,847', change: '+12%', emoji: '👥', positive: true },
-    { name: 'Daily Revenue', value: '₹4,52,180', change: '+8.2%', emoji: '💰', positive: true },
+    { name: 'Daily Revenue', value: 'PKR 4,52,180', change: '+8.2%', emoji: '💰', positive: true },
     { name: 'Active Games', value: '156', change: '+5', emoji: '🎮', positive: true },
     { name: 'Win Rate', value: '94.2%', change: '-0.3%', emoji: '📊', positive: false },
   ]
@@ -60,11 +60,11 @@ function LiveStats() {
 
 function RecentActivity() {
   const activity = [
-    { user: 'Rahul***847', action: 'Deposited', amount: '₹5,000', time: '2 min ago', type: 'deposit' },
-    { user: 'Priya***123', action: 'Withdrew', amount: '₹2,500', time: '5 min ago', type: 'withdraw' },
-    { user: 'Amit***456', action: 'Won', amount: '₹12,450', time: '8 min ago', type: 'win' },
-    { user: 'Sneha***789', action: 'Registered', amount: 'Bonus ₹200', time: '12 min ago', type: 'bonus' },
-    { user: 'Vikram***321', action: 'Bet Lost', amount: '₹500', time: '15 min ago', type: 'loss' },
+    { user: 'Rahul***847', action: 'Deposited', amount: 'PKR 5,000', time: '2 min ago', type: 'deposit' },
+    { user: 'Priya***123', action: 'Withdrew', amount: 'PKR 2,500', time: '5 min ago', type: 'withdraw' },
+    { user: 'Amit***456', action: 'Won', amount: 'PKR 12,450', time: '8 min ago', type: 'win' },
+    { user: 'Sneha***789', action: 'Registered', amount: 'Bonus PKR 200', time: '12 min ago', type: 'bonus' },
+    { user: 'Vikram***321', action: 'Bet Lost', amount: 'PKR 500', time: '15 min ago', type: 'loss' },
   ]
 
   return (
@@ -99,10 +99,10 @@ function RecentActivity() {
 
 function TopGames() {
   const games = [
-    { name: 'Aviator', players: 2347, revenue: '₹12.5L' },
-    { name: 'Fortune Gems 3', players: 1823, revenue: '₹8.2L' },
-    { name: 'Money Coming', players: 3421, revenue: '₹15.8L' },
-    { name: 'Lucky Jet', players: 2156, revenue: '₹9.4L' },
+    { name: 'Aviator', players: 2347, revenue: 'PKR 12.5L' },
+    { name: 'Fortune Gems 3', players: 1823, revenue: 'PKR 8.2L' },
+    { name: 'Money Coming', players: 3421, revenue: 'PKR 15.8L' },
+    { name: 'Lucky Jet', players: 2156, revenue: 'PKR 9.4L' },
   ]
 
   return (
@@ -144,10 +144,10 @@ function JackpotOverview() {
       </div>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
-          { name: 'Mini', amount: '₹847', emoji: '🥉' },
-          { name: 'Minor', amount: '₹12,847', emoji: '🥈' },
-          { name: 'Major', amount: '₹1,27,458', emoji: '🥇' },
-          { name: 'Grand', amount: '₹18,47,294', emoji: '💎' },
+          { name: 'Mini', amount: 'PKR 847', emoji: '🥉' },
+          { name: 'Minor', amount: 'PKR 12,847', emoji: '🥈' },
+          { name: 'Major', amount: 'PKR 1,27,458', emoji: '🥇' },
+          { name: 'Grand', amount: 'PKR 18,47,294', emoji: '💎' },
         ].map((j) => (
           <div key={j.name} className="bg-slate-800/60 border border-slate-700/50 rounded-lg p-3 text-center">
             <p className="text-xl mb-0.5">{j.emoji}</p>
@@ -159,3 +159,4 @@ function JackpotOverview() {
     </div>
   )
 }
+

@@ -68,27 +68,29 @@ async function sendCrashSignal() {
   } catch (e) { console.warn('[sendCrashSignal]', e?.message) }
 }
 
-// ── Live Game Preview (Direct Link) ──────────────────────────
-function GamePreview({ game }) {
-  const gameUrl = 'https://8769bet.onrender.com/play/aviator'
+// ── Live Game Iframe ─────────────────────────────────────────
+function GameIframe() {
+  const [loading, setLoading] = useState(true)
+  const gameUrl = 'https://eight769bet-frontend.onrender.com/play/aviator'
 
   return (
-    <div className="relative w-full aspect-video bg-slate-950 rounded-xl overflow-hidden border border-slate-700/50 flex items-center justify-center">
-      <div className="text-center p-8">
-        <div className="text-6xl mb-4">🎮</div>
-        <h3 className="text-lg font-bold text-white mb-2">Live Game Preview</h3>
-        <p className="text-sm text-slate-400 mb-4">
-          Open the game in a new tab to see the live preview and control it from there.
-        </p>
-        <a href={gameUrl} target="_blank" rel="noreferrer"
-          className="inline-flex items-center gap-2 px-6 py-3 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl font-medium transition-colors">
-          <ExternalLink className="w-4 h-4" />
-          Open Live Game
-        </a>
-        <p className="text-xs text-slate-500 mt-4">
-          The game runs on a separate domain. Use the controls below to manage it.
-        </p>
-      </div>
+    <div className="relative w-full aspect-video bg-slate-950 rounded-xl overflow-hidden border border-slate-700/50">
+      {loading && (
+        <div className="absolute inset-0 flex items-center justify-center bg-slate-950 z-10">
+          <div className="text-center">
+            <Loader2 className="w-8 h-8 text-emerald-500 animate-spin mx-auto mb-2" />
+            <p className="text-sm text-slate-400">Loading live game...</p>
+          </div>
+        </div>
+      )}
+      <iframe
+        src={gameUrl}
+        className="w-full h-full border-0"
+        onLoad={() => setLoading(false)}
+        allow="autoplay"
+        sandbox="allow-scripts allow-same-origin allow-forms"
+        title="Live Aviator Game"
+      />
     </div>
   )
 }
@@ -141,7 +143,7 @@ function ControlBar({ settings, onCrash, onSettingsChange, bets }) {
         <div className="flex items-center gap-3 text-xs">
           <div className="px-2 py-1 bg-slate-800/50 rounded">
             <span className="text-slate-500">Real:</span>
-            <span className="text-white font-bold ml-1">₹{realTotal.toLocaleString()}</span>
+            <span className="text-white font-bold ml-1">PKR {realTotal.toLocaleString('en-IN')}</span>
           </div>
           <div className="px-2 py-1 bg-slate-800/50 rounded">
             <span className="text-slate-500">Remaining:</span>
@@ -155,7 +157,7 @@ function ControlBar({ settings, onCrash, onSettingsChange, bets }) {
           </div>
         </div>
 
-        <a href="https://8769bet.onrender.com/play/aviator" target="_blank" rel="noreferrer"
+        <a href="https://eight769bet-frontend.onrender.com/play/aviator" target="_blank" rel="noreferrer"
           className="ml-auto flex items-center gap-1 text-xs text-emerald-400 hover:text-emerald-300">
           Open in new tab <ExternalLink className="w-3 h-3" />
         </a>
@@ -182,8 +184,8 @@ function BetFeed({ bets }) {
             </div>
           </div>
           <div className="text-right">
-            <p className="text-xs font-medium text-white">₹{Number(b.amount).toLocaleString()}</p>
-            {b.status === 'won' && <p className="text-[10px] text-emerald-400">×{Number(b.cashout_at).toFixed(2)}</p>}
+            <p className="text-xs font-medium text-white">PKR {Number(b.amount).toLocaleString('en-IN')}</p>
+            {b.status === 'won' && <p className="text-[10px] text-emerald-400">x{Number(b.cashout_at).toFixed(2)}</p>}
             {b.status === 'lost' && <p className="text-[10px] text-red-400">Lost</p>}
             {b.status === 'pending' && <p className="text-[10px] text-amber-400">Pending</p>}
           </div>
@@ -218,23 +220,23 @@ function HEPanel({ settings, onSettingsChange, pool, crashes }) {
       <div className="grid grid-cols-3 gap-3">
         <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-4 text-center">
           <p className="text-[10px] text-slate-400 uppercase">Last 10 Rounds</p>
-          <p className="text-2xl font-bold text-white">₹{last10Income.toLocaleString('en-IN')}</p>
+          <p className="text-2xl font-bold text-white">PKR {last10Income.toLocaleString('en-IN')}</p>
         </div>
         <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-4 text-center">
           <p className="text-[10px] text-slate-400 uppercase">Today</p>
-          <p className="text-2xl font-bold text-white">₹{todayIncome.toLocaleString('en-IN')}</p>
+          <p className="text-2xl font-bold text-white">PKR {todayIncome.toLocaleString('en-IN')}</p>
         </div>
         <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-4 text-center">
           <p className="text-[10px] text-slate-400 uppercase">Total (30d)</p>
-          <p className="text-2xl font-bold text-white">₹{totalIncome.toLocaleString('en-IN')}</p>
+          <p className="text-2xl font-bold text-white">PKR {totalIncome.toLocaleString('en-IN')}</p>
         </div>
       </div>
 
       <div className="grid grid-cols-4 gap-3">
         {[
-          { label: 'Total Bets', val: `₹${Number(pool.total_bets || 0).toLocaleString()}`, c: 'text-blue-400' },
-          { label: 'Winnings', val: `₹${Number(pool.total_winnings_paid || 0).toLocaleString()}`, c: 'text-emerald-400' },
-          { label: 'HE Pool', val: `₹${Number(pool.house_edge_pool || 0).toLocaleString()}`, c: 'text-amber-400' },
+          { label: 'Total Bets', val: `PKR ${Number(pool.total_bets || 0).toLocaleString()}`, c: 'text-blue-400' },
+          { label: 'Winnings', val: `PKR ${Number(pool.total_winnings_paid || 0).toLocaleString()}`, c: 'text-emerald-400' },
+          { label: 'HE Pool', val: `PKR ${Number(pool.house_edge_pool || 0).toLocaleString()}`, c: 'text-amber-400' },
           { label: 'Rounds', val: pool.rounds_played || 0, c: 'text-purple-400' },
         ].map(s => (
           <div key={s.label} className="bg-slate-800/30 border border-slate-700/30 rounded-lg p-3 text-center">
@@ -247,7 +249,7 @@ function HEPanel({ settings, onSettingsChange, pool, crashes }) {
       <div className={`p-4 rounded-xl border ${(pool.gross_pnl || 0) >= 0 ? 'bg-emerald-500/10 border-emerald-500/20' : 'bg-red-500/10 border-red-500/20'}`}>
         <p className="text-xs text-slate-400">Gross P&L</p>
         <p className={`text-2xl font-bold ${(pool.gross_pnl || 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-          ₹{Number(pool.gross_pnl || 0).toLocaleString('en-IN')}
+          PKR {Number(pool.gross_pnl || 0).toLocaleString('en-IN')}
         </p>
       </div>
 
@@ -414,7 +416,7 @@ export default function GameDetailView() {
       {/* Live Game (Iframe) + Bets */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="lg:col-span-2">
-          <GamePreview game={game} />
+          <GameIframe />
         </div>
         <div className="bg-slate-900/60 border border-slate-800/50 rounded-xl p-4">
           <div className="flex items-center justify-between mb-3">

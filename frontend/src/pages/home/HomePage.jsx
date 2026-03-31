@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+﻿import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { FireIcon, HeartIcon, PlayIcon, WalletIcon, GiftIcon, ArrowTrendingUpIcon, UserIcon, SparklesIcon, ChevronDownIcon, ClipboardIcon, CheckIcon } from '@heroicons/react/24/outline'
@@ -229,7 +229,7 @@ export default function HomePage() {
               <div className={`text-center p-3 rounded-xl ${isDark ? 'bg-dark-300' : 'bg-white'} border ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
                 <span className="text-2xl">🏆</span>
                 <p className="text-xs text-gray-500 mt-1">Biggest Win</p>
-                <p className="text-sm font-semibold text-green-600 dark:text-green-400">₹2,450</p>
+                <p className="text-sm font-semibold text-green-600 dark:text-green-400">PKR 2,450</p>
               </div>
               <div className={`text-center p-3 rounded-xl ${isDark ? 'bg-dark-300' : 'bg-white'} border ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
                 <span className="text-2xl">🤖</span>
@@ -493,3 +493,4 @@ export default function HomePage() {
     </div>
   )
 }
+

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+﻿import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'react-hot-toast'
 import { motion } from 'framer-motion'
@@ -243,7 +243,7 @@ export default function UsersPage() {
                     </div>
                   </td>
                   <td className="px-6 py-4">
-                    <p className="text-white font-medium">₹{Number(user.balance || 0).toLocaleString('en-IN')}</p>
+                    <p className="text-white font-medium">PKR {Number(user.balance || 0).toLocaleString('en-IN')}</p>
                   </td>
                   <td className="px-6 py-4">
                     <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${
@@ -333,7 +333,7 @@ export default function UsersPage() {
                   <div className="grid grid-cols-2 gap-4">
                     <div className="p-3 bg-slate-700/30 rounded-lg">
                       <p className="text-xs text-slate-400">Balance</p>
-                      <p className="text-lg font-bold text-white">₹{Number(selectedUser.balance || 0).toLocaleString('en-IN')}</p>
+                      <p className="text-lg font-bold text-white">PKR {Number(selectedUser.balance || 0).toLocaleString('en-IN')}</p>
                     </div>
                     <div className="p-3 bg-slate-700/30 rounded-lg">
                       <p className="text-xs text-slate-400">Role</p>
@@ -359,7 +359,7 @@ export default function UsersPage() {
                     </div>
                   </div>
 
-                  <FormField label="Adjust Balance (₹)" hint="Enter new balance amount">
+                  <FormField label="Adjust Balance (PKR )" hint="Enter new balance amount">
                     <Input
                       type="number"
                       step="0.01"
@@ -411,3 +411,4 @@ export default function UsersPage() {
     </div>
   )
 }
+

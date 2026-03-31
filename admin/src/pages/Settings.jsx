@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+﻿import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'react-hot-toast'
 import { motion } from 'framer-motion'
@@ -247,18 +247,18 @@ export default function SettingsPage() {
           <p className="text-sm text-slate-400 mb-4">Configure deposit and withdrawal limits</p>
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
-              <FormField label="Min Deposit (₹)">
+              <FormField label="Min Deposit (PKR )">
                 <Input type="number" value={walletSettings.min_deposit} onChange={e => setWalletSettings(s => ({ ...s, min_deposit: e.target.value }))} />
               </FormField>
-              <FormField label="Max Deposit (₹)">
+              <FormField label="Max Deposit (PKR )">
                 <Input type="number" value={walletSettings.max_deposit} onChange={e => setWalletSettings(s => ({ ...s, max_deposit: e.target.value }))} />
               </FormField>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <FormField label="Min Withdrawal (₹)">
+              <FormField label="Min Withdrawal (PKR )">
                 <Input type="number" value={walletSettings.min_withdrawal} onChange={e => setWalletSettings(s => ({ ...s, min_withdrawal: e.target.value }))} />
               </FormField>
-              <FormField label="Max Withdrawal (₹)">
+              <FormField label="Max Withdrawal (PKR )">
                 <Input type="number" value={walletSettings.max_withdrawal} onChange={e => setWalletSettings(s => ({ ...s, max_withdrawal: e.target.value }))} />
               </FormField>
             </div>
@@ -287,7 +287,7 @@ export default function SettingsPage() {
           <div className="bg-slate-800/60 border border-slate-700/50 rounded-xl p-6 text-center">
             <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Wallet Balance</p>
             <p className="text-3xl font-bold text-cyan-400">
-              ₹{Number(wallet?.balance || 0).toLocaleString('en-IN')}
+              PKR {Number(wallet?.balance || 0).toLocaleString('en-IN')}
             </p>
           </div>
           <p className="text-xs text-slate-500 mt-3">This balance is used for payouts and is reduced by approved withdrawals.</p>
@@ -296,3 +296,4 @@ export default function SettingsPage() {
     </div>
   )
 }
+

@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react'
+﻿import { useEffect, useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { ClipboardIcon, CheckIcon, WalletIcon, GiftIcon, UsersIcon, ArrowTrendingUpIcon, ArrowTrendingDownIcon, BellIcon, ShieldCheckIcon, ChevronRightIcon, StarIcon, CogIcon, DocumentTextIcon, TrophyIcon, PlusIcon, TrashIcon, LockClosedIcon, BanknotesIcon, PhoneIcon, ClockIcon, TicketIcon, UserIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline'
@@ -584,7 +584,7 @@ export default function ProfilePage() {
                 Copy
               </button>
             </div>
-            <p className="text-xs text-gray-500 mt-2">Earn ₹50 for each friend who joins</p>
+            <p className="text-xs text-gray-500 mt-2">Earn PKR 50 for each friend who joins</p>
           </div>
         )}
 
@@ -1180,3 +1180,4 @@ function NotificationsModal({ open, onClose }) {
     </Dialog>
   )
 }
+

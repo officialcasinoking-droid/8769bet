@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+﻿import { useState, useEffect, useRef, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
 import { toast } from 'react-hot-toast'
@@ -231,10 +231,10 @@ function PaymentMethodModal({ open, onClose, method, onSaved }) {
 
           {/* Amounts */}
           <div className="grid grid-cols-2 gap-4">
-            <FormField label="Min Amount (₹)" error={errors.min_amount}>
+            <FormField label="Min Amount (PKR )" error={errors.min_amount}>
               <Input type="number" value={form.min_amount} onChange={e => set('min_amount', Number(e.target.value))} min={1} />
             </FormField>
-            <FormField label="Max Amount (₹)" error={errors.max_amount}>
+            <FormField label="Max Amount (PKR )" error={errors.max_amount}>
               <Input type="number" value={form.max_amount} onChange={e => set('max_amount', Number(e.target.value))} min={1} />
             </FormField>
           </div>
@@ -244,7 +244,7 @@ function PaymentMethodModal({ open, onClose, method, onSaved }) {
             <FormField label="Fee (%)" error={errors.fee_percent} hint="0 = no fee">
               <Input type="number" step="0.1" value={form.fee_percent} onChange={e => set('fee_percent', Number(e.target.value))} min={0} max={100} />
             </FormField>
-            <FormField label="Daily Limit (₹)" error={errors.daily_limit}>
+            <FormField label="Daily Limit (PKR )" error={errors.daily_limit}>
               <Input type="number" value={form.daily_limit} onChange={e => set('daily_limit', Number(e.target.value))} min={0} />
             </FormField>
           </div>
@@ -370,9 +370,9 @@ function PaymentMethodsTable({ methods, onEdit, onDelete, loading }) {
                       <span className="flex items-center gap-1">
                         {countryFlags[country] || '🌐'} {country}
                       </span>
-                      <span>₹{Number(method.min_amount).toLocaleString()} – ₹{Number(method.max_amount).toLocaleString()}</span>
+                      <span>PKR {Number(method.min_amount).toLocaleString()} – PKR {Number(method.max_amount).toLocaleString()}</span>
                       <span>Fee: {method.fee_percent}%</span>
-                      <span>Daily: ₹{Number(method.daily_limit).toLocaleString()}</span>
+                      <span>Daily: PKR {Number(method.daily_limit).toLocaleString()}</span>
                     </div>
                   </div>
                 </div>
@@ -494,3 +494,4 @@ export function PaymentMethodsSection() {
 }
 
 export default PaymentMethodsSection
+

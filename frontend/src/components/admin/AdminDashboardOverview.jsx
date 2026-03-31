@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+﻿import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { supabase } from '../../lib/supabase'
@@ -102,7 +102,7 @@ const CARDS = [
     badgeFn: async () => {
       const { data } = await supabase.from('jackpot_tiers').select('current_amount').eq('id', 'grand').single()
       if (!data?.current_amount) return null
-      return `₹${Number(data.current_amount).toLocaleString('en-IN')}`
+      return `PKR ${Number(data.current_amount).toLocaleString('en-IN')}`
     },
   },
   {
@@ -270,7 +270,7 @@ function AdminCard({ card, index }) {
         <div className="flex items-center gap-2">
           <span className="text-lg font-bold text-white">
             {typeof primary === 'number' && primary > 1000
-              ? `₹${(primary / 100000).toFixed(1)}L`
+              ? `PKR ${(primary / 100000).toFixed(1)}L`
               : typeof primary === 'object' && primary instanceof Date
               ? primary.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
               : typeof primary === 'number'
@@ -302,3 +302,4 @@ export default function AdminDashboardOverview() {
     </div>
   )
 }
+

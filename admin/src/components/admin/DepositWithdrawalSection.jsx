@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+﻿import { useState, useEffect, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
 import { toast } from 'react-hot-toast'
@@ -225,8 +225,8 @@ function PendingRow({ item, onApprove, onReject }) {
       </div>
       <div className="flex items-center gap-3">
         <div className="text-right mr-4">
-          <p className="text-sm font-bold text-white">₹{Number(item.amount).toLocaleString('en-IN')}</p>
-          {item.fee > 0 && <p className="text-[10px] text-slate-500">Fee: ₹{Number(item.fee).toLocaleString()}</p>}
+          <p className="text-sm font-bold text-white">PKR {Number(item.amount).toLocaleString('en-IN')}</p>
+          {item.fee > 0 && <p className="text-[10px] text-slate-500">Fee: PKR {Number(item.fee).toLocaleString()}</p>}
         </div>
         <Button variant="outline" size="sm" onClick={() => onReject(item)}>
           <X className="w-3 h-3" /> Reject
@@ -269,7 +269,7 @@ function PaymentMethodRow({ method, onEdit, onDelete }) {
           </div>
           <div className="flex items-center gap-4 text-xs text-slate-500">
             <span>{countryFlags[method.country] || '🌐'} {method.type}</span>
-            <span>₹{Number(method.min_amount).toLocaleString()} – ₹{Number(method.max_amount).toLocaleString()}</span>
+            <span>PKR {Number(method.min_amount).toLocaleString()} – PKR {Number(method.max_amount).toLocaleString()}</span>
             <span>Fee: {method.fee_percent}%</span>
           </div>
         </div>
@@ -465,7 +465,7 @@ function RejectModal({ open, onClose, item, onConfirm }) {
     <Dialog open={open} onClose={onClose} className="max-w-sm">
       <DialogHeader onClose={onClose}>
         <DialogTitle>Reject Withdrawal</DialogTitle>
-        <DialogDescription>Are you sure you want to reject this withdrawal of ₹{Number(item?.amount).toLocaleString('en-IN')}?</DialogDescription>
+        <DialogDescription>Are you sure you want to reject this withdrawal of PKR {Number(item?.amount).toLocaleString('en-IN')}?</DialogDescription>
       </DialogHeader>
       <DialogContent>
         <FormField label="Rejection Reason">
@@ -497,7 +497,7 @@ function ApproveModal({ open, onClose, item, onConfirm }) {
     <Dialog open={open} onClose={onClose} className="max-w-sm">
       <DialogHeader onClose={onClose}>
         <DialogTitle>Approve Withdrawal</DialogTitle>
-        <DialogDescription>Approve withdrawal of ₹{Number(item?.amount).toLocaleString('en-IN')}?</DialogDescription>
+        <DialogDescription>Approve withdrawal of PKR {Number(item?.amount).toLocaleString('en-IN')}?</DialogDescription>
       </DialogHeader>
       <DialogFooter>
         <Button variant="outline" onClick={onClose}>Cancel</Button>
@@ -818,3 +818,4 @@ export default function DepositWithdrawalSection() {
     </div>
   )
 }
+

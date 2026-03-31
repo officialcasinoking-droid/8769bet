@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+﻿import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { supabase } from '../../lib/supabase'
@@ -66,7 +66,7 @@ const CARDS = [
       try {
         const { data } = await supabase.from('jackpot_tiers').select('current_amount').eq('id', 'grand').single()
         if (!data?.current_amount) return 0
-        return Number(data.current_amount) >= 100000 ? `₹${(Number(data.current_amount) / 100000).toFixed(1)}L` : `₹${Number(data.current_amount).toLocaleString('en-IN')}`
+        return Number(data.current_amount) >= 100000 ? `PKR ${(Number(data.current_amount) / 100000).toFixed(1)}L` : `PKR ${Number(data.current_amount).toLocaleString('en-IN')}`
       } catch { return '—' }
     },
     badgeTable: 'jackpot_tiers',
@@ -97,7 +97,7 @@ const CARDS = [
       try {
         const { data } = await supabase.from('admin_wallet').select('balance').eq('id', 'main').single()
         if (!data?.balance) return 0
-        return Number(data.balance) >= 100000 ? `₹${(Number(data.balance) / 100000).toFixed(1)}L` : `₹${Number(data.balance).toLocaleString('en-IN')}`
+        return Number(data.balance) >= 100000 ? `PKR ${(Number(data.balance) / 100000).toFixed(1)}L` : `PKR ${Number(data.balance).toLocaleString('en-IN')}`
       } catch { return '—' }
     },
     badgeTable: 'transactions',
@@ -276,3 +276,4 @@ export default function AdminDashboardOverview() {
     </div>
   )
 }
+

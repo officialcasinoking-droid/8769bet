@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+﻿import { useState, useEffect, useRef, useCallback } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'react-hot-toast'
 import { supabase } from '../../lib/supabase'
@@ -315,7 +315,7 @@ export default function AviatorControlPanel() {
           <div className="flex items-center gap-3 text-xs">
             <div className="px-2 py-1 bg-slate-800/50 rounded">
               <span className="text-slate-500">Real:</span>
-              <span className="text-white font-bold ml-1">₹{realTotal.toLocaleString()}</span>
+              <span className="text-white font-bold ml-1">PKR {realTotal.toLocaleString()}</span>
             </div>
             <div className="px-2 py-1 bg-slate-800/50 rounded">
               <span className="text-slate-500">Remaining:</span>
@@ -346,8 +346,8 @@ export default function AviatorControlPanel() {
         {[
           { label: 'Real Users', value: realBets.length, color: 'text-blue-400', bg: 'bg-blue-500/15' },
           { label: 'Bots', value: botBets.length, color: 'text-purple-400', bg: 'bg-purple-500/15' },
-          { label: 'Real Bets', value: `₹${realTotal.toLocaleString()}`, color: 'text-emerald-400', bg: 'bg-emerald-500/15' },
-          { label: 'Cashed Out', value: `₹${cashedTotal.toLocaleString()}`, color: 'text-cyan-400', bg: 'bg-cyan-500/15' },
+          { label: 'Real Bets', value: `PKR ${realTotal.toLocaleString()}`, color: 'text-emerald-400', bg: 'bg-emerald-500/15' },
+          { label: 'Cashed Out', value: `PKR ${cashedTotal.toLocaleString()}`, color: 'text-cyan-400', bg: 'bg-cyan-500/15' },
         ].map((s, i) => (
           <div key={s.label} className={`${s.bg} border border-slate-700/50 rounded-xl p-3`}>
             <p className="text-[10px] text-slate-400 uppercase">{s.label}</p>
@@ -362,9 +362,9 @@ export default function AviatorControlPanel() {
           {/* Pool Stats */}
           <div className="grid grid-cols-4 gap-3">
             {[
-              { label: 'Total Bets', val: `₹${Number(pool.total_bets || 0).toLocaleString()}`, c: 'text-blue-400' },
-              { label: 'Winnings', val: `₹${Number(pool.total_winnings_paid || 0).toLocaleString()}`, c: 'text-emerald-400' },
-              { label: 'HE Pool', val: `₹${Number(pool.house_edge_pool || 0).toLocaleString()}`, c: 'text-amber-400' },
+              { label: 'Total Bets', val: `PKR ${Number(pool.total_bets || 0).toLocaleString()}`, c: 'text-blue-400' },
+              { label: 'Winnings', val: `PKR ${Number(pool.total_winnings_paid || 0).toLocaleString()}`, c: 'text-emerald-400' },
+              { label: 'HE Pool', val: `PKR ${Number(pool.house_edge_pool || 0).toLocaleString()}`, c: 'text-amber-400' },
               { label: 'Rounds', val: pool.rounds_played || 0, c: 'text-purple-400' },
             ].map(s => (
               <div key={s.label} className="bg-slate-800/30 border border-slate-700/30 rounded-lg p-3 text-center">
@@ -377,7 +377,7 @@ export default function AviatorControlPanel() {
           <div className={`p-4 rounded-xl border ${(pool.gross_pnl || 0) >= 0 ? 'bg-emerald-500/10 border-emerald-500/20' : 'bg-red-500/10 border-red-500/20'}`}>
             <p className="text-xs text-slate-400">Gross P&L</p>
             <p className={`text-2xl font-bold ${(pool.gross_pnl || 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-              ₹{Number(pool.gross_pnl || 0).toLocaleString('en-IN')}
+              PKR {Number(pool.gross_pnl || 0).toLocaleString('en-IN')}
             </p>
           </div>
 
@@ -468,7 +468,7 @@ export default function AviatorControlPanel() {
                         </span>
                       </td>
                       <td className="px-3 py-1.5">
-                        <span className="text-xs font-bold text-white">₹{Number(bet.amount || 0).toLocaleString()}</span>
+                        <span className="text-xs font-bold text-white">PKR {Number(bet.amount || 0).toLocaleString()}</span>
                       </td>
                       <td className="px-3 py-1.5">
                         {bet.auto_cashout_at ? (
@@ -488,9 +488,9 @@ export default function AviatorControlPanel() {
                       </td>
                       <td className="px-3 py-1.5">
                         {bet.status === 'won' ? (
-                          <span className="text-xs font-bold text-emerald-400">+₹{Number(bet.cashout_amount || 0).toLocaleString()}</span>
+                          <span className="text-xs font-bold text-emerald-400">+PKR {Number(bet.cashout_amount || 0).toLocaleString()}</span>
                         ) : bet.status === 'lost' ? (
-                          <span className="text-xs font-bold text-red-400">-₹{Number(bet.amount || 0)}</span>
+                          <span className="text-xs font-bold text-red-400">-PKR {Number(bet.amount || 0)}</span>
                         ) : (
                           <span className="text-xs text-slate-600">—</span>
                         )}
@@ -506,3 +506,4 @@ export default function AviatorControlPanel() {
     </div>
   )
 }
+

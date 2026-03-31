@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+﻿import { useState, useRef, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { MagnifyingGlassIcon, SunIcon, MoonIcon, UserIcon, ChevronDownIcon, LogoutIcon } from '@heroicons/react/24/outline'
@@ -108,7 +108,7 @@ export default function TopBar({ onSearchOpen }) {
               {/* Balance - Always visible */}
               <div className={`hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full ${isDark ? 'bg-dark-300' : 'bg-gray-100'}`}>
                 <span className="text-primary-600 dark:text-primary-400 font-semibold text-sm">
-                  ₹{user.balance?.toFixed(2) || '0.00'}
+                  PKR {user.balance?.toFixed(2) || '0.00'}
                 </span>
               </div>
 
@@ -150,7 +150,7 @@ export default function TopBar({ onSearchOpen }) {
                           </div>
                           <div className="flex-1 min-w-0">
                             <p className="font-semibold text-gray-900 dark:text-white truncate">{user.full_name || user.username}</p>
-                            <p className="text-sm text-primary-600 dark:text-primary-400 font-medium">₹{user.balance?.toFixed(2) || '0.00'}</p>
+                            <p className="text-sm text-primary-600 dark:text-primary-400 font-medium">PKR {user.balance?.toFixed(2) || '0.00'}</p>
                           </div>
                         </div>
                       </div>
@@ -201,3 +201,4 @@ export default function TopBar({ onSearchOpen }) {
     </header>
   )
 }
+
