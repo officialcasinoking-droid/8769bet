@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
+import { motion } from 'framer-motion'
 import { Button, FormField, Input, Select } from '../../components/ui/FormElements'
 import {
   ArrowLeft, Zap, Users, Bot, TrendingUp, TrendingDown,
