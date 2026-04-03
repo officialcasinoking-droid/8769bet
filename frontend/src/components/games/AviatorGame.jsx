@@ -37,6 +37,10 @@ import {
   getGameSettingsLocal,
   broadcastLiveHE,
   updateHouseEdgePool,
+  broadcastGameState,
+  getSettingsFromDB,
+  checkManualCrash,
+  broadcastLiveHEMetrics,
 } from '../../api/aviator'
 
 const CSS = `
@@ -631,8 +635,11 @@ export default function AviatorGame() {
     if (user?.balance !== undefined) setBal(user.balance)
   }, [user])
   useEffect(() => {
-    if (!isLoggedIn) navigate('/login')
-  }, [isLoggedIn, navigate])
+    if (!isLoggedIn) {
+      // Don't redirect for admin preview - just run in demo mode
+      setBal(10000)
+    }
+  }, [isLoggedIn, user])
   useEffect(() => { multRef.current = mult }, [mult])
   useEffect(() => { phaseRef.current = phase }, [phase])
 
@@ -776,6 +783,7 @@ export default function AviatorGame() {
 
     const saveState = (state) => {
       try { localStorage.setItem('aviator_game_state', JSON.stringify({ ...state, timestamp: Date.now() })) } catch {}
+      broadcastGameState(state)
     }
 
     const runCrash = (actualCrashedAt) => {
@@ -835,14 +843,26 @@ export default function AviatorGame() {
         try { localStorage.setItem('aviator_live_bets', JSON.stringify(liveBetsRef.current)) } catch {}
 
         // Admin manual crash — crash at current actual mult instantly
-        const manualCrash = getManualCrash()
-        if (manualCrash) {
+        const manualCrashSignal = getManualCrash()
+        if (manualCrashSignal) {
           clearManualCrash()
           clearInterval(loopIv.id)
           broadcastLiveHE({ event: 'crash', mode: 'manual', mult: mFixed, elapsed })
+          broadcastLiveHEMetrics({ event: 'crash', mode: 'manual', mult: mFixed, elapsed })
           runCrash(mFixed)
           return
         }
+        
+        // Check Supabase crash signal in background (non-blocking)
+        checkManualCrash().then(hasSignal => {
+          if (hasSignal) {
+            clearManualCrash()
+            clearInterval(loopIv.id)
+            broadcastLiveHE({ event: 'crash', mode: 'manual', mult: mFixed, elapsed })
+            broadcastLiveHEMetrics({ event: 'crash', mode: 'manual', mult: mFixed, elapsed })
+            runCrash(mFixed)
+          }
+        })
 
         // Smart auto house edge — crash when target edge % is reached
         let targetMult = null
@@ -867,6 +887,7 @@ export default function AviatorGame() {
               smartTriggered = true
               clearInterval(loopIv.id)
               broadcastLiveHE({ event: 'crash', mode: 'smart', mult: mFixed, targetMult, elapsed, liveEdge, pendingAmt, exitedAmt, exitRate })
+              broadcastLiveHEMetrics({ event: 'crash', mode: 'smart', mult: mFixed, targetMult, elapsed, liveEdge, pendingAmt, exitedAmt, exitRate, realBets: roundRealBetsRef.current, exitedAmt: roundExitedAmtRef.current })
               runCrash(mFixed)
               return
             }
@@ -877,6 +898,7 @@ export default function AviatorGame() {
             smartTriggered = true
             clearInterval(loopIv.id)
             broadcastLiveHE({ event: 'crash', mode: 'smart_max', mult: mFixed, elapsed })
+            broadcastLiveHEMetrics({ event: 'crash', mode: 'smart_max', mult: mFixed, elapsed })
             runCrash(mFixed)
             return
           }
@@ -887,6 +909,7 @@ export default function AviatorGame() {
           autoCrashed = true
           clearInterval(loopIv.id)
           broadcastLiveHE({ event: 'crash', mode: 'time', mult: mFixed, elapsed })
+          broadcastLiveHEMetrics({ event: 'crash', mode: 'time', mult: mFixed, elapsed })
           runCrash(mFixed)
           return
         }
@@ -899,6 +922,7 @@ export default function AviatorGame() {
           liveEdge = realBets > 0 ? (pendingAmt / realBets) * 100 : 0
           exitRate = roundExitedCountRef.current
           broadcastLiveHE({ event: 'crash', mode: 'natural', mult: mFixed, elapsed, liveEdge, pendingAmt, exitedAmt, exitRate })
+          broadcastLiveHEMetrics({ event: 'crash', mode: 'natural', mult: mFixed, elapsed, liveEdge, pendingAmt, exitedAmt, exitRate, realBets, exitedAmt })
           clearInterval(loopIv.id)
           runCrash(mFixed)
         }
@@ -927,6 +951,17 @@ export default function AviatorGame() {
             heMode,
             mFixed,
             elapsed,
+          })
+          
+          broadcastLiveHEMetrics({
+            event: 'live',
+            realBets,
+            exitedAmt,
+            pendingAmt: pm,
+            liveEdge: edge,
+            exitRate: rate,
+            targetMult: tmult,
+            elapsed: Math.floor(elapsed),
           })
         }
       }, TICK_MS)
@@ -1149,11 +1184,20 @@ export default function AviatorGame() {
   }, [phase, checkAutoCashout])
 
   const place = useCallback((num) => {
-    if (!isLoggedIn) { toast.error('Login to bet'); return }
+    if (!isLoggedIn) { 
+      // Show login prompt - redirect to login with return URL
+      navigate('/login', { state: { from: '/play/aviator' } })
+      return 
+    }
     const a = num === 1 ? b1a : b2a
-    if (a < MIN_BET) { toast.error(`Min ₨${MIN_BET}`); return }
-    if (a > MAX_BET) { toast.error(`Max ₨${MAX_BET}`); return }
-    if (a > bal) { toast.error('Low balance'); return }
+    if (a < MIN_BET) { toast.error(`Min PKR ${MIN_BET}`); return }
+    if (a > MAX_BET) { toast.error(`Max PKR ${MAX_BET}`); return }
+    if (bal <= 0) { 
+      toast.error('Balance is 0 - please deposit to play')
+      navigate('/deposit')
+      return 
+    }
+    if (a > bal) { toast.error('Low balance - please deposit'); return }
     const autoVal = (num === 1 ? b1o : b2o) ? (num === 1 ? b1v : b2v) : null
     const betId = `u_${Date.now()}`
 
