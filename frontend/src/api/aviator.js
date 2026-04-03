@@ -246,24 +246,10 @@ export async function saveSettingsToDB(settings) {
 }
 
 export async function broadcastLiveHEMetrics(metrics) {
+  // Only localStorage - DB table may not exist yet
   try {
-    await supabase
-      .from('aviator_live_he')
-      .upsert({
-        id: 'metrics',
-        event: 'live',
-        real_bets: metrics.realBets || 0,
-        exited_amt: metrics.exitedAmt || 0,
-        pending_amt: metrics.pendingAmt || 0,
-        target_mult: metrics.targetMult || null,
-        live_edge: metrics.liveEdge || 0,
-        exit_rate: metrics.exitRate || 0,
-        elapsed: metrics.elapsed || 0,
-        timestamp: Date.now()
-      })
-  } catch (e) {
-    console.warn('[broadcastLiveHEMetrics]', e?.message)
-  }
+    localStorage.setItem('aviator_live_he', JSON.stringify({ ...metrics, ts: Date.now() }))
+  } catch {}
 }
 
 export async function getLiveHEMetrics() {
