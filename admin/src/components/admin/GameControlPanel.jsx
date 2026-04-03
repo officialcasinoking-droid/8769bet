@@ -105,7 +105,7 @@ function GameIframe() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
   const iframeRef = useRef(null)
-  const gameUrl = 'https://eight769bet-frontend.onrender.com/#/play/aviator?preview=true'
+  const gameUrl = 'https://eight769bet-frontend.onrender.com/#/play/aviator&preview=true'
 
   const handleRefresh = () => {
     setLoading(true)

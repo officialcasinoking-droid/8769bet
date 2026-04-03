@@ -577,7 +577,7 @@ export default function AviatorGame() {
   const navigate = useNavigate()
   const { user, isLoggedIn, updateBalance } = useAuth()
   const toast = useToast()
-  const isPreview = new URLSearchParams(window.location.search).get('preview') === 'true'
+  const isPreview = window.location.hash.includes('preview=true') || new URLSearchParams(window.location.search).get('preview') === 'true'
 
   const [showLoading, setShowLoading] = useState(true)
   const [loadingProgress, setLoadingProgress] = useState(0)
