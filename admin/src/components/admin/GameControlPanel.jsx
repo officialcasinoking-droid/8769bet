@@ -1,9 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { toast } from 'react-hot-toast'
-import { motion, AnimatePresence } from 'framer-motion'
-import { createClient } from '@supabase/supabase-js'
 import { Button, FormField, Input, Select } from '../../components/ui/FormElements'
 import {
   ArrowLeft, Zap, Users, Bot, TrendingUp, TrendingDown,
@@ -11,52 +7,9 @@ import {
   MessageSquare, Send, Play, RotateCcw, BarChart3, AlertTriangle,
   Check, X, ChevronRight, Lightbulb, Target
 } from 'lucide-react'
-import {
-  getGameState, getLiveBets, getCrashHistory, getLiveHEMetrics,
-  getSettingsFromDB, saveSettingsToDB, setManualCrash,
-  getHouseEdgePool, updateHouseEdgePool
-} from '../../api/aviator'
-import { supabaseUrl, supabaseAnonKey } from '../../lib/supabase'
 
-// ── API (uses localStorage - no Supabase calls) ──────────────
-const _supabase = createClient(supabaseUrl, supabaseAnonKey)
-
-async function getGameById(id) {
-  try {
-    const { data } = await _supabase.from('games').select('*').eq('id', id).single()
-    return data
-  } catch { return null }
-}
-
-async function fetchBets() {
-  return await getLiveBets()
-}
-
-async function fetchCrashes(limit = 30) {
-  return await getCrashHistory()
-}
-
-async function fetchPool() {
-  return await getHouseEdgePool()
-}
-
-async function fetchSettings() {
-  return await getSettingsFromDB() || { house_edge: 0.05, he_mode: 'off', he_target_pct: 5, he_min_secs: 3, he_max_secs: 50 }
-}
-
-async function saveSettings(s) {
-  try {
-    await saveSettingsToDB(s)
-    return true
-  } catch (e) { console.warn('[saveSettings]', e?.message); return false }
-}
-
-async function sendCrashSignal() {
-  try {
-    setManualCrash(true)
-    return true
-  } catch (e) { console.warn('[sendCrashSignal]', e?.message); return false }
-}
+const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:3006/ws/aviator'
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3006'
 
 // ── AI Assistant Messages ────────────────────────────────────
 const AI_MESSAGES = {
@@ -86,61 +39,8 @@ const AI_MESSAGES = {
   ],
 }
 
-// ── Game Iframe ──────────────────────────────────────────────
-function GameIframe() {
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(false)
-  const iframeRef = useRef(null)
-  const gameUrl = 'https://eight769bet-frontend.onrender.com/#/play/aviator?preview=true'
-
-  const handleRefresh = () => {
-    setLoading(true)
-    setError(false)
-    if (iframeRef.current) {
-      iframeRef.current.src = gameUrl + '?t=' + Date.now()
-    }
-  }
-
-  return (
-    <div className="relative w-full aspect-video bg-slate-950 rounded-xl overflow-hidden border border-slate-700/50">
-      {loading && !error && (
-        <div className="absolute inset-0 flex items-center justify-center bg-slate-950 z-10">
-          <div className="text-center">
-            <Loader2 className="w-8 h-8 text-emerald-500 animate-spin mx-auto mb-2" />
-            <p className="text-sm text-slate-400">Loading live game...</p>
-          </div>
-        </div>
-      )}
-      {error && (
-        <div className="absolute inset-0 flex items-center justify-center bg-slate-950 z-10">
-          <div className="text-center">
-            <p className="text-sm text-slate-400 mb-3">Game failed to load</p>
-            <button onClick={handleRefresh} className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-500 text-white rounded-lg text-sm hover:bg-emerald-600 transition-colors">
-              <RotateCcw className="w-4 h-4" /> Retry
-            </button>
-          </div>
-        </div>
-      )}
-      <iframe
-        ref={iframeRef}
-        src={gameUrl}
-        className="w-full h-full border-0"
-        onLoad={() => { setLoading(false); setError(false) }}
-        onError={() => { setLoading(false); setError(true) }}
-        allow="autoplay"
-        sandbox="allow-scripts allow-same-origin allow-forms"
-        title="Live Aviator Game"
-      />
-      {/* Refresh button overlay */}
-      <button onClick={handleRefresh} className="absolute top-3 right-3 p-2 bg-slate-900/80 backdrop-blur-sm rounded-lg text-slate-400 hover:text-white transition-colors z-20" title="Refresh game">
-        <RotateCcw className="w-4 h-4" />
-      </button>
-    </div>
-  )
-}
-
 // ── AI Chat Component ────────────────────────────────────────
-function AIChat({ currentSettings }) {
+function AIChat({ settings }) {
   const [messages, setMessages] = useState(AI_MESSAGES.welcome)
   const [input, setInput] = useState('')
   const [typing, setTyping] = useState(false)
@@ -206,22 +106,10 @@ function AIChat({ currentSettings }) {
 
   return (
     <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl overflow-hidden flex flex-col h-[400px]">
-      {/* Header */}
-      <div className="p-3 border-b border-slate-700/50 flex items-center gap-2">
-        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center">
-          <Lightbulb className="w-4 h-4 text-white" />
-        </div>
-        <div>
-          <p className="text-sm font-medium text-white">AI House Edge Assistant</p>
-          <p className="text-[10px] text-emerald-400">Online</p>
-        </div>
-      </div>
-
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-3 space-y-3">
         {messages.map((msg, i) => (
-          <motion.div key={i} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
-            className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+          <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
             <div className={`max-w-[85%] rounded-xl p-3 text-xs whitespace-pre-line ${
               msg.role === 'user'
                 ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
@@ -231,7 +119,7 @@ function AIChat({ currentSettings }) {
                 j % 2 === 1 ? <strong key={j} className="text-white">{part}</strong> : part
               )}
             </div>
-          </motion.div>
+          </div>
         ))}
         {typing && (
           <div className="flex justify-start">
@@ -248,7 +136,7 @@ function AIChat({ currentSettings }) {
       </div>
 
       {/* Quick Actions */}
-      <div className="px-3 py-2 border-t border-slate-700/30">
+      <div className="px-3 py-2 border-t border-slate-700/50">
         <div className="flex gap-1.5 overflow-x-auto pb-1">
           {quickActions.map(qa => (
             <button key={qa.label} onClick={() => { setInput(qa.query); setTimeout(() => handleSend(), 100) }}
@@ -264,7 +152,7 @@ function AIChat({ currentSettings }) {
         <div className="flex gap-2">
           <input type="text" value={input} onChange={e => setInput(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && handleSend()}
-            placeholder="Ask about house edge settings..."
+            placeholder="Ask about house edge..."
             className="flex-1 bg-slate-700/50 border border-slate-600/50 rounded-lg px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500/50" />
           <button onClick={handleSend} disabled={!input.trim()}
             className="p-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
@@ -276,97 +164,147 @@ function AIChat({ currentSettings }) {
   )
 }
 
-// ── Test Simulation ──────────────────────────────────────────
-function TestSimulation({ settings, onRun }) {
-  const [running, setRunning] = useState(false)
-  const [result, setResult] = useState(null)
+// ── Game Canvas ──────────────────────────────────────────────
+function GameCanvas({ phase, mult, countdown, crashPoint }) {
+  const canvasRef = useRef(null)
+  const animRef = useRef(null)
+  const trailRef = useRef([])
 
-  const runSimulation = () => {
-    setRunning(true)
-    setResult(null)
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const ctx = canvas.getContext('2d')
 
-    setTimeout(() => {
-      const he = (settings.house_edge || 0.05) * 100
-      const target = settings.he_target_pct || 5
-      const minSec = settings.he_min_secs || 3
-      const maxSec = settings.he_max_secs || 50
+    const draw = () => {
+      const dpr = 2
+      const w = canvas.offsetWidth
+      const h = canvas.offsetHeight
+      canvas.width = w * dpr
+      canvas.height = h * dpr
+      ctx.scale(dpr, dpr)
 
-      // Simulate crash point based on settings
-      const baseCrash = 1 + (he / 100)
-      const minCrash = Math.max(1.1, 1 + (minSec * 0.06))
-      const maxCrash = Math.min(100, Math.pow(Math.E, 0.06 * maxSec))
+      // Background
+      ctx.fillStyle = '#0c1220'
+      ctx.fillRect(0, 0, w, h)
 
-      let estimatedCrash
-      if (settings.he_mode === 'smart') {
-        estimatedCrash = baseCrash + (target / 10)
-      } else if (settings.he_mode === 'aggressive') {
-        estimatedCrash = baseCrash * 0.8
-      } else {
-        estimatedCrash = 1 + Math.random() * 10
+      // Grid
+      ctx.strokeStyle = 'rgba(255,255,255,0.04)'
+      ctx.lineWidth = 0.5
+      for (let i = 0; i < 10; i++) {
+        ctx.beginPath(); ctx.moveTo(0, (h / 10) * i); ctx.lineTo(w, (h / 10) * i); ctx.stroke()
+        ctx.beginPath(); ctx.moveTo((w / 10) * i, 0); ctx.lineTo((w / 10) * i, h); ctx.stroke()
       }
 
-      estimatedCrash = Math.max(minCrash, Math.min(maxCrash, estimatedCrash))
+      if (phase === 'flying') {
+        const maxMult = Math.max(mult, 5)
+        const progress = Math.min(1, Math.log(mult) / Math.log(maxMult))
+        const eased = Math.pow(progress, 0.6)
 
-      const avgBet = 100
-      const roundsPerHour = 60
-      const estProfitPerHour = avgBet * roundsPerHour * (he / 100)
+        const originX = 5
+        const originY = h * 0.90
+        const maxTravelX = w - 10
+        const maxTravelY = h * 0.78
 
-      setResult({
-        crash: estimatedCrash.toFixed(2),
-        minCrash: minCrash.toFixed(2),
-        maxCrash: maxCrash.toFixed(2),
-        profitPerHour: estProfitPerHour.toFixed(0),
-        playerRating: he <= 5 ? 'Good' : he <= 10 ? 'Moderate' : 'Risky',
-        playerRatingColor: he <= 5 ? 'text-emerald-400' : he <= 10 ? 'text-amber-400' : 'text-red-400',
-      })
-      setRunning(false)
-    }, 1500)
-  }
+        const nx = originX + eased * maxTravelX
+        const ny = originY - eased * maxTravelY
+
+        trailRef.current.push({ x: nx, y: ny })
+        if (trailRef.current.length > 200) trailRef.current.shift()
+
+        // Draw trail
+        if (trailRef.current.length > 1) {
+          ctx.beginPath()
+          ctx.strokeStyle = '#00e887'
+          ctx.lineWidth = 2.5
+          ctx.shadowColor = '#00e887'
+          ctx.shadowBlur = 10
+          ctx.moveTo(trailRef.current[0].x, trailRef.current[0].y)
+          for (let i = 1; i < trailRef.current.length; i++) {
+            ctx.lineTo(trailRef.current[i].x, trailRef.current[i].y)
+          }
+          ctx.stroke()
+          ctx.shadowBlur = 0
+        }
+
+        // Plane
+        ctx.beginPath()
+        ctx.arc(nx, ny, 10, 0, Math.PI * 2)
+        ctx.fillStyle = 'rgba(0,232,135,0.3)'
+        ctx.fill()
+        ctx.font = '16px sans-serif'
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        ctx.fillText('✈️', nx, ny)
+
+        // Multiplier
+        ctx.font = 'bold 48px sans-serif'
+        ctx.fillStyle = '#00e887'
+        ctx.shadowColor = '#00e887'
+        ctx.shadowBlur = 20
+        ctx.fillText(`${mult.toFixed(2)}x`, w / 2, h / 2)
+        ctx.shadowBlur = 0
+      } else if (phase === 'crashed') {
+        // Explosion
+        const cx = w / 2
+        const cy = h / 2
+        const t = Date.now() % 1000 / 1000
+
+        for (let i = 0; i < 15; i++) {
+          const ag = (i / 15) * Math.PI * 2
+          const di = 14 + Math.sin(t * 4 + i) * 12
+          ctx.fillStyle = ['#ff4d4d', '#ff8c00', '#ffd600'][i % 3]
+          ctx.globalAlpha = 0.35 + Math.sin(t * 4 + i) * 0.2
+          ctx.beginPath()
+          ctx.arc(cx + Math.cos(ag) * di, cy + Math.sin(ag) * di, 2, 0, Math.PI * 2)
+          ctx.fill()
+        }
+        ctx.globalAlpha = 1
+
+        ctx.font = 'bold 48px sans-serif'
+        ctx.fillStyle = '#ff4d4d'
+        ctx.shadowColor = '#ff4d4d'
+        ctx.shadowBlur = 20
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        ctx.fillText(`${crashPoint.toFixed(2)}x`, w / 2, h / 2)
+        ctx.shadowBlur = 0
+      } else {
+        // Betting
+        ctx.font = 'bold 56px sans-serif'
+        ctx.fillStyle = '#00e887'
+        ctx.shadowColor = '#00e887'
+        ctx.shadowBlur = 20
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        ctx.fillText(`${countdown.toFixed(1)}`, w / 2, h / 2 - 10)
+        ctx.shadowBlur = 0
+
+        ctx.font = '14px sans-serif'
+        ctx.fillStyle = 'rgba(255,255,255,0.4)'
+        ctx.fillText('Waiting for next round', w / 2, h / 2 + 20)
+      }
+
+      animRef.current = requestAnimationFrame(draw)
+    }
+
+    animRef.current = requestAnimationFrame(draw)
+    return () => {
+      if (animRef.current) cancelAnimationFrame(animRef.current)
+    }
+  }, [phase, mult, countdown, crashPoint])
 
   return (
-    <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-4">
-      <div className="flex items-center justify-between mb-3">
-        <h4 className="text-sm font-bold text-white flex items-center gap-2">
-          <Play className="w-4 h-4 text-blue-400" />
-          Test Settings
-        </h4>
-        <button onClick={runSimulation} disabled={running}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-500/20 text-blue-400 rounded-lg text-xs font-medium hover:bg-blue-500/30 transition-colors disabled:opacity-50">
-          {running ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
-          {running ? 'Simulating...' : 'Run Test'}
-        </button>
+    <div className="relative w-full aspect-video bg-slate-950 rounded-xl overflow-hidden border border-slate-700/50">
+      <canvas ref={canvasRef} className="w-full h-full" />
+      <div className="absolute top-3 left-3">
+        <span className={`px-2 py-1 rounded-lg text-xs font-bold ${
+          phase === 'flying' ? 'bg-emerald-500/20 text-emerald-400' :
+          phase === 'crashed' ? 'bg-red-500/20 text-red-400' :
+          'bg-amber-500/20 text-amber-400'
+        }`}>
+          {phase === 'flying' ? 'FLYING' : phase === 'crashed' ? 'CRASHED' : 'BETTING'}
+        </span>
       </div>
-
-      {result && (
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-3">
-          <div className="grid grid-cols-2 gap-3">
-            <div className="bg-slate-700/30 rounded-lg p-2.5 text-center">
-              <p className="text-[10px] text-slate-500">Est. Crash Point</p>
-              <p className="text-lg font-bold text-emerald-400">{result.crash}x</p>
-            </div>
-            <div className="bg-slate-700/30 rounded-lg p-2.5 text-center">
-              <p className="text-[10px] text-slate-500">Profit/Hour</p>
-              <p className="text-lg font-bold text-amber-400">PKR {result.profitPerHour}</p>
-            </div>
-            <div className="bg-slate-700/30 rounded-lg p-2.5 text-center">
-              <p className="text-[10px] text-slate-500">Min Crash</p>
-              <p className="text-lg font-bold text-blue-400">{result.minCrash}x</p>
-            </div>
-            <div className="bg-slate-700/30 rounded-lg p-2.5 text-center">
-              <p className="text-[10px] text-slate-500">Max Crash</p>
-              <p className="text-lg font-bold text-purple-400">{result.maxCrash}x</p>
-            </div>
-          </div>
-          <div className="flex items-center justify-between p-2 bg-slate-700/30 rounded-lg">
-            <span className="text-xs text-slate-400">Player Experience</span>
-            <span className={`text-sm font-bold ${result.playerRatingColor}`}>{result.playerRating}</span>
-          </div>
-        </motion.div>
-      )}
-
-      {!result && !running && (
-        <p className="text-xs text-slate-500 text-center py-4">Click "Run Test" to simulate your current settings</p>
-      )}
     </div>
   )
 }
@@ -375,80 +313,117 @@ function TestSimulation({ settings, onRun }) {
 export default function GameControlPanel() {
   const { slug } = useParams()
   const navigate = useNavigate()
-  const qc = useQueryClient()
-  const gameId = slug
-  const [bets, setBets] = useState([])
-  const [crashes, setCrashes] = useState([])
-  const [pool, setPool] = useState({})
-  const [settings, setSettings] = useState({})
-  const [saving, setSaving] = useState(false)
+  const wsRef = useRef(null)
 
-  const { data: game, isLoading } = useQuery({
-    queryKey: ['game', gameId],
-    queryFn: () => getGameById(gameId),
-    enabled: !!gameId,
+  // Game state from WebSocket
+  const [phase, setPhase] = useState('betting')
+  const [mult, setMult] = useState(1.00)
+  const [countdown, setCountdown] = useState(8)
+  const [crashPoint, setCrashPoint] = useState(0)
+  const [connected, setConnected] = useState(false)
+
+  // Settings
+  const [settings, setSettings] = useState({
+    house_edge: 0.05,
+    he_mode: 'off',
+    he_target_pct: 5,
+    he_min_secs: 3,
+    he_max_secs: 50,
   })
 
-  // Load data
+  // Crash history
+  const [crashHistory, setCrashHistory] = useState([])
+
+  // ── WebSocket Connection ───────────────────────────────────
   useEffect(() => {
-    const load = async () => {
-      const [b, c, p, s] = await Promise.all([
-        fetchBets(), fetchCrashes(30), fetchPool(), fetchSettings()
-      ])
-      setBets(b); setCrashes(c); setPool(p); setSettings(s)
+    const connect = () => {
+      const ws = new WebSocket(WS_URL)
+
+      ws.onopen = () => {
+        console.log('[GameControl] Connected to game server')
+        setConnected(true)
+      }
+
+      ws.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data)
+
+          if (msg.type === 'game_state') {
+            setPhase(msg.phase)
+            if (msg.phase === 'betting') {
+              setCountdown(msg.countdown || 0)
+              setMult(1.00)
+            } else if (msg.phase === 'flying') {
+              setMult(msg.mult || 1.00)
+            } else if (msg.phase === 'crashed') {
+              setCrashPoint(msg.crash_point || 0)
+              if (msg.crash_point) {
+                setCrashHistory(prev => [msg.crash_point, ...prev].slice(0, 30))
+              }
+            }
+          }
+
+          if (msg.type === 'settings_updated') {
+            setSettings(msg.settings)
+          }
+        } catch (e) {
+          console.warn('[GameControl] Invalid message:', e)
+        }
+      }
+
+      ws.onclose = () => {
+        console.log('[GameControl] Disconnected, reconnecting...')
+        setConnected(false)
+        setTimeout(connect, 3000)
+      }
+
+      ws.onerror = (err) => {
+        console.error('[GameControl] WebSocket error:', err)
+      }
+
+      wsRef.current = ws
     }
-    load()
-  }, [])
 
-  // Poll for updates
-  useEffect(() => {
-    const betsIv = setInterval(async () => {
-      const b = await fetchBets()
-      setBets(b)
-    }, 3000)
-
-    const crashesIv = setInterval(async () => {
-      const c = await fetchCrashes(30)
-      setCrashes(c)
-    }, 5000)
+    connect()
 
     return () => {
-      clearInterval(betsIv)
-      clearInterval(crashesIv)
+      if (wsRef.current) {
+        wsRef.current.close()
+        wsRef.current = null
+      }
     }
   }, [])
 
-  const handleCrash = async () => {
-    toast.loading('Crashing...', { duration: 300 })
-    await sendCrashSignal()
-    toast.success('Crash signal sent!')
+  // ── Controls ───────────────────────────────────────────────
+  const handleManualCrash = async () => {
+    if (phase !== 'flying') return
+    try {
+      await fetch(`${API_URL}/api/aviator/crash`, { method: 'POST' })
+    } catch (e) {
+      console.warn('[ManualCrash]', e?.message)
+    }
   }
 
   const handleSaveSettings = async () => {
-    setSaving(true)
-    const ok = await saveSettings(settings)
-    if (ok) {
-      toast.success('Settings saved')
-    } else {
-      toast.error('Failed to save')
+    try {
+      await fetch(`${API_URL}/api/aviator/settings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ settings }),
+      })
+    } catch (e) {
+      console.warn('[SaveSettings]', e?.message)
     }
-    setSaving(false)
   }
 
-  const realBets = bets.filter(b => !b.is_bot)
-  const botBets = bets.filter(b => b.is_bot)
-  const realTotal = realBets.reduce((s, b) => s + Number(b.amount || 0), 0)
-  const cashedOut = realBets.filter(b => b.status === 'won')
-  const cashedTotal = cashedOut.reduce((s, b) => s + Number(b.cashout_amount || b.won_amount || 0), 0)
-  const remainingPct = realTotal > 0 ? (((realTotal - cashedTotal) / realTotal) * 100) : 100
-
-  if (isLoading) return <div className="flex items-center justify-center h-96"><Loader2 className="w-8 h-8 text-emerald-500 animate-spin" /></div>
-  if (!game) return (
-    <div className="text-center py-16">
-      <p className="text-slate-400">Game not found</p>
-      <Button variant="outline" onClick={() => navigate('/games')} className="mt-4"><ArrowLeft className="w-4 h-4" /> Back</Button>
-    </div>
-  )
+  const handleTest = () => {
+    // Simulate a test round
+    const he = settings.house_edge
+    const crashPoint = (Math.random() < 0.4 - he * 2) ? 1 + Math.random() * 0.5 :
+                     (Math.random() < 0.25 - he) ? 1.5 + Math.random() :
+                     2.5 + Math.random() * 2
+    alert(`Test Result: Crash at ${crashPoint.toFixed(2)}x`)
+  }
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
@@ -458,176 +433,123 @@ export default function GameControlPanel() {
           <Button variant="ghost" onClick={() => navigate('/games')}><ArrowLeft className="w-4 h-4" /></Button>
           <div>
             <h2 className="text-xl font-bold text-white flex items-center gap-2">
-              {game.thumbnail_url ? <img src={game.thumbnail_url} alt="" className="w-7 h-7 rounded" /> : '🎮'}
-              {game.name} - Control Panel
+              <Zap className="w-5 h-5 text-amber-400" />
+              Aviator Game Control
             </h2>
-            <p className="text-xs text-slate-400">{game.provider} • {game.category} • RTP {Number(game.rtp || 0).toFixed(1)}%</p>
+            <p className="text-xs text-slate-400">
+              {connected ? 'Connected to game server' : 'Connecting...'}
+            </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <a href="https://eight769bet-frontend.onrender.com/#/play/aviator" target="_blank" rel="noreferrer"
-            className="flex items-center gap-1 px-3 py-2 bg-slate-800 text-slate-300 rounded-lg text-xs hover:bg-slate-700 transition-colors">
-            <ExternalLink className="w-3.5 h-3.5" /> Open Full Game
-          </a>
-        </div>
+        <a href="https://8769bet.onrender.com/play/aviator" target="_blank" rel="noreferrer"
+          className="flex items-center gap-1 px-3 py-2 bg-slate-800 text-slate-300 rounded-lg text-xs hover:bg-slate-700 transition-colors">
+          <ExternalLink className="w-3.5 h-3.5" /> Open User Game
+        </a>
       </div>
 
-      {/* Live Stats Bar */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-        {[
-          { label: 'Real Users', value: realBets.length, icon: Users, color: 'text-blue-400', bg: 'bg-blue-500/15' },
-          { label: 'Bots', value: botBets.length, icon: Bot, color: 'text-purple-400', bg: 'bg-purple-500/15' },
-          { label: 'Real Pot', value: `PKR ${realTotal.toLocaleString()}`, icon: TrendingUp, color: 'text-emerald-400', bg: 'bg-emerald-500/15' },
-          { label: 'Cashed Out', value: `PKR ${cashedTotal.toLocaleString()}`, icon: TrendingDown, color: 'text-cyan-400', bg: 'bg-cyan-500/15' },
-          { label: 'Remaining', value: `${remainingPct.toFixed(0)}%`, icon: Target, color: remainingPct <= (settings.he_target_pct || 5) ? 'text-red-400' : 'text-emerald-400', bg: remainingPct <= (settings.he_target_pct || 5) ? 'bg-red-500/15' : 'bg-emerald-500/15' },
-        ].map((stat, i) => {
-          const Icon = stat.icon
-          return (
-            <motion.div key={stat.label} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}
-              className={`${stat.bg} border border-slate-700/50 rounded-xl p-3`}>
-              <div className="flex items-center gap-2 mb-1">
-                <Icon className={`w-3.5 h-3.5 ${stat.color}`} />
-                <span className="text-[10px] text-slate-400 uppercase">{stat.label}</span>
-              </div>
-              <p className={`text-lg font-bold ${stat.color}`}>{stat.value}</p>
-            </motion.div>
-          )
-        })}
-      </div>
+      {/* Game Canvas */}
+      <GameCanvas phase={phase} mult={mult} countdown={countdown} crashPoint={crashPoint} />
 
-      {/* Main Grid: Game + Controls */}
+      {/* Control Bar */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* Left: Game Iframe */}
-        <div className="lg:col-span-2 space-y-4">
-          <GameIframe />
+        {/* Controls */}
+        <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-4 space-y-4">
+          <h3 className="text-sm font-bold text-white flex items-center gap-2">
+            <Settings className="w-4 h-4 text-slate-400" />
+            Controls
+          </h3>
 
-          {/* Crash History */}
-          <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-4">
-            <h4 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
-              <Clock className="w-4 h-4 text-slate-400" />
-              Crash History
-            </h4>
-            <div className="flex flex-wrap gap-2">
-              {crashes.map((c, i) => {
-                const cp = Number(c.crash_point)
-                return (
-                  <div key={c.round_id || i}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold ${
-                      cp >= 10 ? 'bg-emerald-500/20 text-emerald-400' :
-                      cp >= 2 ? 'bg-amber-500/20 text-amber-400' :
-                      'bg-red-500/20 text-red-400'
-                    }`}>
-                    {cp.toFixed(2)}x
-                  </div>
-                )
-              })}
-              {crashes.length === 0 && <p className="text-slate-500 text-sm">No history yet</p>}
+          <Button variant="danger" onClick={handleManualCrash} disabled={phase !== 'flying'} className="w-full">
+            <Zap className="w-4 h-4" /> Manual Crash
+          </Button>
+
+          <FormField label={`House Edge (${(settings.house_edge * 100).toFixed(1)}%)`}>
+            <div className="flex items-center gap-3">
+              <input type="range" min="0.01" max="0.20" step="0.01"
+                value={settings.house_edge}
+                onChange={e => setSettings(s => ({ ...s, house_edge: parseFloat(e.target.value) }))}
+                className="flex-1 accent-emerald-500" />
+              <Input type="number" min="1" max="20" step="0.5"
+                value={(settings.house_edge * 100).toFixed(1)}
+                onChange={e => setSettings(s => ({ ...s, house_edge: parseFloat(e.target.value) / 100 }))}
+                className="w-20" />
             </div>
-          </div>
+          </FormField>
 
-          {/* Pool Stats */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            {[
-              { label: 'Total Bets', val: `PKR ${Number(pool.total_bets || 0).toLocaleString()}`, c: 'text-blue-400' },
-              { label: 'Winnings', val: `PKR ${Number(pool.total_winnings_paid || 0).toLocaleString()}`, c: 'text-emerald-400' },
-              { label: 'HE Pool', val: `PKR ${Number(pool.house_edge_pool || 0).toLocaleString()}`, c: 'text-amber-400' },
-              { label: 'Rounds', val: pool.rounds_played || 0, c: 'text-purple-400' },
-            ].map(s => (
-              <div key={s.label} className="bg-slate-800/30 border border-slate-700/30 rounded-lg p-3 text-center">
-                <p className="text-[10px] text-slate-500">{s.label}</p>
-                <p className={`text-lg font-bold ${s.c}`}>{s.val}</p>
+          <FormField label="HE Mode">
+            <Select value={settings.he_mode} onChange={e => setSettings(s => ({ ...s, he_mode: e.target.value }))}>
+              <option value="off">Off (Random)</option>
+              <option value="smart">Smart Auto</option>
+              <option value="aggressive">Aggressive</option>
+            </Select>
+          </FormField>
+
+          {settings.he_mode !== 'off' && (
+            <>
+              <FormField label={`Auto-Crash Target (${settings.he_target_pct}%)`}>
+                <div className="flex items-center gap-3">
+                  <input type="range" min="1" max="20" step="1"
+                    value={settings.he_target_pct}
+                    onChange={e => setSettings(s => ({ ...s, he_target_pct: parseInt(e.target.value) }))}
+                    className="flex-1 accent-amber-500" />
+                  <Input type="number" min="1" max="20"
+                    value={settings.he_target_pct}
+                    onChange={e => setSettings(s => ({ ...s, he_target_pct: parseInt(e.target.value) }))}
+                    className="w-16" />
+                </div>
+              </FormField>
+              <div className="grid grid-cols-2 gap-3">
+                <FormField label="Min Flight (sec)">
+                  <Input type="number" min="1" max="30" value={settings.he_min_secs}
+                    onChange={e => setSettings(s => ({ ...s, he_min_secs: parseInt(e.target.value) }))} />
+                </FormField>
+                <FormField label="Max Flight (sec)">
+                  <Input type="number" min="5" max="120" value={settings.he_max_secs}
+                    onChange={e => setSettings(s => ({ ...s, he_max_secs: parseInt(e.target.value) }))} />
+                </FormField>
+              </div>
+            </>
+          )}
+
+          <Button onClick={handleSaveSettings} className="w-full">
+            <Settings className="w-4 h-4" /> Save Settings
+          </Button>
+
+          <Button variant="outline" onClick={handleTest} className="w-full">
+            <Play className="w-4 h-4" /> Test Settings
+          </Button>
+        </div>
+
+        {/* Crash History */}
+        <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-4 space-y-3">
+          <h3 className="text-sm font-bold text-white flex items-center gap-2">
+            <BarChart3 className="w-4 h-4 text-slate-400" />
+            Crash History
+          </h3>
+          <div className="flex flex-wrap gap-2">
+            {crashHistory.map((cp, i) => (
+              <div key={i}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold ${
+                  cp >= 10 ? 'bg-emerald-500/20 text-emerald-400' :
+                  cp >= 2 ? 'bg-amber-500/20 text-amber-400' :
+                  'bg-red-500/20 text-red-400'
+                }`}>
+                {cp.toFixed(2)}x
               </div>
             ))}
-          </div>
-
-          {/* P&L */}
-          <div className={`p-4 rounded-xl border ${(pool.gross_pnl || 0) >= 0 ? 'bg-emerald-500/10 border-emerald-500/20' : 'bg-red-500/10 border-red-500/20'}`}>
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs text-slate-400">Gross P&L</p>
-                <p className={`text-2xl font-bold ${(pool.gross_pnl || 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                  PKR {Number(pool.gross_pnl || 0).toLocaleString('en-IN')}
-                </p>
-              </div>
-              {(pool.gross_pnl || 0) >= 0 ? <TrendingUp className="w-8 h-8 text-emerald-400" /> : <TrendingDown className="w-8 h-8 text-red-400" />}
-            </div>
+            {crashHistory.length === 0 && (
+              <p className="text-slate-500 text-sm">Waiting for crashes...</p>
+            )}
           </div>
         </div>
 
-        {/* Right: Controls + AI Chat */}
-        <div className="space-y-4">
-          {/* Control Bar */}
-          <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-4 space-y-4">
-            <h4 className="text-sm font-bold text-white flex items-center gap-2">
-              <Shield className="w-4 h-4 text-emerald-400" />
-              House Edge Controls
-            </h4>
-
-            {/* Crash Button */}
-            <Button variant="danger" onClick={handleCrash} className="w-full font-bold py-3">
-              <Zap className="w-5 h-5" /> CRASH NOW
-            </Button>
-
-            {/* HE Mode */}
-            <FormField label="HE Mode">
-              <Select value={settings.he_mode || 'off'} onChange={e => setSettings(s => ({ ...s, he_mode: e.target.value }))}>
-                <option value="off">Off (Random)</option>
-                <option value="smart">Smart Auto (Recommended)</option>
-                <option value="aggressive">Aggressive</option>
-              </Select>
-            </FormField>
-
-            {/* House Edge % */}
-            <FormField label={`House Edge (${((settings.house_edge || 0.05) * 100).toFixed(1)}%)`}>
-              <div className="flex items-center gap-3">
-                <input type="range" min="0.01" max="0.20" step="0.01"
-                  value={settings.house_edge || 0.05}
-                  onChange={e => setSettings(s => ({ ...s, house_edge: parseFloat(e.target.value) }))}
-                  className="flex-1 accent-emerald-500" />
-                <Input type="number" min="1" max="20" step="0.5"
-                  value={((settings.house_edge || 0.05) * 100).toFixed(1)}
-                  onChange={e => setSettings(s => ({ ...s, house_edge: parseFloat(e.target.value) / 100 }))}
-                  className="w-20" />
-              </div>
-            </FormField>
-
-            {/* Target % */}
-            <FormField label={`Auto-Crash Target (${settings.he_target_pct || 5}%)`}>
-              <div className="flex items-center gap-3">
-                <input type="range" min="1" max="20" step="1"
-                  value={settings.he_target_pct || 5}
-                  onChange={e => setSettings(s => ({ ...s, he_target_pct: parseInt(e.target.value) }))}
-                  className="flex-1 accent-amber-500" />
-                <Input type="number" min="1" max="20"
-                  value={settings.he_target_pct || 5}
-                  onChange={e => setSettings(s => ({ ...s, he_target_pct: parseInt(e.target.value) }))}
-                  className="w-16" />
-              </div>
-            </FormField>
-
-            {/* Min/Max Flight */}
-            <div className="grid grid-cols-2 gap-3">
-              <FormField label="Min Flight (sec)">
-                <Input type="number" min="1" max="30" value={settings.he_min_secs || 3}
-                  onChange={e => setSettings(s => ({ ...s, he_min_secs: parseInt(e.target.value) }))} />
-              </FormField>
-              <FormField label="Max Flight (sec)">
-                <Input type="number" min="5" max="120" value={settings.he_max_secs || 50}
-                  onChange={e => setSettings(s => ({ ...s, he_max_secs: parseInt(e.target.value) }))} />
-              </FormField>
-            </div>
-
-            <Button onClick={handleSaveSettings} disabled={saving} className="w-full">
-              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-              Save Settings
-            </Button>
-          </div>
-
-          {/* Test Simulation */}
-          <TestSimulation settings={settings} />
-
-          {/* AI Chat */}
-          <AIChat currentSettings={settings} />
+        {/* AI Chat */}
+        <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-4">
+          <h3 className="text-sm font-bold text-white flex items-center gap-2 mb-3">
+            <MessageSquare className="w-4 h-4 text-slate-400" />
+            AI Assistant
+          </h3>
+          <AIChat settings={settings} />
         </div>
       </div>
     </motion.div>
