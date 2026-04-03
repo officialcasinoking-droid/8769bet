@@ -11,7 +11,7 @@ import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../components/ui/Toast'
 import { ChevronLeft } from 'lucide-react'
 
-const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:3006/ws/aviator'
+const WS_URL = import.meta.env.VITE_WS_URL || 'wss://8769bet-backend.onrender.com/ws/aviator'
 
 const CSS = `
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Exo+2:wght@400;500;600;700;800;900&display=swap');

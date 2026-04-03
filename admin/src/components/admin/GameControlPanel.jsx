@@ -9,8 +9,8 @@ import {
   Check, X, ChevronRight, Lightbulb, Target
 } from 'lucide-react'
 
-const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:3006/ws/aviator'
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3006'
+const WS_URL = import.meta.env.VITE_WS_URL || 'wss://8769bet-backend.onrender.com/ws/aviator'
+const API_URL = import.meta.env.VITE_API_URL || 'https://8769bet-backend.onrender.com'
 
 // ── AI Assistant Messages ────────────────────────────────────
 const AI_MESSAGES = {
