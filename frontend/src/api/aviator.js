@@ -116,27 +116,10 @@ export function broadcastLiveHE(metrics) {
 let _lastBroadcast = 0
 
 export async function broadcastGameState(state) {
+  // localStorage only - no Supabase writes from game loop
   try {
     localStorage.setItem('aviator_game_state', JSON.stringify({ ...state, timestamp: Date.now() }))
-    // Only write to Supabase every 2 seconds to avoid flooding
-    const now = Date.now()
-    if (now - _lastBroadcast < 2000) return
-    _lastBroadcast = now
-    await supabase
-      .from('aviator_game_state')
-      .upsert({
-        id: 'current',
-        phase: state.phase,
-        mult: state.mult,
-        countdown: state.countdown,
-        crash_point: state.crashPoint,
-        start_time: state.startTime,
-        timestamp: Date.now(),
-        updated_at: new Date().toISOString()
-      })
-  } catch (e) {
-    // Silently fail - game runs on localStorage
-  }
+  } catch {}
 }
 
 export async function getGameState() {
@@ -226,23 +209,10 @@ export async function getSettingsFromDB() {
 }
 
 export async function saveSettingsToDB(settings) {
+  // localStorage only - no Supabase writes
   try {
-    await supabase
-      .from('aviator_settings')
-      .upsert({
-        id: 'config',
-        house_edge: settings.houseEdge || 0.05,
-        bias_strength: settings.biasStrength || 50,
-        he_mode: settings.heMode || 'off',
-        he_target_pct: settings.heTargetPct || 5,
-        he_min_secs: settings.heMinSecs || 3,
-        he_max_secs: settings.heMaxSecs || 50,
-        auto_target_secs: settings.autoTargetSecs || 8,
-        updated_at: new Date().toISOString()
-      })
-  } catch (e) {
-    console.warn('[saveSettingsToDB]', e?.message)
-  }
+    localStorage.setItem('aviator_settings', JSON.stringify(settings))
+  } catch {}
 }
 
 export async function broadcastLiveHEMetrics(metrics) {
