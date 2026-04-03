@@ -41,6 +41,9 @@ import {
   getSettingsFromDB,
   checkManualCrash,
   broadcastLiveHEMetrics,
+  connectWebSocket,
+  disconnectWebSocket,
+  getBackendGameState,
 } from '../../api/aviator'
 
 const CSS = `
@@ -642,6 +645,65 @@ export default function AviatorGame() {
   }, [isLoggedIn, user])
   useEffect(() => { multRef.current = mult }, [mult])
   useEffect(() => { phaseRef.current = phase }, [phase])
+
+  useEffect(() => {
+    if (showLoading) return
+
+    connectWebSocket(
+      (state) => {
+        if (state.phase === 'betting') {
+          phaseRef.current = 'betting'
+          setPhase('betting')
+          setCd(state.countdown)
+          roundIdRef.current = state.roundId
+        } else if (state.phase === 'flying') {
+          phaseRef.current = 'running'
+          setPhase('running')
+          setMult(state.mult)
+          roundIdRef.current = state.roundId
+        } else if (state.phase === 'crashed') {
+          phaseRef.current = 'crashed'
+          setPhase('crashed')
+          setCrashedAt(state.crash_point)
+          histRef.current = [state.crash_point, ...histRef.current.slice(0, 19)]
+          setHist([...histRef.current])
+          crashPtRef.current = state.crash_point
+        }
+      },
+      (bets) => {
+        liveBetsRef.current = bets
+        setLive([...bets])
+      },
+      (settings) => {
+        if (settings) {
+          try { localStorage.setItem('aviator_settings', JSON.stringify(settings)) } catch {}
+        }
+      }
+    )
+
+    getBackendGameState().then(state => {
+      if (state) {
+        if (state.phase === 'betting') {
+          setPhase('betting')
+          setCd(state.countdown)
+          roundIdRef.current = state.roundId
+          crashPtRef.current = state.crashPoint
+        } else if (state.phase === 'flying') {
+          setPhase('running')
+          setMult(state.mult)
+          roundIdRef.current = state.roundId
+          crashPtRef.current = state.crashPoint
+        } else if (state.phase === 'crashed') {
+          setPhase('crashed')
+          setCrashedAt(state.crashPoint)
+          setHist(state.crashHistory || [])
+          crashPtRef.current = state.crashPoint
+        }
+      }
+    }).catch(() => {})
+
+    return () => disconnectWebSocket()
+  }, [showLoading])
 
   const addCashoutExit = useCallback((name, profit) => {
     exitCountRef.current++

@@ -1,9 +1,16 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
-import { useQuery } from '@tanstack/react-query'
 import { toast } from 'react-hot-toast'
 import { Button } from '../../components/ui/FormElements'
 import { Octagon, Settings, BarChart3, ChevronDown, ChevronUp, Loader2, TrendingUp, TrendingDown, Wallet } from 'lucide-react'
-import { getHouseEdgePool } from '../../api/aviator'
+import { 
+  getHouseEdgePool, 
+  getBackendGameState, 
+  requestBackendCrash, 
+  updateBackendSettings,
+  connectWebSocket,
+  disconnectWebSocket,
+  getGameSettingsLocal
+} from '../../api/aviator'
 
 const BetRow = React.memo(function BetRow({ bet }) {
   const time = useMemo(() => {
@@ -86,13 +93,7 @@ export default function AviatorControlPanel() {
   const [cd, setCd] = useState(8)
   const [crashedAt, setCrashedAt] = useState(null)
   const [liveHE, setLiveHE] = useState(null)
-
-  const { data: hePool } = useQuery({
-    queryKey: ['aviator-he-pool'],
-    queryFn: getHouseEdgePool,
-    staleTime: 5000,
-    refetchInterval: 3000,
-  })
+  const [hePool, setHePool] = useState({ total_deposits: 0, total_bets: 0, total_winnings_paid: 0, house_edge_pool: 0, total_withdrawals_paid: 0, gross_pnl: 0, rounds_played: 0 })
 
   const canvasRef = useRef(null)
   const rafRef = useRef(null)
@@ -109,27 +110,92 @@ export default function AviatorControlPanel() {
   const cumulativePLRef = useRef(0)
 
   const handleManualCrash = useCallback(() => {
-    try {
-      localStorage.setItem('aviator_manual_crash', JSON.stringify({ v: true, ts: Date.now() }))
-      toast.success('Crash signal sent to game engine')
-    } catch {}
+    requestBackendCrash()
+      .then(() => {
+        toast.success('Crash signal sent to backend')
+      })
+      .catch((err) => {
+        console.error('Failed to request crash:', err)
+        toast.error('Failed to send crash signal')
+      })
   }, [])
 
   const handleSaveSettings = useCallback(() => {
-    try {
-      localStorage.setItem('aviator_settings', JSON.stringify({
-        houseEdge: houseEdge / 100,
-        biasStrength,
-        heMode,
-        heTargetPct,
-        heMinSecs,
-        heMaxSecs,
-        autoTargetSecs,
-        ts: Date.now(),
-      }))
-      toast.success('Settings saved to game engine')
-    } catch {}
+    const settingsData = {
+      houseEdge: houseEdge / 100,
+      biasStrength,
+      heMode,
+      heTargetPct,
+      heMinSecs,
+      heMaxSecs,
+      autoTargetSecs,
+    }
+    
+    updateBackendSettings(settingsData)
+      .then(() => {
+        localStorage.setItem('aviator_settings', JSON.stringify({ ...settingsData, ts: Date.now() }))
+        toast.success('Settings saved to backend')
+      })
+      .catch((err) => {
+        console.error('Failed to save settings:', err)
+        toast.error('Failed to save settings')
+      })
   }, [houseEdge, biasStrength, heMode, heTargetPct, heMinSecs, heMaxSecs, autoTargetSecs])
+
+  useEffect(() => {
+    connectWebSocket(
+      (state) => {
+        if (state.phase === 'betting') {
+          setPhase('betting')
+          setCd(state.countdown || 8)
+          setMult(1.00)
+          setCrashedAt(null)
+          setSynced(true)
+        } else if (state.phase === 'flying') {
+          setPhase('running')
+          setMult(state.mult || 1.00)
+          setSynced(true)
+        } else if (state.phase === 'crashed') {
+          setPhase('crashed')
+          setCrashedAt(state.crash_point)
+          setMult(state.crash_point || 1.00)
+          setSynced(true)
+        }
+      },
+      (bets) => {
+        if (bets && Array.isArray(bets)) {
+          setLiveBets(bets)
+        }
+      },
+      (settings) => {
+        if (settings) {
+          try { localStorage.setItem('aviator_settings', JSON.stringify(settings)) } catch {}
+        }
+      }
+    )
+
+    getBackendGameState().then(state => {
+      if (state) {
+        if (state.phase === 'betting') {
+          setPhase('betting')
+          setCd(state.countdown || 8)
+        } else if (state.phase === 'flying') {
+          setPhase('running')
+          setMult(state.mult || 1.00)
+        } else if (state.phase === 'crashed') {
+          setPhase('crashed')
+          setCrashedAt(state.crash_point)
+          setMult(state.crash_point || 1.00)
+        }
+        if (state.settings) {
+          try { localStorage.setItem('aviator_settings', JSON.stringify(state.settings)) } catch {}
+        }
+        setSynced(true)
+      }
+    }).catch(() => {})
+
+    return () => disconnectWebSocket()
+  }, [])
 
   useEffect(() => {
     const canvas = canvasRef.current

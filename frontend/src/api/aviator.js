@@ -1,32 +1,178 @@
 /**
  * Aviator API Layer
- * All Supabase DB operations + broadcast helpers for the Aviator crash game.
- * Tables: game_rounds, game_bets, game_settings
- *
- * DB Column Reference:
- * game_rounds:   round_id, server_seed, server_seed_hash, crash_point, status,
- *                target_house_edge, bet_count, total_bet_amount, total_exit_amount,
- *                house_profit, started_at, crashed_at, created_at
- * game_bets:     id, round_id, user_id, username, amount, auto_cashout_at,
- *                cashout_at, cashout_multiplier, cashout_amount, is_bot, is_demo,
- *                status (pending|won|lost), won_amount, created_at, updated_at
- * game_settings: id, min_bet, max_bet, max_crash, house_edge, wait_time_seconds, is_enabled
+ * Connects to backend WebSocket for real-time game sync
+ * HTTP API for admin controls and settings
  */
 
 import { supabaseAnon as supabase } from '../lib/supabase'
 
 // ──────────────────────────────────────────────
-// Broadcast Channel (singleton pattern)
-// ──────────────────────────────────────────────
-// ──────────────────────────────────────────────
-// Broadcast via localStorage (replaces broken Supabase realtime)
+// Backend Configuration
 // ──────────────────────────────────────────────
 
-let _broadcastChannel = null
-let _broadcastReady = null
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3006'
 
-function getBroadcastChannel() {
-  return Promise.resolve(null)
+// ──────────────────────────────────────────────
+// WebSocket Connection
+// ──────────────────────────────────────────────
+
+let ws = null
+let wsCallbacks = {
+  onGameState: null,
+  onBetsUpdate: null,
+  onSettingsUpdate: null,
+}
+let wsReconnectTimeout = null
+let reconnectAttempts = 0
+const MAX_RECONNECT_ATTEMPTS = 10
+
+export function connectWebSocket(onGameState, onBetsUpdate, onSettingsUpdate) {
+  wsCallbacks.onGameState = onGameState
+  wsCallbacks.onBetsUpdate = onBetsUpdate
+  wsCallbacks.onSettingsUpdate = onSettingsUpdate
+
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    return true
+  }
+
+  const wsUrl = API_BASE.includes('://') 
+    ? `ws://${API_BASE.split('://')[1]}/ws/aviator`
+    : `ws://${API_BASE}/ws/aviator`
+  
+  try {
+    ws = new WebSocket(wsUrl)
+
+    ws.onopen = () => {
+      console.log('[WS] Connected to Aviator game engine')
+      reconnectAttempts = 0
+      if (wsReconnectTimeout) {
+        clearTimeout(wsReconnectTimeout)
+        wsReconnectTimeout = null
+      }
+    }
+
+    ws.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data)
+        
+        if (msg.type === 'game_state' && wsCallbacks.onGameState) {
+          wsCallbacks.onGameState(msg)
+        }
+        if (msg.type === 'bets_update' && wsCallbacks.onBetsUpdate) {
+          wsCallbacks.onBetsUpdate(msg.bets)
+        }
+        if (msg.type === 'settings_updated' && wsCallbacks.onSettingsUpdate) {
+          wsCallbacks.onSettingsUpdate(msg.settings)
+        }
+      } catch (e) {
+        console.warn('[WS] Parse error:', e.message)
+      }
+    }
+
+    ws.onclose = () => {
+      console.log('[WS] Disconnected from game engine')
+      scheduleReconnect()
+    }
+
+    ws.onerror = (err) => {
+      console.error('[WS] Error:', err)
+    }
+
+    return true
+  } catch (e) {
+    console.error('[WS] Failed to connect:', e)
+    return false
+  }
+}
+
+function scheduleReconnect() {
+  if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+    console.log('[WS] Max reconnection attempts reached')
+    return
+  }
+
+  const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000)
+  reconnectAttempts++
+
+  wsReconnectTimeout = setTimeout(() => {
+    console.log(`[WS] Reconnecting... (attempt ${reconnectAttempts})`)
+    connectWebSocket(
+      wsCallbacks.onGameState,
+      wsCallbacks.onBetsUpdate,
+      wsCallbacks.onSettingsUpdate
+    )
+  }, delay)
+}
+
+export function disconnectWebSocket() {
+  if (ws) {
+    ws.close()
+    ws = null
+  }
+  if (wsReconnectTimeout) {
+    clearTimeout(wsReconnectTimeout)
+    wsReconnectTimeout = null
+  }
+}
+
+export function sendWSMessage(msg) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify(msg))
+    return true
+  }
+  return false
+}
+
+// ──────────────────────────────────────────────
+// HTTP API Calls
+// ──────────────────────────────────────────────
+
+async function apiRequest(endpoint, options = {}) {
+  try {
+    const response = await fetch(`${API_BASE}${endpoint}`, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        ...options.headers,
+      },
+    })
+    if (!response.ok) {
+      throw new Error(`API Error: ${response.status}`)
+    }
+    return await response.json()
+  } catch (e) {
+    console.error(`[API] ${endpoint} error:`, e.message)
+    throw e
+  }
+}
+
+export async function getBackendGameState() {
+  return apiRequest('/api/aviator/state')
+}
+
+export async function requestBackendCrash() {
+  return apiRequest('/api/aviator/crash', { method: 'POST' })
+}
+
+export async function updateBackendSettings(settings) {
+  return apiRequest('/api/aviator/settings', {
+    method: 'POST',
+    body: JSON.stringify(settings),
+  })
+}
+
+export async function placeBetBackend(betData) {
+  return apiRequest('/api/aviator/bet', {
+    method: 'POST',
+    body: JSON.stringify(betData),
+  })
+}
+
+export async function cashoutBackend(userId, betNum) {
+  return apiRequest('/api/aviator/cashout', {
+    method: 'POST',
+    body: JSON.stringify({ userId, betNum }),
+  })
 }
 
 /** Subscribe to game-state broadcasts (no-op — uses localStorage polling) */
@@ -235,16 +381,16 @@ export async function getLiveHEMetrics() {
 // ──────────────────────────────────────────────
 
 export async function getHouseEdgePool() {
-  const { data, error } = await supabase
-    .from('aviator_house_edge')
-    .select('*')
-    .eq('id', 'pool')
-    .single()
-  if (error && error.code !== 'PGRST116') return null
-  return data || {
-    total_deposits: 0, total_bets: 0, total_winnings_paid: 0,
-    house_edge_pool: 0, total_withdrawals_paid: 0, gross_pnl: 0, rounds_played: 0,
-  }
+  // Try backend first, then fall back to localStorage
+  try {
+    const state = await apiRequest('/api/aviator/state')
+    if (state && state.houseEdge) {
+      return state.houseEdge
+    }
+  } catch {}
+
+  // Fallback to localStorage
+  return { total_deposits: 0, total_bets: 0, total_winnings_paid: 0, house_edge_pool: 0, total_withdrawals_paid: 0, gross_pnl: 0, rounds_played: 0 }
 }
 
 export async function updateHouseEdgePool(realBetAmount, realExitAmount, crashMult) {

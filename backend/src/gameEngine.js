@@ -37,6 +37,59 @@ let currentBets = []
 // ── Crash History ────────────────────────────────────────────
 let crashHistory = []
 
+// ── Bot Configuration ──────────────────────────────────────────
+const BOT_NAMES = [
+  'Ali_Khan', 'Sara_Ahmed', 'Usman_Ali', 'Fatima_Zahid', 'Ahmed_Raza',
+  'Ayesha_Khan', 'Bilal_Hassan', 'Zainab_Malik', 'Hassan_Ali', 'Mariam_Waseem',
+  'Hamza_Saeed', 'Hira_Nawaz', 'Saad_Afzal', 'Nadia_Iqbal', 'Faisal_Imran',
+  'Sana_Ansari', 'Kamran_Shahid', 'Mehwish_Butt', 'Adnan_Yousaf', 'Sadia_Parveen',
+]
+const BOT_BET_MIN = 6
+const BOT_BET_MAX = 500
+const BOT_COUNT = 15
+const AUTO_CASHOUT_VALUES = [1.1, 1.2, 1.3, 1.5, 1.7, 2.0, 2.5, 3.0, 4.0, 5.0, 10.0]
+
+// ── House Edge Tracking ───────────────────────────────────────
+let houseEdgePool = {
+  totalBets: 0,
+  totalWinnings: 0,
+  houseEdgeAmount: 0,
+  roundsPlayed: 0,
+}
+
+function updateHouseEdgeStats() {
+  const realBets = currentBets.filter(b => !b.is_bot)
+  const pendingBets = realBets.filter(b => b.status === 'pending')
+  const wonBets = realBets.filter(b => b.status === 'won')
+
+  const roundBetAmount = realBets.reduce((sum, b) => sum + b.amount, 0)
+  const roundWinnings = wonBets.reduce((sum, b) => sum + (b.winAmount || 0), 0)
+
+  if (realBets.length > 0) {
+    houseEdgePool.totalBets += roundBetAmount
+    houseEdgePool.totalWinnings += roundWinnings
+    // House edge is 5% of pending bets when they lose
+    const pendingAmount = pendingBets.reduce((sum, b) => sum + b.amount, 0)
+    const heFromRound = pendingAmount * 0.05
+    houseEdgePool.houseEdgeAmount += heFromRound
+  }
+  houseEdgePool.roundsPlayed++
+}
+
+function generateBotBetAmount() {
+  const amounts = [6, 10, 20, 50, 100, 200, 500]
+  return amounts[Math.floor(Math.random() * amounts.length)]
+}
+
+function generateBotAutoCashout() {
+  if (Math.random() < 0.3) return null
+  return AUTO_CASHOUT_VALUES[Math.floor(Math.random() * AUTO_CASHOUT_VALUES.length)]
+}
+
+function getRandomBotName() {
+  return BOT_NAMES[Math.floor(Math.random() * BOT_NAMES.length)]
+}
+
 // ── WebSocket Server ─────────────────────────────────────────
 let wss = null
 const clients = new Set()
@@ -95,7 +148,20 @@ function startGameLoop() {
       }
     } else if (gameState.phase === 'flying') {
       const elapsed = (now - gameState.startTime) / 1000
-      const mult = Math.pow(Math.E, 0.06 * elapsed)
+      const mult = parseFloat(Math.pow(Math.E, 0.06 * elapsed).toFixed(2))
+
+      // Check auto-cashouts
+      currentBets.forEach(bet => {
+        if (!bet.cashedOut && bet.autoCashout && mult >= bet.autoCashout) {
+          bet.cashedOut = true
+          bet.cashoutMult = mult
+          bet.winAmount = Math.floor(bet.amount * mult)
+          bet.status = 'won'
+        }
+      })
+
+      // Broadcast bet updates
+      broadcast({ type: 'bets_update', bets: currentBets })
 
       // Check manual crash
       if (manualCrashRequested) {
@@ -153,16 +219,33 @@ function crashRound(crashPoint, reason = 'natural') {
   gameState.crashPoint = parseFloat(crashPoint.toFixed(2))
   gameState.crashedAt = Date.now()
 
+  // Clear bot bet timeouts
+  botBetTimeouts.forEach(clearTimeout)
+  botBetTimeouts = []
+
+  // Process auto-cashouts for bots that reached their target
+  const now = Date.now()
+  const elapsed = (now - gameState.startTime) / 1000
+  const currentMult = parseFloat(Math.pow(Math.E, 0.06 * elapsed).toFixed(2))
+
+  currentBets.forEach(bet => {
+    if (!bet.cashedOut) {
+      // Check if this bet had auto-cashout and reached it
+      if (bet.autoCashout && currentMult >= bet.autoCashout) {
+        bet.cashedOut = true
+        bet.cashoutMult = currentMult
+        bet.winAmount = Math.floor(bet.amount * currentMult)
+        bet.status = 'won'
+      } else {
+        // Lost
+        bet.status = 'lost'
+      }
+    }
+  })
+
   // Add to history
   crashHistory.unshift(gameState.crashPoint)
   if (crashHistory.length > 30) crashHistory = crashHistory.slice(0, 30)
-
-  // Process losing bets
-  currentBets.forEach(bet => {
-    if (!bet.cashedOut) {
-      bet.status = 'lost'
-    }
-  })
 
   broadcast({
     type: 'game_state',
@@ -171,7 +254,11 @@ function crashRound(crashPoint, reason = 'natural') {
     reason,
     roundId: gameState.roundId,
     bets: currentBets,
+    houseEdge: houseEdgePool,
   })
+
+  // Update house edge stats
+  updateHouseEdgeStats()
 
   // Start new round after delay
   setTimeout(() => {
@@ -193,6 +280,43 @@ function startNewRound() {
     countdown: WAIT_TIME_SECONDS,
     roundId: gameState.roundId,
   })
+
+  // Schedule bot bets during betting phase
+  scheduleBotBets()
+}
+
+let botBetTimeouts = []
+
+function scheduleBotBets() {
+  // Clear previous bot bet timeouts
+  botBetTimeouts.forEach(clearTimeout)
+  botBetTimeouts = []
+
+  if (gameState.phase !== 'betting') return
+
+  // Generate bot bets with random delays
+  for (let i = 0; i < BOT_COUNT; i++) {
+    const delay = Math.random() * WAIT_TIME_SECONDS * 800
+    const timeout = setTimeout(() => {
+      if (gameState.phase === 'betting') {
+        const bet = {
+          id: `bot_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+          userId: null,
+          username: getRandomBotName(),
+          amount: generateBotBetAmount(),
+          autoCashout: generateBotAutoCashout(),
+          cashedOut: false,
+          cashoutMult: null,
+          winAmount: 0,
+          status: 'pending',
+          is_bot: true,
+        }
+        currentBets.push(bet)
+        broadcast({ type: 'bets_update', bets: currentBets })
+      }
+    }, delay)
+    botBetTimeouts.push(timeout)
+  }
 }
 
 // ── Bet Handling ─────────────────────────────────────────────

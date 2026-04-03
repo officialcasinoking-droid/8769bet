@@ -91,7 +91,17 @@ app.post('/api/aviator/cashout', (req, res) => {
 
 // Health check
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() })
+  res.json({ 
+    status: 'ok', 
+    timestamp: new Date().toISOString(),
+    game: getCurrentState()
+  })
+})
+
+// House edge pool endpoint
+app.get('/api/aviator/house-edge', (req, res) => {
+  const state = getCurrentState()
+  res.json(state.settings || {})
 })
 
 // Error handler
