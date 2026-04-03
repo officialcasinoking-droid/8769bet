@@ -254,13 +254,10 @@ export async function broadcastLiveHEMetrics(metrics) {
 
 export async function getLiveHEMetrics() {
   try {
-    const { data } = await supabase
-      .from('aviator_live_he')
-      .select('*')
-      .eq('id', 'metrics')
-      .single()
-    return data
-  } catch { return null }
+    const raw = localStorage.getItem('aviator_live_he')
+    if (raw) return JSON.parse(raw)
+  } catch {}
+  return null
 }
 
 // ──────────────────────────────────────────────
