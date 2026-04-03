@@ -335,4 +335,4 @@ function initGameEngine(server) {
 }
 
 // ── Export ───────────────────────────────────────────────────
-export { initGameEngine, getCurrentState, requestManualCrash, updateSettings, gameState, settings }
+export { initGameEngine, getCurrentState, requestManualCrash, updateSettings, gameState, settings, placeBet, cashoutBet }
