@@ -577,6 +577,7 @@ export default function AviatorGame() {
   const navigate = useNavigate()
   const { user, isLoggedIn, updateBalance } = useAuth()
   const toast = useToast()
+  const isPreview = new URLSearchParams(window.location.search).get('preview') === 'true'
 
   const [showLoading, setShowLoading] = useState(true)
   const [loadingProgress, setLoadingProgress] = useState(0)
@@ -1472,7 +1473,8 @@ export default function AviatorGame() {
                 </div>
               </div>
 
-              {/* Bottom row: Bet 1 (50%) + Bet 2 (50%) */}
+              {/* Bottom row: Bet 1 (50%) + Bet 2 (50%) - Hidden in preview mode */}
+              {!isPreview && (
               <div className="av-bets-row">
                 <div className="av-panel">
                   <BetPanel
@@ -1492,8 +1494,10 @@ export default function AviatorGame() {
                     bal={bal} onPlace={() => place(2)} onCash={() => cashout(2)} onCancel={() => cancelBet(2)} />
                 </div>
               </div>
+              )}
 
-              {/* My Betting History */}
+              {/* My Betting History - Hidden in preview mode */}
+              {!isPreview && (
               <div className="av-my-history">
                 <span className="av-my-history-title">My Bets</span>
                 {myHistory.length === 0 ? (
@@ -1515,6 +1519,7 @@ export default function AviatorGame() {
                   </div>
                 ))}
               </div>
+              )}
             </div>
           </>
         )}

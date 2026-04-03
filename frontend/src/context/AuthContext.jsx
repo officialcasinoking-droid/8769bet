@@ -142,10 +142,10 @@ export function AuthProvider({ children }) {
     // Try to fetch from database to sync (best effort)
     try {
       const dbResult = await Promise.race([
-        supabase.from('users').select('*').eq('id', supabaseUserId).single(),
+        supabase.from('users').select('*').eq('id', supabaseUserId).maybeSingle(),
         new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000))
       ])
-      const { data, error, status } = dbResult
+      const { data, error, status } = dbResult || {}
 
       if (data && !error && status === 200) {
         // DB fetch successful - merge with DB data, preserve cached balance if higher
