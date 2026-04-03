@@ -71,8 +71,9 @@ function broadcast(data) {
 
 // ── Game Loop ────────────────────────────────────────────────
 function startGameLoop() {
-  if (gameLoop) return
-  clearInterval(gameLoop)
+  if (gameLoop) {
+    clearInterval(gameLoop)
+  }
 
   gameLoop = setInterval(() => {
     const now = Date.now()
@@ -277,6 +278,7 @@ function initGameEngine(server) {
 
   wss.on('connection', (ws) => {
     clients.add(ws)
+    console.log(`[GameEngine] Client connected. Total clients: ${clients.size}`)
 
     // Send current state immediately
     ws.send(JSON.stringify({
@@ -318,6 +320,7 @@ function initGameEngine(server) {
 
     ws.on('close', () => {
       clients.delete(ws)
+      console.log(`[GameEngine] Client disconnected. Total clients: ${clients.size}`)
     })
 
     ws.on('error', (err) => {
