@@ -105,7 +105,7 @@ function GameIframe() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
   const iframeRef = useRef(null)
-  const gameUrl = 'https://8769bet.onrender.com/play/aviator'
+  const gameUrl = 'https://eight769bet-frontend.onrender.com/play/aviator'
 
   const handleRefresh = () => {
     setLoading(true)
@@ -479,7 +479,7 @@ export default function GameControlPanel() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <a href="https://8769bet.onrender.com/play/aviator" target="_blank" rel="noreferrer"
+          <a href="https://eight769bet-frontend.onrender.com/play/aviator" target="_blank" rel="noreferrer"
             className="flex items-center gap-1 px-3 py-2 bg-slate-800 text-slate-300 rounded-lg text-xs hover:bg-slate-700 transition-colors">
             <ExternalLink className="w-3.5 h-3.5" /> Open Full Game
           </a>

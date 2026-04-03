@@ -636,7 +636,7 @@ export default function LandingPageEditor() {
               <Eye className="w-4 h-4" />
               <span>Live Preview</span>
             </div>
-            <a href="https://8769bet.com" target="_blank" rel="noreferrer" className="flex items-center gap-1 text-xs text-emerald-400 hover:text-emerald-300">
+            <a href="https://eight769bet-frontend.onrender.com" target="_blank" rel="noreferrer" className="flex items-center gap-1 text-xs text-emerald-400 hover:text-emerald-300">
               View live site <ExternalLink className="w-3 h-3" />
             </a>
           </div>

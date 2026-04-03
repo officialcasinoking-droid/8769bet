@@ -115,7 +115,7 @@ export default function LoginPage() {
         </div>
 
         <div className="text-center mt-6">
-          <a href="https://8769bet.com" target="_blank" className="text-sm text-admin-muted hover:text-primary-400 transition-colors">
+          <a href="https://eight769bet-frontend.onrender.com" target="_blank" className="text-sm text-admin-muted hover:text-primary-400 transition-colors">
             ← Back to website
           </a>
         </div>
