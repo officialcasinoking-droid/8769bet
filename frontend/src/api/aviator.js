@@ -35,9 +35,7 @@ export function connectWebSocket(onGameState, onBetsUpdate, onSettingsUpdate) {
     return true
   }
 
-  const wsUrl = API_BASE.includes('://') 
-    ? `ws://${API_BASE.split('://')[1]}/ws/aviator`
-    : `ws://${API_BASE}/ws/aviator`
+  const wsUrl = API_BASE.replace(/^http:/, 'ws:').replace(/^https:/, 'wss:') + '/ws/aviator'
   
   try {
     ws = new WebSocket(wsUrl)
