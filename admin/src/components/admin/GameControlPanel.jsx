@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'react-hot-toast'
 import { motion, AnimatePresence } from 'framer-motion'
-import { supabase } from '../../lib/supabase'
+import { createClient } from '@supabase/supabase-js'
 import { Button, FormField, Input, Select } from '../../components/ui/FormElements'
 import {
   ArrowLeft, Zap, Users, Bot, TrendingUp, TrendingDown,
@@ -11,63 +11,49 @@ import {
   MessageSquare, Send, Play, RotateCcw, BarChart3, AlertTriangle,
   Check, X, ChevronRight, Lightbulb, Target
 } from 'lucide-react'
+import {
+  getGameState, getLiveBets, getCrashHistory, getLiveHEMetrics,
+  getSettingsFromDB, saveSettingsToDB, setManualCrash,
+  getHouseEdgePool, updateHouseEdgePool
+} from '../../api/aviator'
+import { supabaseUrl, supabaseAnonKey } from '../../lib/supabase'
 
-// ── API ──────────────────────────────────────────────────────
+// ── API (uses localStorage - no Supabase calls) ──────────────
+const _supabase = createClient(supabaseUrl, supabaseAnonKey)
+
 async function getGameById(id) {
   try {
-    const { data } = await supabase.from('games').select('*').eq('id', id).single()
+    const { data } = await _supabase.from('games').select('*').eq('id', id).single()
     return data
   } catch { return null }
 }
 
 async function fetchBets() {
-  try {
-    const { data } = await supabase.from('game_bets').select('*').order('created_at', { ascending: false }).limit(50)
-    return data || []
-  } catch { return [] }
+  return await getLiveBets()
 }
 
 async function fetchCrashes(limit = 30) {
-  try {
-    const { data } = await supabase.from('game_rounds')
-      .select('round_id, crash_point, created_at, house_profit, total_bet_amount, total_exit_amount')
-      .eq('status', 'crashed').order('created_at', { ascending: false }).limit(limit)
-    return data || []
-  } catch { return [] }
+  return await getCrashHistory()
 }
 
 async function fetchPool() {
-  try {
-    const { data } = await supabase.from('aviator_house_edge').select('*').eq('id', 'pool').single()
-    return data || { total_bets: 0, total_winnings_paid: 0, house_edge_pool: 0, gross_pnl: 0, rounds_played: 0 }
-  } catch { return { total_bets: 0, total_winnings_paid: 0, house_edge_pool: 0, gross_pnl: 0, rounds_played: 0 } }
+  return await getHouseEdgePool()
 }
 
 async function fetchSettings() {
-  try {
-    const { data } = await supabase.from('aviator_settings').select('*').eq('id', 'config').single()
-    return data || { house_edge: 0.05, he_mode: 'off', he_target_pct: 5, he_min_secs: 3, he_max_secs: 50 }
-  } catch { return { house_edge: 0.05, he_mode: 'off', he_target_pct: 5, he_min_secs: 3, he_max_secs: 50 } }
+  return await getSettingsFromDB() || { house_edge: 0.05, he_mode: 'off', he_target_pct: 5, he_min_secs: 3, he_max_secs: 50 }
 }
 
 async function saveSettings(s) {
   try {
-    await supabase.from('aviator_settings').upsert({
-      id: 'config',
-      house_edge: s.house_edge,
-      he_mode: s.he_mode,
-      he_target_pct: s.he_target_pct,
-      he_min_secs: s.he_min_secs,
-      he_max_secs: s.he_max_secs,
-      updated_at: new Date().toISOString()
-    })
+    await saveSettingsToDB(s)
     return true
   } catch (e) { console.warn('[saveSettings]', e?.message); return false }
 }
 
 async function sendCrashSignal() {
   try {
-    await supabase.from('aviator_signals').upsert({ id: 'crash', signal: 'crash', timestamp: Date.now(), processed: false })
+    setManualCrash(true)
     return true
   } catch (e) { console.warn('[sendCrashSignal]', e?.message); return false }
 }
