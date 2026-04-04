@@ -321,7 +321,9 @@ export async function getHeMode() {
   return settings?.heMode || 'off'
 }
 export function broadcastLiveHE() {}
-export async function broadcastGameState() {}
+export async function broadcastGameState(state) {
+  try { localStorage.setItem('aviator_game_state', JSON.stringify({ ...state, timestamp: Date.now() })) } catch {}
+}
 export async function getSettingsFromDB() { return null }
 export async function checkManualCrash() { return false }
 export async function broadcastLiveHEMetrics() {}
