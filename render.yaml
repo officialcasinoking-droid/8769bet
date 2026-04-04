@@ -3,16 +3,14 @@ services:
     name: 8769bet-frontend
     env: static
     branch: main
-    rootDir: frontend
-    buildCommand: npm install && npm run build && ls -la dist
+    buildCommand: cd frontend && npm install && npm run build
     staticPublishPath: frontend/dist
 
   - type: web
     name: 8769bet-admin
     env: static
     branch: main
-    rootDir: admin
-    buildCommand: npm install && npm run build
+    buildCommand: cd admin && npm install && npm run build
     staticPublishPath: admin/dist
 
   - type: web
