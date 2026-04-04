@@ -12,6 +12,11 @@ dotenv.config()
 const app = express()
 const server = createServer(app)
 
+// Root endpoint for testing
+app.get('/', (req, res) => {
+  res.json({ status: 'ok', message: '8769bet backend running' })
+})
+
 // Simple CORS - allow all for now
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*')
