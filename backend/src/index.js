@@ -13,19 +13,26 @@ dotenv.config()
 const app = express()
 const server = createServer(app)
 
-// CORS - allow multiple localhost ports for dev
+// CORS - allow multiple localhost ports for dev + production domains
 const allowedOrigins = [
   'http://localhost:3004',
   'http://localhost:3005',
   'http://localhost:3000',
+  'http://localhost:3006',
   'http://localhost:5173',
   'http://localhost:4173',
+  'https://8769bet-frontend.onrender.com',
+  'https://eight769bet-admin.onrender.com',
+  'https://8769bet-admin.onrender.com',
 ]
 app.use(cors({
   origin: function (origin, callback) {
+    // Allow requests with no origin (mobile apps, curl, etc)
+    // Also allow requests from allowedOrigins
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true)
     } else {
+      // For production, allow all for now since we might have dynamic subdomains
       callback(null, true)
     }
   },
