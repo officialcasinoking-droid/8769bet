@@ -1,5 +1,4 @@
 import express from 'express'
-import cors from 'cors'
 import rateLimit from 'express-rate-limit'
 import dotenv from 'dotenv'
 import { createServer } from 'http'
@@ -13,44 +12,16 @@ dotenv.config()
 const app = express()
 const server = createServer(app)
 
-// CORS - allow multiple localhost ports for dev + production domains
-const allowedOrigins = [
-  'http://localhost:3004',
-  'http://localhost:3005',
-  'http://localhost:3000',
-  'http://localhost:3006',
-  'http://localhost:5173',
-  'http://localhost:4173',
-  'https://8769bet-frontend.onrender.com',
-  'https://eight769bet-admin.onrender.com',
-  'https://8769bet-admin.onrender.com',
-]
-app.use(cors({
-  origin: function (origin, callback) {
-    // Allow requests with no origin (mobile apps, curl, etc)
-    // Also allow requests from allowedOrigins
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true)
-    } else {
-      // For production, allow all for now since we might have dynamic subdomains
-      callback(null, true)
-    }
-  },
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-}))
-
-// Handle preflight
-app.options('*', cors())
-
-// Rate limiting
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 100,
-  message: { error: 'Too many requests, please try again later.' }
+// Simple CORS - allow all for now
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*')
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH')
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(200)
+  }
+  next()
 })
-app.use('/api/', limiter)
 
 // Body parser
 app.use(express.json())
