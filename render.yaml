@@ -5,7 +5,7 @@ services:
     branch: main
     rootDir: frontend
     buildCommand: npm install && npm run build
-    staticPublishPath: dist
+    staticPublishPath: frontend/dist
 
   - type: web
     name: 8769bet-admin
@@ -13,7 +13,7 @@ services:
     branch: main
     rootDir: admin
     buildCommand: npm install && npm run build
-    staticPublishPath: dist
+    staticPublishPath: admin/dist
 
   - type: web
     name: 8769bet-backend
