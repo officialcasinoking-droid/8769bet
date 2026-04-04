@@ -33,6 +33,11 @@ Thumbs.db
 # Supabase
 supabase/.branches/
 supabase/functions/_shared/vendor/
+frontend/supabase/.temp/
+
+# Build outputs
+frontend/dist/
+admin/dist/
 
 # Temp files
 nul

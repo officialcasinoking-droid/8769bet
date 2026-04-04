@@ -2,15 +2,13 @@ import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { Button, FormField, Input, Select } from '../../components/ui/FormElements'
+import { supabase } from '../../lib/supabase'
 import {
   ArrowLeft, Zap, Users, Bot, TrendingUp, TrendingDown,
   Clock, Settings, Shield, Eye, Loader2, ExternalLink,
   MessageSquare, Send, Play, RotateCcw, BarChart3, AlertTriangle,
   Check, X, ChevronRight, Lightbulb, Target
 } from 'lucide-react'
-
-const WS_URL = import.meta.env.VITE_WS_URL || 'wss://8769bet-backend.onrender.com/ws/aviator'
-const API_URL = import.meta.env.VITE_API_URL || 'https://8769bet-backend.onrender.com'
 
 // ── AI Assistant Messages ────────────────────────────────────
 const AI_MESSAGES = {
@@ -314,9 +312,9 @@ function GameCanvas({ phase, mult, countdown, crashPoint }) {
 export default function GameControlPanel() {
   const { slug } = useParams()
   const navigate = useNavigate()
-  const wsRef = useRef(null)
+  const channelRef = useRef(null)
 
-  // Game state from WebSocket
+  // Game state from Supabase
   const [phase, setPhase] = useState('betting')
   const [mult, setMult] = useState(1.00)
   const [countdown, setCountdown] = useState(8)
@@ -325,7 +323,7 @@ export default function GameControlPanel() {
 
   // Settings
   const [settings, setSettings] = useState({
-    house_edge: 0.05,
+    house_edge: 5,
     he_mode: 'off',
     he_target_pct: 5,
     he_min_secs: 3,
@@ -335,120 +333,150 @@ export default function GameControlPanel() {
   // Crash history
   const [crashHistory, setCrashHistory] = useState([])
 
-  // ── WebSocket Connection with Local Fallback ──────────────────
+  // ── Supabase Realtime Subscription ─────────────────────────
   useEffect(() => {
-    let ws = null
-    let pollInterval = null
-
-    const connect = () => {
-      ws = new WebSocket(WS_URL)
-
-      ws.onopen = () => {
-        console.log('[GameControl] Connected to game server')
-        setConnected(true)
-        if (pollInterval) {
-          clearInterval(pollInterval)
-          pollInterval = null
-        }
-      }
-
-      ws.onmessage = (event) => {
-        try {
-          const msg = JSON.parse(event.data)
-
-          if (msg.type === 'game_state') {
-            setPhase(msg.phase)
-            if (msg.phase === 'betting') {
-              setCountdown(msg.countdown || 0)
-              setMult(1.00)
-            } else if (msg.phase === 'flying') {
-              setMult(msg.mult || 1.00)
-            } else if (msg.phase === 'crashed') {
-              setCrashPoint(msg.crash_point || 0)
-              if (msg.crash_point) {
-                setCrashHistory(prev => [msg.crash_point, ...prev].slice(0, 30))
-              }
-            }
-          }
-
-          if (msg.type === 'settings_updated') {
-            setSettings(msg.settings)
-          }
-        } catch (e) {
-          console.warn('[GameControl] Invalid message:', e)
-        }
-      }
-
-      ws.onclose = () => {
-        console.log('[GameControl] WS disconnected')
-        setConnected(false)
-        ws = null
-        readLocalStorageGameState()
-      }
-
-      ws.onerror = (err) => {
-        console.log('[GameControl] WS error, reading localStorage')
-        setConnected(false)
-        ws = null
-        readLocalStorageGameState()
-      }
-    }
-
-    const readLocalStorageGameState = () => {
+    const fetchInitialState = async () => {
       try {
-        const stateRaw = localStorage.getItem('aviator_game_state')
-        if (stateRaw) {
-          const state = JSON.parse(stateRaw)
-          setPhase(state.phase || 'betting')
+        // Get game state
+        const { data: state } = await supabase
+          .from('aviator_game_state')
+          .select('*')
+          .eq('id', 'current')
+          .single()
+
+        if (state) {
+          setPhase(state.phase)
           if (state.phase === 'betting') {
-            setCountdown(state.countdown || 0)
+            setCountdown(parseFloat(state.countdown))
             setMult(1.00)
-          } else if (state.phase === 'flying' || state.phase === 'running') {
-            setMult(state.mult || 1.00)
+          } else if (state.phase === 'flying') {
+            setMult(parseFloat(state.multiplier))
           } else if (state.phase === 'crashed') {
-            setCrashPoint(state.crash_point || state.crashPoint || 0)
+            setCrashPoint(parseFloat(state.crash_point))
           }
         }
-      } catch {}
+
+        // Get settings
+        const { data: settingsData } = await supabase
+          .from('aviator_settings')
+          .select('*')
+          .eq('id', 'config')
+          .single()
+
+        if (settingsData) {
+          setSettings(settingsData)
+        }
+
+        // Get crash history
+        const { data: history } = await supabase
+          .from('aviator_crash_history')
+          .select('crash_point')
+          .order('created_at', { ascending: false })
+          .limit(30)
+
+        if (history) {
+          setCrashHistory(history.map(h => h.crash_point))
+        }
+
+        setConnected(true)
+      } catch (e) {
+        console.error('[GameControl] Failed to fetch initial state:', e)
+      }
     }
 
-    connect()
+    fetchInitialState()
+
+    // Subscribe to realtime updates
+    const channel = supabase.channel('aviator-admin')
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'aviator_game_state'
+      }, (payload) => {
+        console.log('[GameControl] Game state changed:', payload.new)
+        const state = payload.new
+        setPhase(state.phase)
+        if (state.phase === 'betting') {
+          setCountdown(parseFloat(state.countdown))
+          setMult(1.00)
+        } else if (state.phase === 'flying') {
+          setMult(parseFloat(state.multiplier))
+        } else if (state.phase === 'crashed') {
+          setCrashPoint(parseFloat(state.crash_point))
+          setCrashHistory(prev => [parseFloat(state.crash_point), ...prev].slice(0, 30))
+        }
+        setConnected(true)
+      })
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'aviator_crash_history'
+      }, (payload) => {
+        console.log('[GameControl] New crash:', payload.new)
+        setCrashHistory(prev => [payload.new.crash_point, ...prev].slice(0, 30))
+      })
+      .subscribe((status) => {
+        console.log('[GameControl] Realtime status:', status)
+      })
+
+    channelRef.current = channel
 
     return () => {
-      if (ws) { ws.close(); ws = null }
-      if (pollInterval) { clearInterval(pollInterval); pollInterval = null }
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current)
+      }
     }
   }, [])
 
   // ── Controls ───────────────────────────────────────────────
   const handleManualCrash = async () => {
-    // Try backend first, then use localStorage fallback
     try {
-      const res = await fetch(`${API_URL}/api/aviator/crash`, { method: 'POST' })
-      if (res.ok) return
-    } catch {}
-    
-    // Local fallback - trigger crash in frontend game
-    try {
-      localStorage.setItem('aviator_manual_crash', JSON.stringify({ v: true, ts: Date.now() }))
-    } catch {}
+      const { data, error } = await supabase.functions.invoke('aviator-game-engine', {
+        body: { action: 'force_crash' }
+      })
+      if (!error && data?.success) {
+        console.log('[GameControl] Crash forced')
+      }
+    } catch (e) {
+      console.error('[GameControl] Failed to force crash:', e)
+    }
   }
 
   const handleSaveSettings = async () => {
-    // Try backend first, then use localStorage fallback
     try {
-      const res = await fetch(`${API_URL}/api/aviator/settings`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(settings),
+      const { data, error } = await supabase
+        .from('aviator_settings')
+        .update({
+          house_edge: settings.house_edge,
+          he_mode: settings.he_mode,
+          he_target_pct: settings.he_target_pct,
+          he_min_secs: settings.he_min_secs,
+          he_max_secs: settings.he_max_secs,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', 'config')
+        .select()
+        .single()
+
+      if (!error) {
+        console.log('[GameControl] Settings saved')
+      }
+    } catch (e) {
+      console.error('[GameControl] Failed to save settings:', e)
+    }
+  }
+
+  const handleNewRound = async () => {
+    try {
+      const { data, error } = await supabase.functions.invoke('aviator-game-engine', {
+        body: { action: 'new_round' }
       })
-      if (res.ok) return
-    } catch {}
-    
-    // Local fallback - save to localStorage
-    try {
-      localStorage.setItem('aviator_settings', JSON.stringify({ ...settings, ts: Date.now() }))
-    } catch {}
+      if (!error && data?.success) {
+        console.log('[GameControl] New round started')
+      }
+    } catch (e) {
+      console.error('[GameControl] Failed to start new round:', e)
+    }
   }
 
   const handleTest = () => {

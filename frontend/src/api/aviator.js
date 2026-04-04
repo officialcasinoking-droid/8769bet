@@ -1,48 +1,262 @@
 /**
  * Aviator API Layer
- * Connects to backend WebSocket for real-time game sync
- * HTTP API for admin controls and settings
+ * Uses Supabase Realtime for real-time game sync
  */
 
-import { supabaseAnon as supabase } from '../lib/supabase'
+import { supabaseAnon as supabase, supabaseAdmin } from '../lib/supabase'
 
 // ──────────────────────────────────────────────
-// Backend Configuration
+// Supabase Realtime Game State
 // ──────────────────────────────────────────────
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3006'
+let realtimeChannel = null
 
-// ──────────────────────────────────────────────
-// Frontend Game Engine (Standalone Mode)
-// Since backend is not responding, we run the game locally
-// ──────────────────────────────────────────────
+export function subscribeToGameState(onGameState, onBetsUpdate, onSettingsUpdate) {
+  // First, get current state from DB
+  fetchGameState().then(state => {
+    if (state && onGameState) {
+      onGameState({
+        type: 'game_state',
+        phase: state.phase,
+        mult: parseFloat(state.multiplier),
+        countdown: parseFloat(state.countdown),
+        crash_point: parseFloat(state.crash_point),
+        roundId: state.round_id,
+      })
+    }
+  })
 
-const BETTING_SECONDS = 8
+  // Subscribe to realtime changes
+  if (realtimeChannel) {
+    supabase.removeChannel(realtimeChannel)
+  }
 
-let gameState = {
-  phase: 'betting',
-  mult: 1.00,
-  countdown: BETTING_SECONDS,
-  roundId: '',
-  crashPoint: 0,
-  startTime: 0,
+  realtimeChannel = supabase.channel('aviator-game')
+    .on('postgres_changes', {
+      event: '*',
+      schema: 'public',
+      table: 'aviator_game_state'
+    }, (payload) => {
+      console.log('[Supabase] Game state changed:', payload)
+      if (onGameState && payload.new) {
+        onGameState({
+          type: 'game_state',
+          phase: payload.new.phase,
+          mult: parseFloat(payload.new.multiplier),
+          countdown: parseFloat(payload.new.countdown),
+          crash_point: parseFloat(payload.new.crash_point),
+          roundId: payload.new.round_id,
+        })
+      }
+    })
+    .subscribe((status) => {
+      console.log('[Supabase] Realtime subscription status:', status)
+    })
+
+  return () => {
+    if (realtimeChannel) {
+      supabase.removeChannel(realtimeChannel)
+      realtimeChannel = null
+    }
+  }
 }
 
-let settings = {
-  houseEdge: 0.05,
-  heMode: 'off',
+export async function fetchGameState() {
+  try {
+    const { data, error } = await supabase
+      .from('aviator_game_state')
+      .select('*')
+      .eq('id', 'current')
+      .single()
+
+    if (error) throw error
+    return data
+  } catch (e) {
+    console.error('[Supabase] Failed to fetch game state:', e)
+    return null
+  }
 }
 
-let crashHistory = []
-let currentBets = []
-let flightStartTime = 0
+export async function fetchCrashHistory() {
+  try {
+    const { data, error } = await supabase
+      .from('aviator_crash_history')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(30)
 
-const BOT_NAMES = [
+    if (error) throw error
+    return data || []
+  } catch (e) {
+    console.error('[Supabase] Failed to fetch crash history:', e)
+    return []
+  }
+}
+
+export async function fetchSettings() {
+  try {
+    const { data, error } = await supabase
+      .from('aviator_settings')
+      .select('*')
+      .eq('id', 'config')
+      .single()
+
+    if (error) throw error
+    return data
+  } catch (e) {
+    console.error('[Supabase] Failed to fetch settings:', e)
+    return null
+  }
+}
+
+// ──────────────────────────────────────────────
+// Admin Controls via Supabase Functions
+// ──────────────────────────────────────────────
+
+export async function adminForceCrash() {
+  try {
+    const { data, error } = await supabase.functions.invoke('aviator-game-engine', {
+      body: { action: 'force_crash' }
+    })
+    if (error) throw error
+    return data
+  } catch (e) {
+    console.error('[Admin] Failed to force crash:', e)
+    return { success: false, error: e.message }
+  }
+}
+
+export async function adminNewRound() {
+  try {
+    const { data, error } = await supabase.functions.invoke('aviator-game-engine', {
+      body: { action: 'new_round' }
+    })
+    if (error) throw error
+    return data
+  } catch (e) {
+    console.error('[Admin] Failed to start new round:', e)
+    return { success: false, error: e.message }
+  }
+}
+
+export async function adminUpdateSettings(settings) {
+  try {
+    const { data, error } = await supabase
+      .from('aviator_settings')
+      .update({
+        house_edge: settings.houseEdge,
+        he_mode: settings.heMode,
+        wait_time_seconds: settings.waitTimeSeconds,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', 'config')
+      .select()
+      .single()
+
+    if (error) throw error
+    return { success: true, settings: data }
+  } catch (e) {
+    console.error('[Admin] Failed to update settings:', e)
+    return { success: false, error: e.message }
+  }
+}
+
+// ──────────────────────────────────────────────
+// Place Bet (User)
+// ──────────────────────────────────────────────
+
+export async function placeBetBackend(betData) {
+  try {
+    const { data, error } = await supabase
+      .from('game_bets')
+      .insert({
+        round_id: betData.roundId,
+        user_id: betData.userId,
+        username: betData.username,
+        amount: betData.amount,
+        auto_cashout_at: betData.autoCashout || null,
+        status: 'pending'
+      })
+      .select()
+      .single()
+
+    if (error) throw error
+    return { success: true, bet: data }
+  } catch (e) {
+    console.error('[Bet] Failed to place bet:', e)
+    return { success: false, error: e.message }
+  }
+}
+
+export async function cashoutBackend(betId, multiplier) {
+  try {
+    const winAmount = Math.floor(multiplier * 100)
+    
+    const { data, error } = await supabase
+      .from('game_bets')
+      .update({
+        status: 'won',
+        cashout_at: multiplier,
+        cashout_multiplier: multiplier,
+        cashout_amount: winAmount,
+        won_amount: winAmount,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', betId)
+      .select()
+      .single()
+
+    if (error) throw error
+    return { success: true, winAmount, multiplier }
+  } catch (e) {
+    console.error('[Cashout] Failed:', e)
+    return { success: false, error: e.message }
+  }
+}
+
+// ──────────────────────────────────────────────
+// Legacy/Compatibility Exports
+// ──────────────────────────────────────────────
+
+export function connectWebSocket(onGameState, onBetsUpdate, onSettingsUpdate) {
+  return subscribeToGameState(onGameState, onBetsUpdate, onSettingsUpdate)
+}
+
+export function disconnectWebSocket() {
+  if (realtimeChannel) {
+    supabase.removeChannel(realtimeChannel)
+    realtimeChannel = null
+  }
+}
+
+export function sendWSMessage() { return false }
+
+export async function getBackendGameState() { return fetchGameState() }
+export async function requestBackendCrash() { return adminForceCrash() }
+export async function updateBackendSettings(settings) { return adminUpdateSettings(settings) }
+
+export async function getHouseEdgePool() {
+  try {
+    const { data, error } = await supabase
+      .from('aviator_house_pool')
+      .select('*')
+      .eq('id', 'pool')
+      .single()
+    if (error) throw error
+    return data
+  } catch {
+    return { total_bets: 0, total_winnings: 0, house_profit: 0 }
+  }
+}
+
+export const BOT_NAMES = [
   'Ali_Khan', 'Sara_Ahmed', 'Usman_Ali', 'Fatima_Zahid', 'Ahmed_Raza',
   'Ayesha_Khan', 'Bilal_Hassan', 'Zainab_Malik', 'Hassan_Ali', 'Mariam_Waseem',
+  'Hamza_Saeed', 'Hira_Nawaz', 'Saad_Afzal', 'Nadia_Iqbal', 'Faisal_Imran',
+  'Sana_Ansari', 'Kamran_Shahid', 'Mehwish_Butt', 'Adnan_Yousaf', 'Sadia_Parveen',
 ]
 
-function generateCrashPoint(houseEdge = 0.05) {
+export function generateCrashPoint(houseEdge = 0.05) {
   const r = Math.random()
   const e = Math.max(0, Math.min(houseEdge, 0.20))
   const p1 = 0.40 - e * 2
@@ -57,710 +271,6 @@ function generateCrashPoint(houseEdge = 0.05) {
   return 10.00 + Math.random() * 40.00
 }
 
-function startNewRound() {
-  currentBets = []
-  gameState.roundId = `r_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
-  gameState.phase = 'betting'
-  gameState.countdown = BETTING_SECONDS
-  gameState.crashPoint = generateCrashPoint(settings.houseEdge)
-  gameState.startTime = Date.now()
-  flightStartTime = 0
-  
-  try {
-    localStorage.setItem('aviator_game_state', JSON.stringify({ ...gameState, timestamp: Date.now() }))
-    localStorage.setItem('aviator_live_bets', JSON.stringify([]))
-  } catch {}
-}
-
-// Initialize game on load
-startNewRound()
-
-// ──────────────────────────────────────────────
-// WebSocket Connection with HTTP Fallback
-// ──────────────────────────────────────────────
-
-let ws = null
-let wsCallbacks = {
-  onGameState: null,
-  onBetsUpdate: null,
-  onSettingsUpdate: null,
-}
-let wsReconnectTimeout = null
-let reconnectAttempts = 0
-const MAX_RECONNECT_ATTEMPTS = 3
-let httpPollingInterval = null
-let gameInterval = null
-let gameRunning = false
-
-function startLocalGameLoop(onGameState) {
-  if (gameRunning) return
-  gameRunning = true
-  
-  gameInterval = setInterval(() => {
-    const now = Date.now()
-    
-    if (gameState.phase === 'betting') {
-      const elapsed = (now - gameState.startTime) / 1000
-      gameState.countdown = Math.max(0, BETTING_SECONDS - elapsed)
-      if (gameState.countdown <= 0) {
-        gameState.phase = 'flying'
-        gameState.mult = 1.00
-        flightStartTime = now
-      }
-    } else if (gameState.phase === 'flying') {
-      const elapsed = (now - flightStartTime) / 1000
-      gameState.mult = parseFloat(Math.pow(Math.E, 0.06 * elapsed).toFixed(2))
-      if (gameState.mult >= gameState.crashPoint) {
-        gameState.phase = 'crashed'
-        crashHistory.unshift(gameState.crashPoint)
-        if (crashHistory.length > 30) crashHistory = crashHistory.slice(0, 30)
-        
-        setTimeout(() => {
-          startNewRound()
-        }, 3000)
-      }
-    }
-    
-    if (onGameState) {
-      onGameState({ type: 'game_state', ...gameState, crashHistory })
-    }
-  }, 100)
-}
-
-export function connectWebSocket(onGameState, onBetsUpdate, onSettingsUpdate) {
-  wsCallbacks.onGameState = onGameState
-  wsCallbacks.onBetsUpdate = onBetsUpdate
-  wsCallbacks.onSettingsUpdate = onSettingsUpdate
-
-  // Start local game loop as fallback
-  startLocalGameLoop(onGameState)
-
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    return true
-  }
-
-  const wsUrl = API_BASE.replace(/^http:/, 'ws:').replace(/^https:/, 'wss:') + '/ws/aviator'
-  
-  try {
-    ws = new WebSocket(wsUrl)
-
-    ws.onopen = () => {
-      console.log('[WS] Connected to Aviator game engine')
-      reconnectAttempts = 0
-    }
-
-    ws.onmessage = (event) => {
-      try {
-        const msg = JSON.parse(event.data)
-        if (msg.type === 'game_state' && wsCallbacks.onGameState) {
-          wsCallbacks.onGameState(msg)
-        }
-        if (msg.type === 'bets_update' && wsCallbacks.onBetsUpdate) {
-          wsCallbacks.onBetsUpdate(msg.bets)
-        }
-        if (msg.type === 'settings_updated' && wsCallbacks.onSettingsUpdate) {
-          wsCallbacks.onSettingsUpdate(msg.settings)
-        }
-      } catch (e) {
-        console.warn('[WS] Parse error:', e.message)
-      }
-    }
-
-    ws.onclose = () => {
-      console.log('[WS] Disconnected, using local game engine')
-      ws = null
-    }
-
-    ws.onerror = (err) => {
-      console.log('[WS] Error, using local game engine')
-      ws = null
-    }
-
-    return true
-  } catch (e) {
-    console.log('[WS] Failed, using local game engine')
-    return false
-  }
-}
-
-export function disconnectWebSocket() {
-  if (ws) {
-    ws.close()
-    ws = null
-  }
-  if (wsReconnectTimeout) {
-    clearTimeout(wsReconnectTimeout)
-    wsReconnectTimeout = null
-  }
-  if (gameInterval) {
-    clearInterval(gameInterval)
-    gameInterval = null
-  }
-}
-
-export function sendWSMessage(msg) {
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify(msg))
-    return true
-  }
-  return false
-}
-
-// ──────────────────────────────────────────────
-// HTTP API Calls
-// ──────────────────────────────────────────────
-
-async function apiRequest(endpoint, options = {}) {
-  try {
-    const response = await fetch(`${API_BASE}${endpoint}`, {
-      ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        ...options.headers,
-      },
-    })
-    if (!response.ok) {
-      throw new Error(`API Error: ${response.status}`)
-    }
-    return await response.json()
-  } catch (e) {
-    console.error(`[API] ${endpoint} error:`, e.message)
-    throw e
-  }
-}
-
-export async function getBackendGameState() {
-  return apiRequest('/api/aviator/state')
-}
-
-export async function requestBackendCrash() {
-  return apiRequest('/api/aviator/crash', { method: 'POST' })
-}
-
-export async function updateBackendSettings(settings) {
-  return apiRequest('/api/aviator/settings', {
-    method: 'POST',
-    body: JSON.stringify(settings),
-  })
-}
-
-export async function placeBetBackend(betData) {
-  return apiRequest('/api/aviator/bet', {
-    method: 'POST',
-    body: JSON.stringify(betData),
-  })
-}
-
-export async function cashoutBackend(userId, betNum) {
-  return apiRequest('/api/aviator/cashout', {
-    method: 'POST',
-    body: JSON.stringify({ userId, betNum }),
-  })
-}
-
-/** Subscribe to game-state broadcasts (no-op — uses localStorage polling) */
-export function subscribeToGameBroadcast(callback) {
-  return null
-}
-
-/** Subscribe to round-crash broadcasts (no-op — uses localStorage polling) */
-export function subscribeToRoundBroadcast(callback) {
-  return null
-}
-
-/** Subscribe to round bets changes (no-op) */
-export function subscribeToRoundBets(roundId, onInsert, onUpdate) {
-  return null
-}
-
-/** Remove a channel (no-op) */
-export function unsubscribe(channel) {
-  // no-op
-}
-
-/** Broadcast game state via localStorage */
-export async function broadcastMultiplier(state) {
-  try {
-    localStorage.setItem('aviator_game_state', JSON.stringify({ ...state, timestamp: Date.now() }))
-  } catch (e) { /* ignore */ }
-}
-
-/** Broadcast crash event via localStorage */
-export async function broadcastCrash(roundId, crashPoint) {
-  try {
-    localStorage.setItem('aviator_game_crash', JSON.stringify({ roundId, crashPoint, timestamp: Date.now() }))
-  } catch (e) { /* ignore */ }
-}
-
-/** Signal from admin: manual crash requested */
-export function setManualCrash(v = true) {
-  try { localStorage.setItem('aviator_manual_crash', JSON.stringify({ v, ts: Date.now() })) } catch {}
-}
-export function getManualCrash() {
-  try {
-    const raw = localStorage.getItem('aviator_manual_crash')
-    if (!raw) return false
-    const data = JSON.parse(raw)
-    if (Date.now() - data.ts > 30000) return false
-    return data.v
-  } catch { return false }
-}
-export function clearManualCrash() {
-  try { localStorage.removeItem('aviator_manual_crash') } catch {}
-}
-
-/** Signal from admin: game settings (house edge, bias, bot config) */
-export function setGameSettings(settings) {
-  try { localStorage.setItem('aviator_settings', JSON.stringify({ ...settings, ts: Date.now() })) } catch {}
-}
-export function getGameSettingsLocal() {
-  try {
-    const raw = localStorage.getItem('aviator_settings')
-    if (!raw) return null
-    return JSON.parse(raw)
-  } catch { return null }
-}
-
-/** Smart auto house edge mode */
-export function getHeMode() {
-  try {
-    const raw = localStorage.getItem('aviator_settings')
-    if (!raw) return 'off'
-    const s = JSON.parse(raw)
-    return s.heMode || 'off'
-  } catch { return 'off' }
-}
-
-/** Write live house edge metrics for admin panel to read */
-export function broadcastLiveHE(metrics) {
-  try {
-    localStorage.setItem('aviator_live_he', JSON.stringify({ ...metrics, ts: Date.now() }))
-  } catch {}
-}
-
-// ──────────────────────────────────────────────
-// Supabase Real-time Sync (for multi-device support)
-// ──────────────────────────────────────────────
-
-let _lastBroadcast = 0
-
-export async function broadcastGameState(state) {
-  // localStorage only - no Supabase writes from game loop
-  try {
-    localStorage.setItem('aviator_game_state', JSON.stringify({ ...state, timestamp: Date.now() }))
-  } catch {}
-}
-
-export async function getGameState() {
-  try {
-    const { data } = await supabase
-      .from('aviator_game_state')
-      .select('*')
-      .eq('id', 'current')
-      .single()
-    if (data) return data
-  } catch {}
-  return null
-}
-
-export async function broadcastLiveBets(bets) {
-  try {
-    localStorage.setItem('aviator_live_bets', JSON.stringify(bets))
-  } catch {}
-}
-
-export async function getLiveBets() {
-  try {
-    const { data } = await supabase
-      .from('aviator_live_bets')
-      .select('*')
-      .order('created_at', { ascending: true })
-    return data || []
-  } catch { return [] }
-}
-
-export async function broadcastCrashHistory(history) {
-  try {
-    localStorage.setItem('aviator_crash_history', JSON.stringify(history))
-  } catch {}
-}
-
-export async function getCrashHistory() {
-  try {
-    const { data } = await supabase
-      .from('aviator_crash_history')
-      .select('crash_point')
-      .order('created_at', { ascending: false })
-      .limit(20)
-    return (data || []).map(d => d.crash_point)
-  } catch { return [] }
-}
-
-export async function checkManualCrash() {
-  try {
-    const { data } = await supabase
-      .from('aviator_signals')
-      .select('*')
-      .eq('id', 'crash')
-      .single()
-    if (data && data.signal === 'crash' && !data.processed) {
-      await supabase.from('aviator_signals').update({ processed: true }).eq('id', 'crash')
-      return true
-    }
-  } catch {}
-  return false
-}
-
-export async function setManualCrashSignal() {
-  try {
-    await supabase
-      .from('aviator_signals')
-      .upsert({
-        id: 'crash',
-        signal: 'crash',
-        timestamp: Date.now(),
-        processed: false
-      })
-  } catch (e) {
-    console.warn('[setManualCrashSignal]', e?.message)
-  }
-}
-
-export async function getSettingsFromDB() {
-  try {
-    const { data } = await supabase
-      .from('aviator_settings')
-      .select('*')
-      .eq('id', 'config')
-      .single()
-    return data || null
-  } catch { return null }
-}
-
-export async function saveSettingsToDB(settings) {
-  // localStorage only - no Supabase writes
-  try {
-    localStorage.setItem('aviator_settings', JSON.stringify(settings))
-  } catch {}
-}
-
-export async function broadcastLiveHEMetrics(metrics) {
-  // Only localStorage - DB table may not exist yet
-  try {
-    localStorage.setItem('aviator_live_he', JSON.stringify({ ...metrics, ts: Date.now() }))
-  } catch {}
-}
-
-export async function getLiveHEMetrics() {
-  try {
-    const raw = localStorage.getItem('aviator_live_he')
-    if (raw) return JSON.parse(raw)
-  } catch {}
-  return null
-}
-
-// ──────────────────────────────────────────────
-// House Edge Pool & P&L Tracking
-// ──────────────────────────────────────────────
-
-export async function getHouseEdgePool() {
-  // Try backend first, then fall back to localStorage
-  try {
-    const state = await apiRequest('/api/aviator/state')
-    if (state && state.houseEdge) {
-      return state.houseEdge
-    }
-  } catch {}
-
-  // Fallback to localStorage
-  return { total_deposits: 0, total_bets: 0, total_winnings_paid: 0, house_edge_pool: 0, total_withdrawals_paid: 0, gross_pnl: 0, rounds_played: 0 }
-}
-
-export async function updateHouseEdgePool(realBetAmount, realExitAmount, crashMult) {
-  // No-op - game runs on localStorage
-}
-
-export async function recordDeposit(amount) {
-  try {
-    const { data, error } = await supabase.rpc('record_aviator_deposit', { p_amount: Number(amount) || 0 })
-    if (error) {
-      console.error('[recordDeposit] RPC error:', error.message)
-    } else {
-      console.log('[recordDeposit] OK - amount:', amount)
-    }
-  } catch (e) {
-    console.error('[recordDeposit] Exception:', e?.message)
-  }
-}
-
-export async function recordWithdrawal(amount) {
-  try {
-    const { data, error } = await supabase.rpc('record_aviator_withdrawal', { p_amount: Number(amount) || 0 })
-    if (error) {
-      console.error('[recordWithdrawal] RPC error:', error.message)
-    } else {
-      console.log('[recordWithdrawal] OK - amount:', amount)
-    }
-  } catch (e) {
-    console.error('[recordWithdrawal] Exception:', e?.message)
-  }
-}
-
-export async function getPendingWithdrawalQueue() {
-  const { data, error } = await supabase
-    .from('withdrawals')
-    .select('id, user_id, amount, status, created_at, is_queued, queue_reason, users(username)')
-    .eq('is_queued', true)
-    .order('created_at', { ascending: false })
-  if (error) return []
-  return data || []
-}
-
-export async function getHouseEdgeAlerts() {
-  const { data, error } = await supabase
-    .from('withdrawals')
-    .select('id, user_id, amount, status, created_at, users(username)')
-    .eq('status', 'pending')
-    .order('created_at', { ascending: false })
-  if (error) return []
-  return data || []
-}
-
-export async function queueWithdrawal(id, reason) {
-  try {
-    await supabase
-      .from('withdrawals')
-      .update({ is_queued: true, queue_reason: reason, aviator_impact: true })
-      .eq('id', id)
-  } catch (e) {
-    console.warn('[queueWithdrawal]', e?.message)
-  }
-}
-
-// ──────────────────────────────────────────────
-// Round Management
-// ──────────────────────────────────────────────
-
-/** Get the currently running round (if any) */
-export async function getCurrentRound() {
-  const { data, error } = await supabase
-    .from('game_rounds')
-    .select('*')
-    .eq('status', 'running')
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .single()
-  if (error && error.code !== 'PGRST116') throw error
-  return data || null
-}
-
-/** Get the most recently crashed round */
-export async function getLatestCrashedRound() {
-  const { data, error } = await supabase
-    .from('game_rounds')
-    .select('*')
-    .eq('status', 'crashed')
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .single()
-  if (error && error.code !== 'PGRST116') throw error
-  return data || null
-}
-
-/** Create a new round in DB */
-export async function createRound(houseEdge = 0.05) {
-  const roundId = `r_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
-  const crashPoint = parseFloat(generateCrashPoint(houseEdge).toFixed(2))
-  const { data, error } = await supabase
-    .from('game_rounds')
-    .insert({
-      round_id: roundId,
-      server_seed: roundId,
-      server_seed_hash: roundId,
-      crash_point: crashPoint,
-      status: 'betting',
-      target_house_edge: houseEdge,
-      started_at: new Date().toISOString(),
-      bet_count: 0,
-      total_bet_amount: 0,
-      total_exit_amount: 0,
-      house_profit: 0,
-    })
-    .select()
-    .single()
-  if (error) throw error
-  return data
-}
-
-/** Update round with crash point and stats after round ends */
-export async function updateRound(roundId, updates) {
-  const { data, error } = await supabase
-    .from('game_rounds')
-    .update(updates)
-    .eq('round_id', roundId)
-    .select()
-    .single()
-  if (error) throw error
-  return data
-}
-
-/** Get recent crashed rounds for history display */
-export async function getRecentCrashes(limit = 20) {
-  const { data, error } = await supabase
-    .from('game_rounds')
-    .select('round_id, crash_point, created_at, house_profit, bet_count, total_bet_amount, total_exit_amount')
-    .eq('status', 'crashed')
-    .order('created_at', { ascending: false })
-    .limit(limit)
-  if (error) throw error
-  return data || []
-}
-
-// ──────────────────────────────────────────────
-// Bet Management
-// ──────────────────────────────────────────────
-
-/** Get all bets for a specific round */
-export async function getRoundBets(roundId) {
-  const { data, error } = await supabase
-    .from('game_bets')
-    .select('*')
-    .eq('round_id', roundId)
-    .order('created_at', { ascending: true })
-  if (error) throw error
-  return data || []
-}
-
-/**
- * Place a bet for a round.
- * isBot=true: userId is null, username is bot name
- * isBot=false: userId must be provided
- */
-export async function placeBet({ roundId, userId, username, amount, autoCashoutAt, isBot = false, isDemo = false }) {
-  try {
-    const row = {
-      round_id: roundId || `local_${Date.now()}`,
-      user_id: isBot ? null : userId,
-      username: username || (isBot ? 'Bot_' + Math.floor(Math.random() * 9999) : 'Guest'),
-      amount,
-      auto_cashout_at: autoCashoutAt || null,
-      is_bot: isBot,
-      is_demo: isDemo,
-      status: 'pending',
-    }
-    if (!row.user_id && !isBot && !isDemo) return null
-    const { data, error } = await supabase
-      .from('game_bets')
-      .insert(row)
-      .select()
-      .single()
-    if (error) {
-      if (error.code === '23505' || error.code === '409') {
-        const { data: existing } = await supabase
-          .from('game_bets')
-          .select('id')
-          .eq('round_id', roundId || `local_${Date.now()}`)
-          .eq('user_id', isBot ? null : userId)
-          .maybeSingle()
-        return existing || null
-      }
-      console.warn('[placeBet] DB error:', error.message)
-      return null
-    }
-    return data
-  } catch (err) {
-    console.warn('[placeBet] Exception:', err?.message)
-    return null
-  }
-}
-
-/**
- * Cash out a bet.
- * Sets: cashout_multiplier, cashout_amount (winnings), won_amount, status=won
- */
-export async function cashoutBet(betId, multiplier) {
-  try {
-    if (!betId) return null
-    const { data: bet } = await supabase.from('game_bets').select('id, amount').eq('id', betId).single()
-    if (!bet) return null
-    const winAmount = Math.floor(bet.amount * multiplier)
-    await supabase.from('game_bets').update({
-      cashout_at: multiplier,
-      cashout_amount: winAmount,
-      won_amount: winAmount,
-      status: 'won',
-      updated_at: new Date().toISOString(),
-    }).eq('id', betId)
-    return { winAmount }
-  } catch {
-    return null
-  }
-}
-
-/** Mark all pending bets for a round as lost */
-export async function markBetsLost(roundId) {
-  try {
-    await supabase
-      .from('game_bets')
-      .update({ status: 'lost', updated_at: new Date().toISOString() })
-      .eq('round_id', roundId)
-      .eq('status', 'pending')
-  } catch (e) { /* table might not exist */ }
-}
-
-// ──────────────────────────────────────────────
-// Game Settings
-// ──────────────────────────────────────────────
-
-export async function getGameSettings() {
-  const { data, error } = await supabase
-    .from('game_settings')
-    .select('*')
-    .eq('id', 'aviator')
-    .single()
-  if (error && error.code !== 'PGRST116') throw error
-  return data || { min_bet: 6, max_bet: 5000, house_edge: 0.05, wait_time_seconds: 8, is_enabled: true }
-}
-
-export async function updateGameSettings(updates) {
-  const { data, error } = await supabase
-    .from('game_settings')
-    .update(updates)
-    .eq('id', 'aviator')
-    .select()
-    .single()
-  if (error) throw error
-  return data
-}
-
-// ──────────────────────────────────────────────
-// User Bet History
-// ──────────────────────────────────────────────
-
-/** Get a user's bet history across all rounds */
-export async function getUserBetHistory(userId, limit = 30) {
-  const { data, error } = await supabase
-    .from('game_bets')
-    .select('*')
-    .eq('user_id', userId)
-    .order('created_at', { ascending: false })
-    .limit(limit)
-  if (error) throw error
-  return data || []
-}
-
-// ──────────────────────────────────────────────
-// Crash Point Generation
-// Uses provably fair-ish distribution with configurable house edge.
-// ──────────────────────────────────────────────
-// Bot Helpers
-// ──────────────────────────────────────────────
-
-// BOT_NAMES already defined at top
-
-// Re-export for backwards compatibility  
-export { generateCrashPoint as generateCrashPoint }
-
 export function getRandomBotName() {
   return BOT_NAMES[Math.floor(Math.random() * BOT_NAMES.length)]
 }
@@ -773,158 +283,50 @@ export function generateBotBetAmount(min = 10, max = 500) {
 }
 
 export function generateBotAutoCashout() {
-  const r = Math.random()
-  if (r < 0.3) return null  // 30% don't set auto-cashout
-  const multipliers = [1.1, 1.2, 1.3, 1.5, 1.7, 2.0, 2.5, 3.0, 4.0, 5.0, 10.0]
-  const idx = Math.floor(Math.random() * multipliers.length)
-  return multipliers[idx]
+  if (Math.random() < 0.3) return null
+  const multipliers = [1.1, 1.2, 1.3, 1.5, 1.7, 2.0, 2.5, 3.0]
+  return multipliers[Math.floor(Math.random() * multipliers.length)]
 }
 
-// ──────────────────────────────────────────────
-// Autonomous Game Engine
-// Runs client-side when no admin panel is present.
-// Uses leader election via Supabase presence.
-// ──────────────────────────────────────────────
-
-const LEADER_CHANNEL = 'aviator-leader'
-const GAME_CHANNEL = 'aviator-broadcast'
-
-/**
- * Create a platform_settings entry for game lock if not exists.
- * Falls back gracefully if table doesn't exist.
- */
-export async function tryAcquireGameLock() {
-  const lockKey = 'aviator_leader_id'
-  const lockTime = 'aviator_leader_since'
-  try {
-    const { data, error } = await supabase
-      .from('platform_settings')
-      .select(lockKey)
-      .eq('id', 'game_lock')
-      .single()
-
-    if (error && error.code !== 'PGRST116') {
-      console.warn('[Aviator] platform_settings query failed:', error.message)
-      return null
-    }
-
-    if (data && data[lockKey]) {
-      return null // someone else holds the lock
-    }
-
-    // Try to insert or update the lock
-    const clientId = `client_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
-    const { error: upsertError } = await supabase
-      .from('platform_settings')
-      .upsert({
-        id: 'game_lock',
-        [lockKey]: clientId,
-        [lockTime]: new Date().toISOString(),
-      }, { onConflict: 'id' })
-
-    if (upsertError) return null
-
-    // Verify we got the lock
-    const { data: verify } = await supabase
-      .from('platform_settings')
-      .select(lockKey)
-      .eq('id', 'game_lock')
-      .single()
-
-    if (verify && verify[lockKey] === clientId) {
-      return clientId
-    }
-    return null
-  } catch (e) {
-    return null
-  }
-}
-
-export async function releaseGameLock(clientId) {
-  try {
-    const { data } = await supabase
-      .from('platform_settings')
-      .select('aviator_leader_id')
-      .eq('id', 'game_lock')
-      .single()
-
-    if (data && data.aviator_leader_id === clientId) {
-      await supabase
-        .from('platform_settings')
-        .update({ aviator_leader_id: null, aviator_leader_since: null })
-        .eq('id', 'game_lock')
-    }
-  } catch (e) { /* ignore */ }
-}
-
-export async function getGameSettingsFast() {
-  try {
-    const { data, error } = await supabase
-      .from('game_settings')
-      .select('*')
-      .eq('id', 'aviator')
-      .single()
-    if (error && error.code !== 'PGRST116') return null
-    return data
-  } catch (e) {
-    return null
-  }
-}
-
-// ──────────────────────────────────────────────
-// Leader Election via Broadcast Presence
-// More reliable than DB lock when RLS is strict.
-// ──────────────────────────────────────────────
-
-let _leaderChannel = null
-let _isLeader = false
-let _leaderClientId = null
-
-/**
- * Attempt to become the leader by claiming via broadcast.
- * Returns a promise that resolves to true if we became leader.
- */
-export async function tryBecomeLeader(clientId) {
-  try {
-    const ch = supabase.channel(`${LEADER_CHANNEL}-${clientId}`)
-    let becameLeader = false
-
-    await new Promise((resolve) => {
-      ch.on('broadcast', { event: 'leader-claim' }, (p) => {
-        // Someone else claimed leadership before us
-        if (p.payload.clientId !== clientId) {
-          becameLeader = false
-        }
-      })
-      ch.subscribe(async (status) => {
-        if (status === 'SUBSCRIBED') {
-          // Announce our claim
-          ch.send({
-            type: 'broadcast',
-            event: 'leader-claim',
-            payload: { clientId, ts: Date.now() },
-          })
-          // Wait a short time to see if anyone else claimed
-          setTimeout(() => {
-            resolve()
-          }, 500)
-        }
-      })
-    })
-
-    _leaderChannel = ch
-    return true
-  } catch (e) {
-    return false
-  }
-}
-
-export function resignLeadership() {
-  if (_leaderChannel) {
-    supabase.removeChannel(_leaderChannel)
-    _leaderChannel = null
-  }
-}
-
-export { _isLeader, _leaderClientId }
-
+// Legacy no-op functions for compatibility
+export function subscribeToGameBroadcast() { return null }
+export function subscribeToRoundBroadcast() { return null }
+export function subscribeToRoundBets() { return null }
+export function unsubscribe() {}
+export async function broadcastMultiplier() {}
+export async function broadcastCrash() {}
+export function setManualCrash() {}
+export function getManualCrash() { return false }
+export function clearManualCrash() {}
+export function setGameSettings() {}
+export function getGameSettingsLocal() { return null }
+export function getHeMode() { return 'off' }
+export function broadcastLiveHE() {}
+export async function broadcastGameState() {}
+export async function getSettingsFromDB() { return null }
+export async function checkManualCrash() { return false }
+export async function broadcastLiveHEMetrics() {}
+export async function getLiveHEMetrics() { return null }
+export async function updateHouseEdgePool() {}
+export async function recordDeposit() {}
+export async function recordWithdrawal() {}
+export async function getPendingWithdrawalQueue() { return [] }
+export async function getHouseEdgeAlerts() { return [] }
+export async function queueWithdrawal() {}
+export async function getCurrentRound() { return null }
+export async function getLatestCrashedRound() { return null }
+export async function createRound() { return null }
+export async function updateRound() { return null }
+export async function getRecentCrashes() { return [] }
+export async function getRoundBets() { return [] }
+export async function placeBet() { return null }
+export async function cashoutBet() { return null }
+export async function markBetsLost() {}
+export async function getGameSettings() { return null }
+export async function updateGameSettings() { return null }
+export async function getUserBetHistory() { return [] }
+export async function tryAcquireGameLock() { return null }
+export async function releaseGameLock() {}
+export async function getGameSettingsFast() { return null }
+export async function tryBecomeLeader() { return false }
+export function resignLeadership() {}

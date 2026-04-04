@@ -1,17 +1,8 @@
 /**
- * AviatorGame.jsx — Professional Autonomous Aviator Crash Game
+ * AviatorGame.jsx — Supabase Realtime Aviator Crash Game
  *
- * Design Reference: Spribe Aviator
- * - Dark navy theme with neon green/red accents
- * - Small red plane flying across graph
- * - Glass morphism bet panels
- * - Professional gaming aesthetic
- *
- * Autonomous Mode:
- * - The game runs entirely client-side (no admin panel needed)
- * - One client's browser acts as "leader" and broadcasts game state
- * - All other clients receive broadcasts and sync automatically
- * - Falls back gracefully if Supabase DB tables don't exist yet
+ * Uses Supabase Realtime for real-time game state synchronization
+ * Game engine runs in Supabase Edge Function
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react'
@@ -19,29 +10,16 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../components/ui/Toast'
 import { ChevronLeft } from 'lucide-react'
-import { supabaseAnon } from '../../lib/supabase'
 import {
-  subscribeToGameBroadcast,
-  subscribeToRoundBroadcast,
-  unsubscribe,
-  getRecentCrashes,
-  getUserBetHistory,
-  placeBet as apiPlaceBet,
-  cashoutBet as apiCashoutBet,
+  subscribeToGameState,
+  fetchGameState,
+  fetchCrashHistory,
+  fetchSettings,
+  placeBetBackend,
   generateCrashPoint,
   generateBotBetAmount,
   generateBotAutoCashout,
   getRandomBotName,
-  getManualCrash,
-  clearManualCrash,
-  getGameSettingsLocal,
-  broadcastLiveHE,
-  updateHouseEdgePool,
-  broadcastGameState,
-  getSettingsFromDB,
-  checkManualCrash,
-  broadcastLiveHEMetrics,
-  connectWebSocket,
   disconnectWebSocket,
   getBackendGameState,
 } from '../../api/aviator'
@@ -649,7 +627,7 @@ export default function AviatorGame() {
   useEffect(() => {
     if (showLoading) return
 
-    connectWebSocket(
+    subscribeToGameState(
       (state) => {
         if (state.phase === 'betting') {
           phaseRef.current = 'betting'
@@ -681,18 +659,18 @@ export default function AviatorGame() {
       }
     )
 
-    getBackendGameState().then(state => {
+    fetchGameState().then(state => {
       if (state) {
         if (state.phase === 'betting') {
           setPhase('betting')
-          setCd(state.countdown)
-          roundIdRef.current = state.roundId
-          crashPtRef.current = state.crashPoint
+          setCd(parseFloat(state.countdown))
+          roundIdRef.current = state.round_id
+          crashPtRef.current = parseFloat(state.crash_point)
         } else if (state.phase === 'flying') {
           setPhase('running')
-          setMult(state.mult)
-          roundIdRef.current = state.roundId
-          crashPtRef.current = state.crashPoint
+          setMult(parseFloat(state.multiplier))
+          roundIdRef.current = state.round_id
+          crashPtRef.current = parseFloat(state.crash_point)
         } else if (state.phase === 'crashed') {
           setPhase('crashed')
           setCrashedAt(state.crashPoint)
