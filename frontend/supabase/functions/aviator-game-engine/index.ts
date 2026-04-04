@@ -1,7 +1,7 @@
 /**
  * Aviator Game Engine - Supabase Edge Function
  * Runs continuously to update game state in real-time
- * Called by cron job every 100ms
+ * Called by cron job every 1 second
  */
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
@@ -29,6 +29,31 @@ function generateCrashPoint(houseEdge = 5) {
   return 10.00 + Math.random() * 40.00
 }
 
+function getRandomBotBets(roundId: string) {
+  const bots = [
+    { name: 'Ali_Khan', amount: Math.floor(Math.random() * 500) + 50 },
+    { name: 'Sara_Ahmed', amount: Math.floor(Math.random() * 1000) + 100 },
+    { name: 'Usman_Ali', amount: Math.floor(Math.random() * 300) + 20 },
+    { name: 'Fatima_Zahid', amount: Math.floor(Math.random() * 800) + 50 },
+    { name: 'Ahmed_Raza', amount: Math.floor(Math.random() * 600) + 100 },
+    { name: 'Ayesha_Khan', amount: Math.floor(Math.random() * 400) + 50 },
+    { name: 'Bilal_Hassan', amount: Math.floor(Math.random() * 700) + 100 },
+    { name: 'Zainab_Malik', amount: Math.floor(Math.random() * 500) + 50 },
+    { name: 'Hassan_Ali', amount: Math.floor(Math.random() * 900) + 100 },
+    { name: 'Mariam_Waseem', amount: Math.floor(Math.random() * 350) + 50 },
+  ]
+  
+  const numBots = Math.floor(Math.random() * 5) + 3
+  const selected = bots.sort(() => Math.random() - 0.5).slice(0, numBots)
+  
+  return selected.map(bot => ({
+    round_id: roundId,
+    username: bot.name,
+    amount: bot.amount,
+    is_bot: true
+  }))
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -39,16 +64,126 @@ Deno.serve(async (req) => {
   const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
   try {
-    // Parse request body for admin actions
     let action = null
-    let body = {}
+    let body: Record<string, unknown> = {}
     
     try {
       body = await req.json()
-      action = body.action
+      action = body.action as string
     } catch {}
 
-    // Handle admin actions
+    // Action: Place a bet
+    if (action === 'place_bet') {
+      const { round_id, user_id, username, amount } = body
+      
+      if (!round_id || !username || !amount) {
+        return new Response(
+          JSON.stringify({ success: false, error: 'Missing required fields' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+
+      const { data: state } = await supabase
+        .from('aviator_game_state')
+        .select('phase')
+        .eq('id', 'current')
+        .single()
+
+      if (!state || state.phase !== 'betting') {
+        return new Response(
+          JSON.stringify({ success: false, error: 'Betting closed' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+
+      const { data: bet, error: betError } = await supabase
+        .from('aviator_bets')
+        .insert({
+          round_id,
+          user_id: user_id || null,
+          username,
+          amount,
+          is_bot: false,
+          status: 'pending'
+        })
+        .select()
+        .single()
+
+      if (betError) {
+        return new Response(
+          JSON.stringify({ success: false, error: betError.message }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+
+      // Update house pool
+      await supabase
+        .from('aviator_house_pool')
+        .update({
+          total_bets: supabase.raw('total_bets + ?', [amount]),
+          last_updated: new Date().toISOString()
+        })
+        .eq('id', 'pool')
+
+      return new Response(
+        JSON.stringify({ success: true, bet_id: bet.id }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    // Action: Cashout
+    if (action === 'cashout') {
+      const { bet_id, multiplier } = body
+      
+      const { data: bet, error: betError } = await supabase
+        .from('aviator_bets')
+        .select('*')
+        .eq('id', bet_id)
+        .single()
+
+      if (betError || !bet) {
+        return new Response(
+          JSON.stringify({ success: false, error: 'Bet not found' }),
+          { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+
+      if (bet.status !== 'pending') {
+        return new Response(
+          JSON.stringify({ success: false, error: 'Already processed' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+
+      const winAmount = parseFloat(bet.amount as string) * (multiplier as number)
+      const profit = parseFloat(bet.amount as string) - winAmount
+
+      await supabase
+        .from('aviator_bets')
+        .update({
+          status: 'cashed_out',
+          multiplier,
+          cashout_amount: winAmount,
+          cashout_multiplier: multiplier
+        })
+        .eq('id', bet_id)
+
+      await supabase
+        .from('aviator_house_pool')
+        .update({
+          total_winnings: supabase.raw('total_winnings + ?', [winAmount]),
+          house_profit: supabase.raw('house_profit + ?', [profit]),
+          last_updated: new Date().toISOString()
+        })
+        .eq('id', 'pool')
+
+      return new Response(
+        JSON.stringify({ success: true, win_amount: winAmount, profit }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    // Action: Force crash
     if (action === 'force_crash') {
       const { data: currentState } = await supabase
         .from('aviator_game_state')
@@ -72,6 +207,33 @@ Deno.serve(async (req) => {
             round_id: currentState.round_id,
             crash_point: currentState.multiplier
           })
+
+        // Mark all pending bets as lost
+        await supabase
+          .from('aviator_bets')
+          .update({ status: 'lost' })
+          .eq('round_id', currentState.round_id)
+          .eq('status', 'pending')
+
+        // Get pending bet total and update house pool
+        const { data: pendingBets } = await supabase
+          .from('aviator_bets')
+          .select('amount')
+          .eq('round_id', currentState.round_id)
+          .eq('status', 'lost')
+
+        const pendingTotal = pendingBets?.reduce((sum: number, b: { amount: number }) => sum + b.amount, 0) || 0
+
+        if (pendingTotal > 0) {
+          await supabase
+            .from('aviator_house_pool')
+            .update({
+              house_profit: supabase.raw('house_profit + ?', [pendingTotal]),
+              rounds_played: supabase.raw('rounds_played + 1'),
+              last_updated: new Date().toISOString()
+            })
+            .eq('id', 'pool')
+        }
       }
 
       return new Response(
@@ -80,6 +242,7 @@ Deno.serve(async (req) => {
       )
     }
 
+    // Action: New round
     if (action === 'new_round') {
       const newRoundId = `r_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
       const { data: settings } = await supabase
@@ -111,6 +274,20 @@ Deno.serve(async (req) => {
       )
     }
 
+    // Action: Get house stats
+    if (action === 'house_stats') {
+      const { data: stats } = await supabase
+        .from('aviator_house_pool')
+        .select('*')
+        .eq('id', 'pool')
+        .single()
+
+      return new Response(
+        JSON.stringify(stats),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
     // Get current game state
     const { data: stateData, error: stateError } = await supabase
       .from('aviator_game_state')
@@ -119,7 +296,6 @@ Deno.serve(async (req) => {
       .single()
 
     if (stateError || !stateData) {
-      // Initialize game state if not exists
       const newRoundId = `r_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
       await supabase
         .from('aviator_game_state')
@@ -145,15 +321,23 @@ Deno.serve(async (req) => {
     const flightStartTime = stateData.flight_start_time ? parseInt(stateData.flight_start_time) : null
     const crashPoint = parseFloat(stateData.crash_point)
     const roundId = stateData.round_id
+    const countdown = parseFloat(stateData.countdown)
     const now = Date.now()
 
     // Game logic based on phase
     if (phase === 'betting') {
       const elapsed = (now - startTime) / 1000
-      const newCountdown = Math.max(0, BETTING_SECONDS - elapsed)
+      let newCountdown = Math.max(0, countdown - elapsed)
+
+      // Add bot bets during betting phase (first 3 seconds)
+      if (elapsed < 3 && Math.random() < 0.3) {
+        const botBets = getRandomBotBets(roundId)
+        for (const botBet of botBets) {
+          await supabase.from('aviator_bets').insert(botBet)
+        }
+      }
 
       if (newCountdown <= 0) {
-        // Transition to flying
         await supabase
           .from('aviator_game_state')
           .update({
@@ -170,7 +354,6 @@ Deno.serve(async (req) => {
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         )
       } else {
-        // Update countdown
         await supabase
           .from('aviator_game_state')
           .update({ countdown: newCountdown, updated_at: new Date().toISOString() })
@@ -193,9 +376,7 @@ Deno.serve(async (req) => {
       const elapsed = (now - flightStartTime) / 1000
       const newMultiplier = Math.pow(Math.E, 0.06 * elapsed)
 
-      // Check for crash
       if (newMultiplier >= crashPoint) {
-        // Crash!
         await supabase
           .from('aviator_game_state')
           .update({
@@ -209,12 +390,46 @@ Deno.serve(async (req) => {
           .from('aviator_crash_history')
           .insert({ round_id: roundId, crash_point: crashPoint })
 
+        // Mark all pending bets as lost
+        await supabase
+          .from('aviator_bets')
+          .update({ status: 'lost' })
+          .eq('round_id', roundId)
+          .eq('status', 'pending')
+
+        // Update house pool with lost bets
+        const { data: pendingBets } = await supabase
+          .from('aviator_bets')
+          .select('amount')
+          .eq('round_id', roundId)
+          .eq('status', 'lost')
+
+        const pendingTotal = pendingBets?.reduce((sum: number, b: { amount: number }) => sum + b.amount, 0) || 0
+
+        if (pendingTotal > 0) {
+          await supabase
+            .from('aviator_house_pool')
+            .update({
+              house_profit: supabase.raw('house_profit + ?', [pendingTotal]),
+              rounds_played: supabase.raw('rounds_played + 1'),
+              last_updated: new Date().toISOString()
+            })
+            .eq('id', 'pool')
+        }
+
+        // Keep only last 30 crash points
+        await supabase
+          .from('aviator_crash_history')
+          .delete()
+          .not('id', 'in', 
+            supabase.from('aviator_crash_history').select('id').order('created_at').limit(30)
+          )
+
         return new Response(
           JSON.stringify({ action: 'crashed', crash_point: crashPoint, round_id: roundId }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         )
       } else {
-        // Update multiplier
         await supabase
           .from('aviator_game_state')
           .update({
@@ -230,7 +445,6 @@ Deno.serve(async (req) => {
       }
     }
     else if (phase === 'crashed') {
-      // Check if we need to start new round (3 seconds after crash)
       const timeSinceCrash = now - startTime
       if (timeSinceCrash > 3000) {
         const newRoundId = `r_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
