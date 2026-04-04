@@ -23,6 +23,7 @@ import {
   disconnectWebSocket,
   getBackendGameState,
   getGameSettingsLocal,
+  broadcastGameState,
 } from '../../api/aviator'
 
 const CSS = `
