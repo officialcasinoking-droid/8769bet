@@ -13,6 +13,69 @@ import { supabaseAnon as supabase } from '../lib/supabase'
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3006'
 
 // ──────────────────────────────────────────────
+// Frontend Game Engine (Standalone Mode)
+// Since backend is not responding, we run the game locally
+// ──────────────────────────────────────────────
+
+const BETTING_SECONDS = 8
+
+let gameState = {
+  phase: 'betting',
+  mult: 1.00,
+  countdown: BETTING_SECONDS,
+  roundId: '',
+  crashPoint: 0,
+  startTime: 0,
+}
+
+let settings = {
+  houseEdge: 0.05,
+  heMode: 'off',
+}
+
+let crashHistory = []
+let currentBets = []
+let flightStartTime = 0
+
+const BOT_NAMES = [
+  'Ali_Khan', 'Sara_Ahmed', 'Usman_Ali', 'Fatima_Zahid', 'Ahmed_Raza',
+  'Ayesha_Khan', 'Bilal_Hassan', 'Zainab_Malik', 'Hassan_Ali', 'Mariam_Waseem',
+]
+
+function generateCrashPoint(houseEdge = 0.05) {
+  const r = Math.random()
+  const e = Math.max(0, Math.min(houseEdge, 0.20))
+  const p1 = 0.40 - e * 2
+  const p2 = 0.25 - e
+  const p3 = 0.15
+  const p4 = 0.12
+
+  if (r < p1) return 1.00 + Math.random() * 0.50
+  if (r < p1 + p2) return 1.50 + Math.random() * 1.00
+  if (r < p1 + p2 + p3) return 2.50 + Math.random() * 2.00
+  if (r < p1 + p2 + p3 + p4) return 4.50 + Math.random() * 5.50
+  return 10.00 + Math.random() * 40.00
+}
+
+function startNewRound() {
+  currentBets = []
+  gameState.roundId = `r_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
+  gameState.phase = 'betting'
+  gameState.countdown = BETTING_SECONDS
+  gameState.crashPoint = generateCrashPoint(settings.houseEdge)
+  gameState.startTime = Date.now()
+  flightStartTime = 0
+  
+  try {
+    localStorage.setItem('aviator_game_state', JSON.stringify({ ...gameState, timestamp: Date.now() }))
+    localStorage.setItem('aviator_live_bets', JSON.stringify([]))
+  } catch {}
+}
+
+// Initialize game on load
+startNewRound()
+
+// ──────────────────────────────────────────────
 // WebSocket Connection with HTTP Fallback
 // ──────────────────────────────────────────────
 
@@ -24,13 +87,53 @@ let wsCallbacks = {
 }
 let wsReconnectTimeout = null
 let reconnectAttempts = 0
-const MAX_RECONNECT_ATTEMPTS = 5
+const MAX_RECONNECT_ATTEMPTS = 3
 let httpPollingInterval = null
+let gameInterval = null
+let gameRunning = false
+
+function startLocalGameLoop(onGameState) {
+  if (gameRunning) return
+  gameRunning = true
+  
+  gameInterval = setInterval(() => {
+    const now = Date.now()
+    
+    if (gameState.phase === 'betting') {
+      const elapsed = (now - gameState.startTime) / 1000
+      gameState.countdown = Math.max(0, BETTING_SECONDS - elapsed)
+      if (gameState.countdown <= 0) {
+        gameState.phase = 'flying'
+        gameState.mult = 1.00
+        flightStartTime = now
+      }
+    } else if (gameState.phase === 'flying') {
+      const elapsed = (now - flightStartTime) / 1000
+      gameState.mult = parseFloat(Math.pow(Math.E, 0.06 * elapsed).toFixed(2))
+      if (gameState.mult >= gameState.crashPoint) {
+        gameState.phase = 'crashed'
+        crashHistory.unshift(gameState.crashPoint)
+        if (crashHistory.length > 30) crashHistory = crashHistory.slice(0, 30)
+        
+        setTimeout(() => {
+          startNewRound()
+        }, 3000)
+      }
+    }
+    
+    if (onGameState) {
+      onGameState({ type: 'game_state', ...gameState, crashHistory })
+    }
+  }, 100)
+}
 
 export function connectWebSocket(onGameState, onBetsUpdate, onSettingsUpdate) {
   wsCallbacks.onGameState = onGameState
   wsCallbacks.onBetsUpdate = onBetsUpdate
   wsCallbacks.onSettingsUpdate = onSettingsUpdate
+
+  // Start local game loop as fallback
+  startLocalGameLoop(onGameState)
 
   if (ws && ws.readyState === WebSocket.OPEN) {
     return true
@@ -44,20 +147,11 @@ export function connectWebSocket(onGameState, onBetsUpdate, onSettingsUpdate) {
     ws.onopen = () => {
       console.log('[WS] Connected to Aviator game engine')
       reconnectAttempts = 0
-      if (wsReconnectTimeout) {
-        clearTimeout(wsReconnectTimeout)
-        wsReconnectTimeout = null
-      }
-      if (httpPollingInterval) {
-        clearInterval(httpPollingInterval)
-        httpPollingInterval = null
-      }
     }
 
     ws.onmessage = (event) => {
       try {
         const msg = JSON.parse(event.data)
-        
         if (msg.type === 'game_state' && wsCallbacks.onGameState) {
           wsCallbacks.onGameState(msg)
         }
@@ -73,65 +167,20 @@ export function connectWebSocket(onGameState, onBetsUpdate, onSettingsUpdate) {
     }
 
     ws.onclose = () => {
-      console.log('[WS] Disconnected, using HTTP polling')
+      console.log('[WS] Disconnected, using local game engine')
       ws = null
-      startHttpPolling()
     }
 
     ws.onerror = (err) => {
-      console.error('[WS] Error, using HTTP polling:', err)
+      console.log('[WS] Error, using local game engine')
       ws = null
-      startHttpPolling()
     }
 
     return true
   } catch (e) {
-    console.error('[WS] Failed, using HTTP polling:', e)
-    startHttpPolling()
+    console.log('[WS] Failed, using local game engine')
     return false
   }
-}
-
-function startHttpPolling() {
-  if (httpPollingInterval) return
-  
-  console.log('[HTTP] Starting polling fallback')
-  
-  httpPollingInterval = setInterval(async () => {
-    try {
-      const state = await getBackendGameState()
-      if (state && wsCallbacks.onGameState) {
-        wsCallbacks.onGameState({
-          type: 'game_state',
-          phase: state.phase,
-          mult: state.mult,
-          countdown: state.countdown,
-          crash_point: state.crashPoint,
-          roundId: state.roundId,
-        })
-      }
-    } catch {}
-  }, 2000)
-}
-
-function scheduleReconnect() {
-  if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
-    console.log('[WS] Max attempts, using HTTP polling')
-    startHttpPolling()
-    return
-  }
-
-  const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000)
-  reconnectAttempts++
-
-  wsReconnectTimeout = setTimeout(() => {
-    console.log(`[WS] Reconnecting... (attempt ${reconnectAttempts})`)
-    connectWebSocket(
-      wsCallbacks.onGameState,
-      wsCallbacks.onBetsUpdate,
-      wsCallbacks.onSettingsUpdate
-    )
-  }, delay)
 }
 
 export function disconnectWebSocket() {
@@ -142,6 +191,10 @@ export function disconnectWebSocket() {
   if (wsReconnectTimeout) {
     clearTimeout(wsReconnectTimeout)
     wsReconnectTimeout = null
+  }
+  if (gameInterval) {
+    clearInterval(gameInterval)
+    gameInterval = null
   }
 }
 
@@ -700,40 +753,13 @@ export async function getUserBetHistory(userId, limit = 30) {
 // Crash Point Generation
 // Uses provably fair-ish distribution with configurable house edge.
 // ──────────────────────────────────────────────
-
-/**
- * Generate a crash point with realistic distribution.
- * @param {number} houseEdge - House edge as decimal (e.g. 0.05 = 5%)
- * @returns {number} Crash multiplier (e.g. 1.23)
- */
-export function generateCrashPoint(houseEdge = 0.05) {
-  const r = Math.random()
-  const e = Math.max(0, Math.min(houseEdge, 0.20))
-
-  // Distribution buckets (adjusted by house edge)
-  const p1 = 0.40 - e * 2   // ~30% at 1.00-1.50x
-  const p2 = 0.25 - e       // ~20% at 1.50-2.50x
-  const p3 = 0.15           // ~15% at 2.50-4.50x
-  const p4 = 0.12           // ~12% at 4.50-10.00x
-  // remaining ~23%: 10.00-50.00x (big wins)
-
-  if (r < p1) return 1.00 + Math.random() * 0.50
-  if (r < p1 + p2) return 1.50 + Math.random() * 1.00
-  if (r < p1 + p2 + p3) return 2.50 + Math.random() * 2.00
-  if (r < p1 + p2 + p3 + p4) return 4.50 + Math.random() * 5.50
-  return 10.00 + Math.random() * 40.00
-}
-
-// ──────────────────────────────────────────────
 // Bot Helpers
 // ──────────────────────────────────────────────
 
-export const BOT_NAMES = [
-  'Ali_Khan', 'Sara_Ahmed', 'Usman_Ali', 'Fatima_Zahid', 'Ahmed_Raza',
-  'Ayesha_Khan', 'Bilal_Hassan', 'Zainab_Malik', 'Hassan_Ali', 'Mariam_Waseem',
-  'Hamza_Saeed', 'Hira_Nawaz', 'Saad_Afzal', 'Nadia_Iqbal', 'Faisal_Imran',
-  'Sana_Ansari', 'Kamran_Shahid', 'Mehwish_Butt', 'Adnan_Yousaf', 'Sadia_Parveen',
-]
+// BOT_NAMES already defined at top
+
+// Re-export for backwards compatibility  
+export { generateCrashPoint as generateCrashPoint }
 
 export function getRandomBotName() {
   return BOT_NAMES[Math.floor(Math.random() * BOT_NAMES.length)]

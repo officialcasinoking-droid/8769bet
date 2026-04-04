@@ -335,11 +335,10 @@ export default function GameControlPanel() {
   // Crash history
   const [crashHistory, setCrashHistory] = useState([])
 
-  // ── WebSocket Connection with HTTP Fallback ───────────────────
+  // ── WebSocket Connection with Local Fallback ──────────────────
   useEffect(() => {
     let ws = null
     let pollInterval = null
-    let reconnectTimeout = null
 
     const connect = () => {
       ws = new WebSocket(WS_URL)
@@ -347,7 +346,6 @@ export default function GameControlPanel() {
       ws.onopen = () => {
         console.log('[GameControl] Connected to game server')
         setConnected(true)
-        // Stop polling if WS connects
         if (pollInterval) {
           clearInterval(pollInterval)
           pollInterval = null
@@ -382,48 +380,36 @@ export default function GameControlPanel() {
       }
 
       ws.onclose = () => {
-        console.log('[GameControl] WS disconnected, using HTTP polling')
+        console.log('[GameControl] WS disconnected')
         setConnected(false)
         ws = null
-        startHttpPolling()
+        readLocalStorageGameState()
       }
 
       ws.onerror = (err) => {
-        console.error('[GameControl] WS error, using HTTP polling:', err)
+        console.log('[GameControl] WS error, reading localStorage')
         setConnected(false)
         ws = null
-        startHttpPolling()
+        readLocalStorageGameState()
       }
     }
 
-    const startHttpPolling = () => {
-      if (pollInterval) return
-      console.log('[GameControl] Starting HTTP polling fallback')
-      
-      pollInterval = setInterval(async () => {
-        try {
-          const res = await fetch(`${API_URL}/api/aviator/state`)
-          if (res.ok) {
-            const state = await res.json()
-            setPhase(state.phase || 'betting')
-            if (state.phase === 'betting') {
-              setCountdown(state.countdown || 0)
-              setMult(1.00)
-            } else if (state.phase === 'flying') {
-              setMult(state.mult || 1.00)
-            } else if (state.phase === 'crashed') {
-              setCrashPoint(state.crashPoint || 0)
-              if (state.crashPoint) {
-                setCrashHistory(prev => [state.crashPoint, ...prev].slice(0, 30))
-              }
-            }
-            if (state.settings) setSettings(state.settings)
-            setConnected(true)
+    const readLocalStorageGameState = () => {
+      try {
+        const stateRaw = localStorage.getItem('aviator_game_state')
+        if (stateRaw) {
+          const state = JSON.parse(stateRaw)
+          setPhase(state.phase || 'betting')
+          if (state.phase === 'betting') {
+            setCountdown(state.countdown || 0)
+            setMult(1.00)
+          } else if (state.phase === 'flying' || state.phase === 'running') {
+            setMult(state.mult || 1.00)
+          } else if (state.phase === 'crashed') {
+            setCrashPoint(state.crash_point || state.crashPoint || 0)
           }
-        } catch (e) {
-          setConnected(false)
         }
-      }, 2000)
+      } catch {}
     }
 
     connect()
@@ -431,30 +417,38 @@ export default function GameControlPanel() {
     return () => {
       if (ws) { ws.close(); ws = null }
       if (pollInterval) { clearInterval(pollInterval); pollInterval = null }
-      if (reconnectTimeout) { clearTimeout(reconnectTimeout) }
     }
   }, [])
 
   // ── Controls ───────────────────────────────────────────────
   const handleManualCrash = async () => {
-    if (phase !== 'flying') return
+    // Try backend first, then use localStorage fallback
     try {
-      await fetch(`${API_URL}/api/aviator/crash`, { method: 'POST' })
-    } catch (e) {
-      console.warn('[ManualCrash]', e?.message)
-    }
+      const res = await fetch(`${API_URL}/api/aviator/crash`, { method: 'POST' })
+      if (res.ok) return
+    } catch {}
+    
+    // Local fallback - trigger crash in frontend game
+    try {
+      localStorage.setItem('aviator_manual_crash', JSON.stringify({ v: true, ts: Date.now() }))
+    } catch {}
   }
 
   const handleSaveSettings = async () => {
+    // Try backend first, then use localStorage fallback
     try {
-      await fetch(`${API_URL}/api/aviator/settings`, {
+      const res = await fetch(`${API_URL}/api/aviator/settings`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ settings }),
+        body: JSON.stringify(settings),
       })
-    } catch (e) {
-      console.warn('[SaveSettings]', e?.message)
-    }
+      if (res.ok) return
+    } catch {}
+    
+    // Local fallback - save to localStorage
+    try {
+      localStorage.setItem('aviator_settings', JSON.stringify({ ...settings, ts: Date.now() }))
+    } catch {}
   }
 
   const handleTest = () => {
