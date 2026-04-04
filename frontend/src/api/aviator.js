@@ -302,21 +302,23 @@ export function setGameSettings(settings) {
   try { localStorage.setItem('aviator_settings', JSON.stringify({ ...settings, ts: Date.now() })) } catch {}
 }
 
-export function getGameSettingsLocal() {
-  try {
-    const raw = localStorage.getItem('aviator_settings')
-    if (!raw) return null
-    return JSON.parse(raw)
-  } catch { return null }
+export async function getGameSettingsLocal() {
+  const dbSettings = await fetchSettings()
+  if (dbSettings) {
+    return {
+      heMode: dbSettings.he_mode || 'off',
+      heTargetPct: dbSettings.he_target_pct || 5,
+      heMinSecs: dbSettings.he_min_secs || 3,
+      heMaxSecs: dbSettings.he_max_secs || 50,
+      autoTargetSecs: dbSettings.auto_target_secs || 8,
+    }
+  }
+  return null
 }
 
-export function getHeMode() {
-  try {
-    const raw = localStorage.getItem('aviator_settings')
-    if (!raw) return 'off'
-    const s = JSON.parse(raw)
-    return s.heMode || 'off'
-  } catch { return 'off' }
+export async function getHeMode() {
+  const settings = await getGameSettingsLocal()
+  return settings?.heMode || 'off'
 }
 export function broadcastLiveHE() {}
 export async function broadcastGameState() {}
