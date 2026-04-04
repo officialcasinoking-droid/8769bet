@@ -298,9 +298,26 @@ export async function broadcastCrash() {}
 export function setManualCrash() {}
 export function getManualCrash() { return false }
 export function clearManualCrash() {}
-export function setGameSettings() {}
-export function getGameSettingsLocal() { return null }
-export function getHeMode() { return 'off' }
+export function setGameSettings(settings) {
+  try { localStorage.setItem('aviator_settings', JSON.stringify({ ...settings, ts: Date.now() })) } catch {}
+}
+
+export function getGameSettingsLocal() {
+  try {
+    const raw = localStorage.getItem('aviator_settings')
+    if (!raw) return null
+    return JSON.parse(raw)
+  } catch { return null }
+}
+
+export function getHeMode() {
+  try {
+    const raw = localStorage.getItem('aviator_settings')
+    if (!raw) return 'off'
+    const s = JSON.parse(raw)
+    return s.heMode || 'off'
+  } catch { return 'off' }
+}
 export function broadcastLiveHE() {}
 export async function broadcastGameState() {}
 export async function getSettingsFromDB() { return null }

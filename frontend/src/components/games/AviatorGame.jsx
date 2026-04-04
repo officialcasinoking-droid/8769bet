@@ -22,6 +22,7 @@ import {
   getRandomBotName,
   disconnectWebSocket,
   getBackendGameState,
+  getGameSettingsLocal,
 } from '../../api/aviator'
 
 const CSS = `
