@@ -13,7 +13,7 @@ import { supabaseAnon as supabase } from '../lib/supabase'
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3006'
 
 // ──────────────────────────────────────────────
-// WebSocket Connection
+// WebSocket Connection with HTTP Fallback
 // ──────────────────────────────────────────────
 
 let ws = null
@@ -24,7 +24,8 @@ let wsCallbacks = {
 }
 let wsReconnectTimeout = null
 let reconnectAttempts = 0
-const MAX_RECONNECT_ATTEMPTS = 10
+const MAX_RECONNECT_ATTEMPTS = 5
+let httpPollingInterval = null
 
 export function connectWebSocket(onGameState, onBetsUpdate, onSettingsUpdate) {
   wsCallbacks.onGameState = onGameState
@@ -47,6 +48,10 @@ export function connectWebSocket(onGameState, onBetsUpdate, onSettingsUpdate) {
         clearTimeout(wsReconnectTimeout)
         wsReconnectTimeout = null
       }
+      if (httpPollingInterval) {
+        clearInterval(httpPollingInterval)
+        httpPollingInterval = null
+      }
     }
 
     ws.onmessage = (event) => {
@@ -68,24 +73,51 @@ export function connectWebSocket(onGameState, onBetsUpdate, onSettingsUpdate) {
     }
 
     ws.onclose = () => {
-      console.log('[WS] Disconnected from game engine')
-      scheduleReconnect()
+      console.log('[WS] Disconnected, using HTTP polling')
+      ws = null
+      startHttpPolling()
     }
 
     ws.onerror = (err) => {
-      console.error('[WS] Error:', err)
+      console.error('[WS] Error, using HTTP polling:', err)
+      ws = null
+      startHttpPolling()
     }
 
     return true
   } catch (e) {
-    console.error('[WS] Failed to connect:', e)
+    console.error('[WS] Failed, using HTTP polling:', e)
+    startHttpPolling()
     return false
   }
 }
 
+function startHttpPolling() {
+  if (httpPollingInterval) return
+  
+  console.log('[HTTP] Starting polling fallback')
+  
+  httpPollingInterval = setInterval(async () => {
+    try {
+      const state = await getBackendGameState()
+      if (state && wsCallbacks.onGameState) {
+        wsCallbacks.onGameState({
+          type: 'game_state',
+          phase: state.phase,
+          mult: state.mult,
+          countdown: state.countdown,
+          crash_point: state.crashPoint,
+          roundId: state.roundId,
+        })
+      }
+    } catch {}
+  }, 2000)
+}
+
 function scheduleReconnect() {
   if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
-    console.log('[WS] Max reconnection attempts reached')
+    console.log('[WS] Max attempts, using HTTP polling')
+    startHttpPolling()
     return
   }
 

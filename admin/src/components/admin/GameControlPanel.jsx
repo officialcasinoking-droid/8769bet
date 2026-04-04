@@ -335,14 +335,23 @@ export default function GameControlPanel() {
   // Crash history
   const [crashHistory, setCrashHistory] = useState([])
 
-  // ── WebSocket Connection ───────────────────────────────────
+  // ── WebSocket Connection with HTTP Fallback ───────────────────
   useEffect(() => {
+    let ws = null
+    let pollInterval = null
+    let reconnectTimeout = null
+
     const connect = () => {
-      const ws = new WebSocket(WS_URL)
+      ws = new WebSocket(WS_URL)
 
       ws.onopen = () => {
         console.log('[GameControl] Connected to game server')
         setConnected(true)
+        // Stop polling if WS connects
+        if (pollInterval) {
+          clearInterval(pollInterval)
+          pollInterval = null
+        }
       }
 
       ws.onmessage = (event) => {
@@ -373,25 +382,56 @@ export default function GameControlPanel() {
       }
 
       ws.onclose = () => {
-        console.log('[GameControl] Disconnected, reconnecting...')
+        console.log('[GameControl] WS disconnected, using HTTP polling')
         setConnected(false)
-        setTimeout(connect, 3000)
+        ws = null
+        startHttpPolling()
       }
 
       ws.onerror = (err) => {
-        console.error('[GameControl] WebSocket error:', err)
+        console.error('[GameControl] WS error, using HTTP polling:', err)
+        setConnected(false)
+        ws = null
+        startHttpPolling()
       }
+    }
 
-      wsRef.current = ws
+    const startHttpPolling = () => {
+      if (pollInterval) return
+      console.log('[GameControl] Starting HTTP polling fallback')
+      
+      pollInterval = setInterval(async () => {
+        try {
+          const res = await fetch(`${API_URL}/api/aviator/state`)
+          if (res.ok) {
+            const state = await res.json()
+            setPhase(state.phase || 'betting')
+            if (state.phase === 'betting') {
+              setCountdown(state.countdown || 0)
+              setMult(1.00)
+            } else if (state.phase === 'flying') {
+              setMult(state.mult || 1.00)
+            } else if (state.phase === 'crashed') {
+              setCrashPoint(state.crashPoint || 0)
+              if (state.crashPoint) {
+                setCrashHistory(prev => [state.crashPoint, ...prev].slice(0, 30))
+              }
+            }
+            if (state.settings) setSettings(state.settings)
+            setConnected(true)
+          }
+        } catch (e) {
+          setConnected(false)
+        }
+      }, 2000)
     }
 
     connect()
 
     return () => {
-      if (wsRef.current) {
-        wsRef.current.close()
-        wsRef.current = null
-      }
+      if (ws) { ws.close(); ws = null }
+      if (pollInterval) { clearInterval(pollInterval); pollInterval = null }
+      if (reconnectTimeout) { clearTimeout(reconnectTimeout) }
     }
   }, [])
 
