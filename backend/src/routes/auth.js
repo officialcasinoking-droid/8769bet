@@ -1,6 +1,6 @@
 import express from 'express'
 import { body } from 'express-validator'
-import { login, signup, forgotPassword, changePassword, getMe } from '../controllers/authController.js'
+import { login, signup, forgotPassword, changePassword, getMe, resetPassword } from '../controllers/authController.js'
 
 const router = express.Router()
 
@@ -25,10 +25,17 @@ const signupValidation = [
   body('terms').isBoolean().withMessage('You must accept the terms').equals('true').withMessage('You must accept the terms')
 ]
 
+// Reset password validation
+const resetPasswordValidation = [
+  body('token').trim().notEmpty().withMessage('Reset token is required'),
+  body('new_password').isLength({ min: 8 }).withMessage('Password must be at least 8 characters').matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/).withMessage('Password must contain at least one uppercase, one lowercase, and one number')
+]
+
 // Routes
 router.post('/login', loginValidation, login)
 router.post('/signup', signupValidation, signup)
 router.post('/forgot-password', [body('email').isEmail().withMessage('Valid email is required')], forgotPassword)
+router.post('/reset-password', resetPasswordValidation, resetPassword)
 router.post('/change-password', changePassword)
 router.get('/me', getMe)
 

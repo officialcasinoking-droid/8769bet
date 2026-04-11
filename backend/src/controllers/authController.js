@@ -2,35 +2,15 @@ import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import { validationResult } from 'express-validator'
 import { v4 as uuidv4 } from 'uuid'
+import UserModel from '../models/User.js'
+import emailService from '../services/emailService.js'
+import supabase from '../lib/supabase.js'
+import dotenv from 'dotenv'
+
+dotenv.config()
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-in-production'
-const JWT_EXPIRES_IN = '7d'
-
-// Mock database - In production, replace with actual MySQL queries
-const users = new Map()
-const admins = new Map()
-
-// Initialize demo admin
-admins.set('admin', {
-  id: 1,
-  username: 'admin',
-  password_hash: bcrypt.hashSync('admin123', 10),
-  role: 'god',
-  must_change_password: false
-})
-
-// Initialize demo user
-users.set('demo@399bet.com', {
-  id: 1,
-  username: 'demo',
-  email: 'demo@399bet.com',
-  password_hash: bcrypt.hashSync('demo123', 10),
-  full_name: 'Demo User',
-  balance: 100.00,
-  avatar: null,
-  referral_code: 'DEMO2024',
-  created_at: new Date()
-})
+const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d'
 
 export const login = async (req, res) => {
   try {
@@ -41,39 +21,16 @@ export const login = async (req, res) => {
 
     const { username, password } = req.body
 
-    // Check if admin login
-    if (username === 'admin' && password === 'admin123') {
-      const admin = admins.get('admin')
-      const token = jwt.sign(
-        { id: admin.id, username: admin.username, role: admin.role },
-        JWT_SECRET,
-        { expiresIn: JWT_EXPIRES_IN }
-      )
-
-      return res.json({
-        success: true,
-        token,
-        user: {
-          id: admin.id,
-          username: admin.username,
-          role: admin.role,
-          must_change_password: admin.must_change_password
-        },
-        redirect: '/admin'
-      })
-    }
-
     // Find user by email or username
-    let user = null
-    for (const [email, u] of users) {
-      if (u.email === username || u.username === username) {
-        user = u
-        break
-      }
-    }
+    const user = await UserModel.findByCredential(username)
 
     if (!user) {
       return res.status(401).json({ error: 'Invalid credentials' })
+    }
+
+    // Check if account is active
+    if (user.status === 'banned' || user.status === 'suspended') {
+      return res.status(403).json({ error: 'Account is suspended or banned' })
     }
 
     const isValidPassword = await bcrypt.compare(password, user.password_hash)
@@ -82,7 +39,12 @@ export const login = async (req, res) => {
     }
 
     const token = jwt.sign(
-      { id: user.id, username: user.username, email: user.email, role: 'user' },
+      { 
+        id: user.id, 
+        username: user.username, 
+        email: user.email, 
+        role: user.role || 'user' 
+      },
       JWT_SECRET,
       { expiresIn: JWT_EXPIRES_IN }
     )
@@ -97,9 +59,10 @@ export const login = async (req, res) => {
         full_name: user.full_name,
         balance: user.balance,
         avatar: user.avatar,
-        referral_code: user.referral_code
+        referral_code: user.referral_code,
+        role: user.role
       },
-      redirect: '/'
+      redirect: user.role === 'admin' ? '/admin' : '/'
     })
   } catch (error) {
     console.error('Login error:', error)
@@ -117,17 +80,15 @@ export const signup = async (req, res) => {
     const { full_name, username, email, password, referral_code } = req.body
 
     // Check if email already exists
-    for (const [existingEmail] of users) {
-      if (existingEmail === email) {
-        return res.status(400).json({ error: 'Email already registered' })
-      }
+    const existingEmail = await UserModel.findByEmail(email)
+    if (existingEmail) {
+      return res.status(400).json({ error: 'Email already registered' })
     }
 
     // Check if username already exists
-    for (const [, u] of users) {
-      if (u.username === username) {
-        return res.status(400).json({ error: 'Username already taken' })
-      }
+    const existingUsername = await UserModel.findByUsername(username)
+    if (existingUsername) {
+      return res.status(400).json({ error: 'Username already taken' })
     }
 
     // Hash password
@@ -136,26 +97,54 @@ export const signup = async (req, res) => {
     // Generate unique referral code
     const userReferralCode = username.toUpperCase().slice(0, 4) + Math.random().toString(36).substring(2, 6).toUpperCase()
 
-    // Create new user
-    const newUser = {
-      id: users.size + 1,
+    // Create new user with welcome bonus
+    const newUser = await UserModel.create({
       username,
       email,
       password_hash,
       full_name,
       balance: 50.00, // Welcome bonus
-      avatar: null,
       referral_code: userReferralCode,
-      used_referral: referral_code || null,
-      created_at: new Date()
-    }
+      used_referral_code: referral_code || null
+    })
 
-    users.set(email, newUser)
-
-    // If referral code used, credit referrer (mock)
+    // If referral code used, credit referrer
     if (referral_code) {
-      console.log(`Referral code ${referral_code} credited`)
+      try {
+        const referrer = await supabase
+          .from('users')
+          .select('id, balance')
+          .eq('referral_code', referral_code)
+          .single()
+
+        if (referrer.data) {
+          // Credit referrer with bonus
+          const referralBonus = 10.00
+          await UserModel.updateBalance(referrer.data.id, referrer.data.balance + referralBonus)
+          
+          // Record referral in referrals table
+          await supabase
+            .from('referrals')
+            .insert([{
+              referrer_id: referrer.data.id,
+              referred_id: newUser.id,
+              level: 1,
+              bonus_amount: referralBonus,
+              status: 'completed'
+            }])
+          
+          console.log(`Referral bonus credited to user ${referrer.data.id}`)
+        }
+      } catch (refError) {
+        console.error('Referral credit error:', refError)
+        // Don't fail signup if referral credit fails
+      }
     }
+
+    // Send welcome email (non-blocking)
+    emailService.sendWelcomeEmail(email, username, userReferralCode).catch(err => {
+      console.error('Welcome email failed:', err)
+    })
 
     // Generate JWT
     const token = jwt.sign(
@@ -176,12 +165,12 @@ export const signup = async (req, res) => {
         avatar: newUser.avatar,
         referral_code: newUser.referral_code
       },
-      message: 'Welcome bonus of ₹50 credited!',
+      message: 'Welcome bonus of PKR 50 credited!',
       redirect: '/'
     })
   } catch (error) {
     console.error('Signup error:', error)
-    res.status(500).json({ error: 'Server error' })
+    res.status(500).json({ error: 'Server error during registration' })
   }
 }
 
@@ -190,30 +179,54 @@ export const forgotPassword = async (req, res) => {
     const { email } = req.body
 
     // Find user
-    let user = null
-    for (const [e, u] of users) {
-      if (e === email) {
-        user = u
-        break
-      }
-    }
+    const user = await UserModel.findByEmail(email)
 
     if (!user) {
-      // Don't reveal if email exists
+      // Don't reveal if email exists (security best practice)
       return res.json({ success: true, message: 'If email exists, reset link sent' })
     }
 
-    // Generate reset token (in production, save to DB with expiry)
+    // Generate reset token
     const resetToken = uuidv4()
-    
-    // In production: save resetToken to DB with expiry
-    console.log(`Password reset token for ${email}: ${resetToken}`)
+    const resetTokenExpiry = new Date(Date.now() + 3600000) // 1 hour from now
+
+    // Save reset token to database
+    const { error: tokenError } = await supabase
+      .from('password_reset_tokens')
+      .insert([{
+        user_id: user.id,
+        token: resetToken,
+        expires_at: resetTokenExpiry.toISOString(),
+        used: false
+      }])
+
+    if (tokenError) {
+      console.error('Password reset token save error:', tokenError)
+      // Continue anyway - token logged for development
+    }
+
+    // Send password reset email
+    const emailResult = await emailService.sendPasswordResetEmail(
+      email, 
+      resetToken, 
+      user.full_name || user.username
+    )
+
+    if (!emailResult.success) {
+      console.error('Failed to send reset email:', emailResult.error)
+      // In development, still return token
+      if (process.env.NODE_ENV === 'development') {
+        return res.json({
+          success: true,
+          message: 'Password reset email sent (check console in demo)',
+          reset_token: resetToken
+        })
+      }
+    }
 
     res.json({
       success: true,
-      message: 'Password reset email sent (check console in demo)',
-      // Demo only: include token
-      reset_token: resetToken
+      message: 'Password reset email sent'
     })
   } catch (error) {
     console.error('Forgot password error:', error)
@@ -226,13 +239,7 @@ export const changePassword = async (req, res) => {
     const { user_id, current_password, new_password } = req.body
 
     // Find user
-    let user = null
-    for (const [, u] of users) {
-      if (u.id === user_id) {
-        user = u
-        break
-      }
-    }
+    const user = await UserModel.findById(user_id)
 
     if (!user) {
       return res.status(404).json({ error: 'User not found' })
@@ -245,7 +252,8 @@ export const changePassword = async (req, res) => {
     }
 
     // Hash new password
-    user.password_hash = await bcrypt.hash(new_password, 12)
+    const newPasswordHash = await bcrypt.hash(new_password, 12)
+    await UserModel.updatePassword(user_id, newPasswordHash)
 
     res.json({ success: true, message: 'Password changed successfully' })
   } catch (error) {
@@ -262,19 +270,9 @@ export const getMe = async (req, res) => {
     }
 
     const decoded = jwt.verify(token, JWT_SECRET)
-    
+
     // Find user
-    let user = null
-    if (decoded.role === 'admin') {
-      user = admins.get(decoded.username)
-    } else {
-      for (const [, u] of users) {
-        if (u.id === decoded.id) {
-          user = u
-          break
-        }
-      }
-    }
+    const user = await UserModel.findById(decoded.id)
 
     if (!user) {
       return res.status(404).json({ error: 'User not found' })
@@ -288,10 +286,58 @@ export const getMe = async (req, res) => {
         full_name: user.full_name,
         balance: user.balance,
         avatar: user.avatar,
-        role: decoded.role
+        role: user.role || decoded.role
       }
     })
   } catch (error) {
+    console.error('Get me error:', error)
     res.status(401).json({ error: 'Invalid token' })
+  }
+}
+
+/**
+ * Reset password with token
+ */
+export const resetPassword = async (req, res) => {
+  try {
+    const { token, new_password } = req.body
+
+    if (!token || !new_password) {
+      return res.status(400).json({ error: 'Token and new password are required' })
+    }
+
+    // Find valid reset token
+    const { data: resetData, error: resetError } = await supabase
+      .from('password_reset_tokens')
+      .select('*, users(*)')
+      .eq('token', token)
+      .eq('used', false)
+      .single()
+
+    if (resetError || !resetData) {
+      return res.status(400).json({ error: 'Invalid or expired reset token' })
+    }
+
+    // Check if token is expired
+    if (new Date(resetData.expires_at) < new Date()) {
+      return res.status(400).json({ error: 'Reset token has expired' })
+    }
+
+    // Hash new password
+    const passwordHash = await bcrypt.hash(new_password, 12)
+
+    // Update user password
+    await UserModel.updatePassword(resetData.user_id, passwordHash)
+
+    // Mark token as used
+    await supabase
+      .from('password_reset_tokens')
+      .update({ used: true })
+      .eq('id', resetData.id)
+
+    res.json({ success: true, message: 'Password reset successfully' })
+  } catch (error) {
+    console.error('Reset password error:', error)
+    res.status(500).json({ error: 'Server error during password reset' })
   }
 }

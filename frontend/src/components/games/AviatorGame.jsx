@@ -24,6 +24,11 @@ import {
   getBackendGameState,
   getGameSettingsLocal,
   broadcastGameState,
+  getManualCrash,
+  clearManualCrash,
+  setManualCrash,
+  broadcastLiveHE,
+  broadcastLiveHEMetrics,
 } from '../../api/aviator'
 
 const CSS = `

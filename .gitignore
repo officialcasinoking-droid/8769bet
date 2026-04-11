@@ -8,9 +8,11 @@ frontend/.vite/
 backend/dist/
 
 # Environment files
+# IMPORTANT: Never commit .env files - they contain secrets!
 .env
 .env.local
 .env.*.local
+!.env.example
 
 # Logs
 *.log
