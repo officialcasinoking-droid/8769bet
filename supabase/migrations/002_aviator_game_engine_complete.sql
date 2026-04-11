@@ -1,6 +1,21 @@
 -- Aviator Game Engine Tables - Complete Schema
 -- This replaces the WebSocket-based architecture with Supabase Realtime
 
+-- Helper function to safely add tables to realtime publication
+CREATE OR REPLACE FUNCTION add_to_realtime_publication(table_name TEXT)
+RETURNS VOID AS $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables 
+    WHERE pubname = 'supabase_realtime' 
+    AND schemaname = 'public' 
+    AND tablename = table_name
+  ) THEN
+    EXECUTE format('ALTER PUBLICATION supabase_realtime ADD TABLE %I', table_name);
+  END IF;
+END;
+$$ LANGUAGE plpgsql;
+
 -- ──────────────────────────────────────────────
 -- 1. GAME ROUNDS TABLE
 -- ──────────────────────────────────────────────
@@ -32,14 +47,18 @@ CREATE INDEX idx_game_rounds_created_at ON game_rounds(created_at DESC);
 ALTER TABLE game_rounds ENABLE ROW LEVEL SECURITY;
 
 -- RLS Policies
-CREATE POLICY "Anyone can view game rounds" ON game_rounds
-  FOR SELECT USING (true);
-
-CREATE POLICY "Only service role can modify game rounds" ON game_rounds
-  FOR ALL USING (auth.jwt() ->> 'role' = 'service_role');
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'game_rounds' AND policyname = 'Anyone can view game rounds') THEN
+    CREATE POLICY "Anyone can view game rounds" ON game_rounds FOR SELECT USING (true);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'game_rounds' AND policyname = 'Only service role can modify game rounds') THEN
+    CREATE POLICY "Only service role can modify game rounds" ON game_rounds FOR ALL USING (auth.jwt() ->> 'role' = 'service_role');
+  END IF;
+END $$;
 
 -- Enable Realtime publication
-ALTER PUBLICATION supabase_realtime ADD TABLE game_rounds;
+SELECT add_to_realtime_publication('game_rounds');
 
 
 -- ──────────────────────────────────────────────
@@ -65,26 +84,30 @@ CREATE TABLE IF NOT EXISTS player_bets (
 );
 
 -- Create indexes
-CREATE INDEX idx_player_bets_round_id ON player_bets(round_id);
-CREATE INDEX idx_player_bets_user_id ON player_bets(user_id);
-CREATE INDEX idx_player_bets_status ON player_bets(status);
-CREATE INDEX idx_player_bets_created_at ON player_bets(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_player_bets_round_id ON player_bets(round_id);
+CREATE INDEX IF NOT EXISTS idx_player_bets_user_id ON player_bets(user_id);
+CREATE INDEX IF NOT EXISTS idx_player_bets_status ON player_bets(status);
+CREATE INDEX IF NOT EXISTS idx_player_bets_created_at ON player_bets(created_at DESC);
 
 -- Enable Realtime
 ALTER TABLE player_bets ENABLE ROW LEVEL SECURITY;
 
 -- RLS Policies
-CREATE POLICY "Anyone can view player bets" ON player_bets
-  FOR SELECT USING (true);
-
-CREATE POLICY "Users can insert their own bets" ON player_bets
-  FOR INSERT WITH CHECK (auth.uid() = user_id OR is_bot = true);
-
-CREATE POLICY "Only service role can modify bets" ON player_bets
-  FOR ALL USING (auth.jwt() ->> 'role' = 'service_role');
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'player_bets' AND policyname = 'Anyone can view player bets') THEN
+    CREATE POLICY "Anyone can view player bets" ON player_bets FOR SELECT USING (true);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'player_bets' AND policyname = 'Users can insert their own bets') THEN
+    CREATE POLICY "Users can insert their own bets" ON player_bets FOR INSERT WITH CHECK (auth.uid() = user_id OR is_bot = true);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'player_bets' AND policyname = 'Only service role can modify bets') THEN
+    CREATE POLICY "Only service role can modify bets" ON player_bets FOR ALL USING (auth.jwt() ->> 'role' = 'service_role');
+  END IF;
+END $$;
 
 -- Enable Realtime publication
-ALTER PUBLICATION supabase_realtime ADD TABLE player_bets;
+SELECT add_to_realtime_publication('player_bets');
 
 
 -- ──────────────────────────────────────────────
@@ -112,20 +135,20 @@ ON CONFLICT (id) DO NOTHING;
 ALTER TABLE admin_wallet ENABLE ROW LEVEL SECURITY;
 
 -- RLS Policies
-CREATE POLICY "Admins can view wallet" ON admin_wallet
-  FOR SELECT USING (
-    EXISTS (
-      SELECT 1 FROM users 
-      WHERE users.id = auth.uid() 
-      AND users.role IN ('admin', 'god')
-    )
-  );
-
-CREATE POLICY "Only service role can modify wallet" ON admin_wallet
-  FOR ALL USING (auth.jwt() ->> 'role' = 'service_role');
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'admin_wallet' AND policyname = 'Admins can view wallet') THEN
+    CREATE POLICY "Admins can view wallet" ON admin_wallet FOR SELECT USING (
+      EXISTS (SELECT 1 FROM users WHERE users.id = auth.uid() AND users.role IN ('admin', 'god'))
+    );
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'admin_wallet' AND policyname = 'Only service role can modify wallet') THEN
+    CREATE POLICY "Only service role can modify wallet" ON admin_wallet FOR ALL USING (auth.jwt() ->> 'role' = 'service_role');
+  END IF;
+END $$;
 
 -- Enable Realtime publication
-ALTER PUBLICATION supabase_realtime ADD TABLE admin_wallet;
+SELECT add_to_realtime_publication('admin_wallet');
 
 
 -- ──────────────────────────────────────────────
@@ -151,14 +174,18 @@ CREATE TABLE IF NOT EXISTS aviator_game_state (
 ALTER TABLE aviator_game_state ENABLE ROW LEVEL SECURITY;
 
 -- RLS Policies
-CREATE POLICY "Anyone can view game state" ON aviator_game_state
-  FOR SELECT USING (true);
-
-CREATE POLICY "Only service role can modify game state" ON aviator_game_state
-  FOR ALL USING (auth.jwt() ->> 'role' = 'service_role');
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'aviator_game_state' AND policyname = 'Anyone can view game state') THEN
+    CREATE POLICY "Anyone can view game state" ON aviator_game_state FOR SELECT USING (true);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'aviator_game_state' AND policyname = 'Only service role can modify game state') THEN
+    CREATE POLICY "Only service role can modify game state" ON aviator_game_state FOR ALL USING (auth.jwt() ->> 'role' = 'service_role');
+  END IF;
+END $$;
 
 -- Enable Realtime publication
-ALTER PUBLICATION supabase_realtime ADD TABLE aviator_game_state;
+SELECT add_to_realtime_publication('aviator_game_state');
 
 
 -- ──────────────────────────────────────────────
@@ -190,20 +217,20 @@ ON CONFLICT (id) DO NOTHING;
 ALTER TABLE aviator_settings ENABLE ROW LEVEL SECURITY;
 
 -- RLS Policies
-CREATE POLICY "Anyone can view settings" ON aviator_settings
-  FOR SELECT USING (true);
-
-CREATE POLICY "Admins can update settings" ON aviator_settings
-  FOR UPDATE USING (
-    EXISTS (
-      SELECT 1 FROM users 
-      WHERE users.id = auth.uid() 
-      AND users.role IN ('admin', 'god')
-    )
-  );
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'aviator_settings' AND policyname = 'Anyone can view settings') THEN
+    CREATE POLICY "Anyone can view settings" ON aviator_settings FOR SELECT USING (true);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'aviator_settings' AND policyname = 'Admins can update settings') THEN
+    CREATE POLICY "Admins can update settings" ON aviator_settings FOR UPDATE USING (
+      EXISTS (SELECT 1 FROM users WHERE users.id = auth.uid() AND users.role IN ('admin', 'god'))
+    );
+  END IF;
+END $$;
 
 -- Enable Realtime publication
-ALTER PUBLICATION supabase_realtime ADD TABLE aviator_settings;
+SELECT add_to_realtime_publication('aviator_settings');
 
 
 -- ──────────────────────────────────────────────
@@ -217,21 +244,25 @@ CREATE TABLE IF NOT EXISTS aviator_crash_history (
 );
 
 -- Create indexes
-CREATE INDEX idx_crash_history_round_id ON aviator_crash_history(round_id);
-CREATE INDEX idx_crash_history_created_at ON aviator_crash_history(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_crash_history_round_id ON aviator_crash_history(round_id);
+CREATE INDEX IF NOT EXISTS idx_crash_history_created_at ON aviator_crash_history(created_at DESC);
 
 -- Enable Realtime
 ALTER TABLE aviator_crash_history ENABLE ROW LEVEL SECURITY;
 
 -- RLS Policies
-CREATE POLICY "Anyone can view crash history" ON aviator_crash_history
-  FOR SELECT USING (true);
-
-CREATE POLICY "Only service role can modify crash history" ON aviator_crash_history
-  FOR ALL USING (auth.jwt() ->> 'role' = 'service_role');
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'aviator_crash_history' AND policyname = 'Anyone can view crash history') THEN
+    CREATE POLICY "Anyone can view crash history" ON aviator_crash_history FOR SELECT USING (true);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'aviator_crash_history' AND policyname = 'Only service role can modify crash history') THEN
+    CREATE POLICY "Only service role can modify crash history" ON aviator_crash_history FOR ALL USING (auth.jwt() ->> 'role' = 'service_role');
+  END IF;
+END $$;
 
 -- Enable Realtime publication
-ALTER PUBLICATION supabase_realtime ADD TABLE aviator_crash_history;
+SELECT add_to_realtime_publication('aviator_crash_history');
 
 
 -- ──────────────────────────────────────────────
@@ -250,20 +281,20 @@ CREATE TABLE IF NOT EXISTS aviator_admin_signals (
 ALTER TABLE aviator_admin_signals ENABLE ROW LEVEL SECURITY;
 
 -- RLS Policies
-CREATE POLICY "Anyone can view signals" ON aviator_admin_signals
-  FOR SELECT USING (true);
-
-CREATE POLICY "Admins can create signals" ON aviator_admin_signals
-  FOR INSERT USING (
-    EXISTS (
-      SELECT 1 FROM users 
-      WHERE users.id = auth.uid() 
-      AND users.role IN ('admin', 'god')
-    )
-  );
-
-CREATE POLICY "Only service role can modify signals" ON aviator_admin_signals
-  FOR ALL USING (auth.jwt() ->> 'role' = 'service_role');
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'aviator_admin_signals' AND policyname = 'Anyone can view signals') THEN
+    CREATE POLICY "Anyone can view signals" ON aviator_admin_signals FOR SELECT USING (true);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'aviator_admin_signals' AND policyname = 'Admins can create signals') THEN
+    CREATE POLICY "Admins can create signals" ON aviator_admin_signals FOR INSERT USING (
+      EXISTS (SELECT 1 FROM users WHERE users.id = auth.uid() AND users.role IN ('admin', 'god'))
+    );
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'aviator_admin_signals' AND policyname = 'Only service role can modify signals') THEN
+    CREATE POLICY "Only service role can modify signals" ON aviator_admin_signals FOR ALL USING (auth.jwt() ->> 'role' = 'service_role');
+  END IF;
+END $$;
 
 -- Enable Realtime publication
-ALTER PUBLICATION supabase_realtime ADD TABLE aviator_admin_signals;
+SELECT add_to_realtime_publication('aviator_admin_signals');
