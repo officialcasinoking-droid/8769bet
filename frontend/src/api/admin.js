@@ -41,13 +41,17 @@ export async function uploadImage(file) {
 }
 
 export async function getAdminLanding() {
-  const { data, error } = await supabase
-    .from('landing_content')
-    .select('draft_json, live_json')
-    .eq('id', 'main')
-    .single()
-  if (error) return null
-  return data?.draft_json || data?.live_json || {}
+  try {
+    const { data, error } = await supabase
+      .from('landing_content')
+      .select('draft_json, live_json')
+      .eq('id', 'main')
+      .single()
+    if (error) return null
+    return data?.draft_json || data?.live_json || {}
+  } catch {
+    return null
+  }
 }
 
 export async function getAllTransactions() {
