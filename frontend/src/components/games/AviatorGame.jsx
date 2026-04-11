@@ -1,8 +1,8 @@
 /**
  * AviatorGame.jsx — Supabase Realtime Aviator Crash Game
  *
- * Uses Supabase Realtime for real-time game state synchronization
- * Game engine runs in Supabase Edge Function
+ * Pure client that subscribes to Supabase Realtime for game state.
+ * Game engine runs in Supabase Edge Function.
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react'
@@ -15,21 +15,10 @@ import {
   fetchGameState,
   fetchCrashHistory,
   fetchSettings,
-  placeBetBackend,
-  generateCrashPoint,
-  generateBotBetAmount,
-  generateBotAutoCashout,
-  getRandomBotName,
-  disconnectWebSocket,
-  getBackendGameState,
-  getGameSettingsLocal,
-  broadcastGameState,
-  getManualCrash,
-  clearManualCrash,
-  setManualCrash,
-  broadcastLiveHE,
-  broadcastLiveHEMetrics,
-} from '../../api/aviator'
+  placeBet,
+  cashoutBet,
+  fetchCurrentBets
+} from '../../api/aviatorSupabase'
 
 const CSS = `
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Exo+2:wght@400;500;600;700;800;900&display=swap');
@@ -418,21 +407,10 @@ const CSS = `
 
 `
 
-const TICK_MS = 50
-const AUTO_TICK_MS = 100
 const QUICK_BET = [6, 10, 20, 50, 100, 200, 500]
 const MIN_BET = 6
 const MAX_BET = 1000
 const AUTO_PRESETS = ['2.00', '3.00', '4.00', '5.00', '8.00', '10.00', '20.00']
-const BOT_COUNT = 20
-const BOT_BET_MIN = 6
-const BOT_BET_MAX = 500
-const BETTING_SECONDS = 8
-const MIN_SMART_CRASH_SECS = 3
-const MIN_REAL_BETS_FOR_SMART = 1
-const DEFAULT_HE_MAX_SECS = 50
-
-let _engineRunning = false
 
 function LoadingScreen({ progress }) {
   return (
@@ -572,21 +550,16 @@ export default function AviatorGame() {
   const [loadingProgress, setLoadingProgress] = useState(0)
   const [phase, setPhase] = useState('betting')
   const [mult, setMult] = useState(1.00)
-  const [cd, setCd] = useState(BETTING_SECONDS)
+  const [cd, setCd] = useState(8)
   const [crashedAt, setCrashedAt] = useState(null)
   const [bal, setBal] = useState(0)
   const [live, setLive] = useState([])
-  const [hist, setHist] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('aviator_crash_history') || '[]') } catch { return [] }
-  })
+  const [hist, setHist] = useState([])
 
-  const [myHistory, setMyHistory] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('aviator_my_bets') || '[]') } catch { return [] }
-  })
+  const [myHistory, setMyHistory] = useState([])
   const [cashoutExits, setCashoutExits] = useState([])
   const [isLeader, setIsLeader] = useState(false)
   const exitCountRef = useRef(0)
-  const userBetsRef = useRef([])
 
   const [b1a, setB1a] = useState(10)
   const [b1o, setB1o] = useState(false)
@@ -597,27 +570,11 @@ export default function AviatorGame() {
   const [b2v, setB2v] = useState('2.00')
   const [b2d, setB2d] = useState(null)
 
-  const multRef = useRef(1.00)
   const phaseRef = useRef('betting')
-  const autoTickRef = useRef(null)
   const canvasRef = useRef(null)
   const planeRef = useRef({ x: 0, y: 0, trail: [], fr: 0 })
-  const roundRealBetsRef = useRef(0)
-  const roundExitedAmtRef = useRef(0)
-  const roundExitedCountRef = useRef(0)
 
-  const leaderRef = useRef(false)
-  const roundIdRef = useRef(null)
-  const crashPtRef = useRef(0)
-  const loopRef = useRef(null)
-  const flightStartRef = useRef(0)
-  const betTimeoutsRef = useRef([])
-  const channelsRef = useRef([])
-  const liveBetsRef = useRef(JSON.parse(localStorage.getItem('aviator_live_bets') || '[]'))
-  const histRef = useRef(JSON.parse(localStorage.getItem('aviator_crash_history') || '[]'))
-  const cdRef = useRef(null)
-  const crashTimerRef = useRef(null)
-  const myIdRef = useRef(`c_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`)
+  const currentRoundIdRef = useRef(null)
 
   useEffect(() => {
     if (user?.balance !== undefined) setBal(user.balance)
@@ -628,127 +585,90 @@ export default function AviatorGame() {
       setBal(10000)
     }
   }, [isLoggedIn, user])
-  useEffect(() => { multRef.current = mult }, [mult])
   useEffect(() => { phaseRef.current = phase }, [phase])
 
+  // ──────────────────────────────────────────────
+  // Supabase Realtime subscription
+  // ──────────────────────────────────────────────
   useEffect(() => {
     if (showLoading) return
 
-    subscribeToGameState(
+    // Fetch initial crash history
+    fetchCrashHistory().then(history => {
+      if (history && history.length > 0) {
+        setHist(history.map(h => parseFloat(h.crash_point)))
+      }
+    }).catch(() => {})
+
+    // Subscribe to realtime updates
+    const cleanup = subscribeToGameState(
+      // Game state handler
       (state) => {
         if (state.phase === 'betting') {
           phaseRef.current = 'betting'
           setPhase('betting')
           setCd(state.countdown)
-          roundIdRef.current = state.roundId
+          currentRoundIdRef.current = state.roundId
         } else if (state.phase === 'flying') {
           phaseRef.current = 'running'
           setPhase('running')
           setMult(state.mult)
-          roundIdRef.current = state.roundId
+          currentRoundIdRef.current = state.roundId
         } else if (state.phase === 'crashed') {
           phaseRef.current = 'crashed'
           setPhase('crashed')
           setCrashedAt(state.crash_point)
-          histRef.current = [state.crash_point, ...histRef.current.slice(0, 19)]
-          setHist([...histRef.current])
-          crashPtRef.current = state.crash_point
+          setMult(state.crash_point)
+          currentRoundIdRef.current = state.roundId
+          // Update crash history
+          setHist(prev => {
+            if (prev.includes(state.crash_point)) return prev
+            return [state.crash_point, ...prev].slice(0, 30)
+          })
         }
       },
+      // Bets handler
       (bets) => {
-        liveBetsRef.current = bets
-        setLive([...bets])
+        setLive(bets || [])
       },
-      (settings) => {
-        if (settings) {
-          try { localStorage.setItem('aviator_settings', JSON.stringify(settings)) } catch {}
-        }
-      }
+      // Settings handler (not used by game UI, but available)
+      () => {}
     )
 
-    fetchGameState().then(state => {
-      if (state) {
-        if (state.phase === 'betting') {
-          setPhase('betting')
-          setCd(parseFloat(state.countdown))
-          roundIdRef.current = state.round_id
-          crashPtRef.current = parseFloat(state.crash_point)
-        } else if (state.phase === 'flying') {
-          setPhase('running')
-          setMult(parseFloat(state.multiplier))
-          roundIdRef.current = state.round_id
-          crashPtRef.current = parseFloat(state.crash_point)
-        } else if (state.phase === 'crashed') {
-          setPhase('crashed')
-          setCrashedAt(state.crashPoint)
-          setHist(state.crashHistory || [])
-          crashPtRef.current = state.crashPoint
-        }
-      }
-    }).catch(() => {})
-
-    return () => disconnectWebSocket()
+    return () => {
+      if (cleanup) cleanup()
+    }
   }, [showLoading])
 
-  const addCashoutExit = useCallback((name, profit) => {
-    exitCountRef.current++
-    const id = `ex_${exitCountRef.current}_${Date.now()}`
-    const left = 20 + Math.random() * 50
-    const top = 50 + Math.random() * 40
-    setCashoutExits(prev => [...prev, { id, name, profit, left, top }])
-    setTimeout(() => {
-      setCashoutExits(prev => prev.filter(e => e.id !== id))
-    }, 2500)
-  }, [])
-
-  const pushMyHistory = useCallback((entry) => {
-    setMyHistory(h => {
-      const updated = [{ ...entry, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }, ...h].slice(0, 15)
-      try { localStorage.setItem('aviator_my_bets', JSON.stringify(updated)) } catch {}
-      return updated
-    })
-  }, [])
-
-  const prevLiveRef = useRef([])
-  useEffect(() => {
-    if (prevLiveRef.current.length > 0) {
-      const prevMap = new Map(prevLiveRef.current.map(b => [b.id, b]))
-      live.forEach(b => {
-        const prev = prevMap.get(b.id)
-        if (prev && prev.status === 'pending' && b.status === 'won' && b.username !== user?.username) {
-          const won = Number(b.cashout_amount || b.won_amount || 0)
-          addCashoutExit(b.username, won)
-        }
-      })
-    }
-    prevLiveRef.current = [...live]
-  }, [live, addCashoutExit, user])
-
+  // Handle round transitions — clear bets when new round starts
   const prevPhaseRef = useRef('betting')
   useEffect(() => {
     const prev = prevPhaseRef.current
-    const curr = phase
-    prevPhaseRef.current = curr
+    prevPhaseRef.current = phase
 
-    if (curr === 'crashed' && prev !== 'crashed') {
+    // Mark pending myHistory entries as lost when round crashes
+    if (phase === 'crashed' && prev !== 'crashed') {
       setMyHistory(h => {
         const updated = h.map(entry => {
-          if (entry.pending) {
-            return { ...entry, won: false, pending: false, mult: null, profit: 0 }
+          if (entry.pending && !entry.won) {
+            return { ...entry, won: false, pending: false, mult: null, profit: -entry.amount }
           }
           return entry
         })
-        try { localStorage.setItem('aviator_my_bets', JSON.stringify(updated)) } catch {}
         return updated
       })
     }
 
-    if (curr === 'betting' && prev === 'crashed') {
+    // Clear bet selections when new betting round starts
+    if (phase === 'betting' && prev === 'crashed') {
       setB1d(null)
       setB2d(null)
     }
-  }, [phase, user])
+  }, [phase])
 
+  // ──────────────────────────────────────────────
+  // Loading animation
+  // ──────────────────────────────────────────────
   const loadingTick = useRef(null)
   useEffect(() => {
     let prog = 0
@@ -766,535 +686,142 @@ export default function AviatorGame() {
     return () => clearInterval(loadingTick.current)
   }, [])
 
-  const broadcast = useCallback(async (state) => {
-    try {
-      localStorage.setItem('aviator_game_state', JSON.stringify({ ...state, roundId: roundIdRef.current, timestamp: Date.now() }))
-    } catch (e) { /* ignore */ }
+  // ──────────────────────────────────────────────
+  // Exit popup animation
+  // ──────────────────────────────────────────────
+  const addCashoutExit = useCallback((name, profit) => {
+    exitCountRef.current++
+    const id = `ex_${exitCountRef.current}_${Date.now()}`
+    const left = 20 + Math.random() * 50
+    const top = 50 + Math.random() * 40
+    setCashoutExits(prev => [...prev, { id, name, profit, left, top }])
+    setTimeout(() => {
+      setCashoutExits(prev => prev.filter(e => e.id !== id))
+    }, 2500)
   }, [])
 
-  const broadcastCrash = useCallback(async (roundId, crashPt) => {
-    try {
-      localStorage.setItem('aviator_game_crash', JSON.stringify({ roundId, crashPoint: crashPt, timestamp: Date.now() }))
-    } catch (e) { /* ignore */ }
-  }, [])
-
-  const placeBotBet = useCallback((roundId) => {
-    const amt = generateBotBetAmount(BOT_BET_MIN, BOT_BET_MAX)
-    const auto = generateBotAutoCashout()
-    const name = getRandomBotName()
-    const bet = {
-      id: `bot_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-      round_id: roundId,
-      user_id: null,
-      username: name,
-      amount: amt,
-      auto_cashout_at: auto,
-      cashout_at: null,
-      cashout_amount: null,
-      is_bot: true,
-      status: 'pending',
-      won_amount: 0,
-    }
-    liveBetsRef.current = [...liveBetsRef.current, bet]
-    setLive([...liveBetsRef.current])
-    return bet
-  }, [])
-
-  const processAutoCashouts = useCallback((currentMult) => {
-    let changed = false
-    liveBetsRef.current = liveBetsRef.current.map(b => {
-      if (b.status !== 'pending' || !b.auto_cashout_at) return b
-      if (currentMult >= b.auto_cashout_at) {
-        changed = true
-        const updated = { ...b, status: 'won', cashout_at: b.auto_cashout_at, cashout_amount: Math.floor(b.amount * b.auto_cashout_at), won_amount: Math.floor(b.amount * b.auto_cashout_at) }
-        if (!b.is_bot) {
-          roundExitedAmtRef.current += b.amount * b.auto_cashout_at
-          roundExitedCountRef.current++
-        }
-        return updated
-      }
-      return b
-    })
-    if (changed) setLive([...liveBetsRef.current])
-  }, [])
-
-  // Game engine — starts when loading is done, runs continuously
+  // Show exit popups for other players' cashouts
+  const prevLiveRef = useRef([])
   useEffect(() => {
-    if (showLoading) return
-    if (_engineRunning) return
-    _engineRunning = true
-
-    const crashTimer = { id: null }
-    const cdIv = { id: null }
-    const loopIv = { id: null }
-
-    const saveState = (state) => {
-      try { localStorage.setItem('aviator_game_state', JSON.stringify({ ...state, timestamp: Date.now() })) } catch {}
-      broadcastGameState(state)
-    }
-
-    const runCrash = (actualCrashedAt) => {
-      clearInterval(loopIv.id)
-      phaseRef.current = 'crashed'
-      setPhase('crashed')
-      setCrashedAt(actualCrashedAt)
-      saveState({ phase: 'crashed', crashPoint: actualCrashedAt })
-
-      histRef.current = [actualCrashedAt, ...histRef.current.slice(0, 19)]
-      try { localStorage.setItem('aviator_crash_history', JSON.stringify(histRef.current)) } catch {}
-      setHist([...histRef.current])
-      liveBetsRef.current = liveBetsRef.current.map(b =>
-        b.status === 'pending' ? { ...b, status: 'lost' } : b
-      )
-      setLive([...liveBetsRef.current])
-      try { localStorage.setItem('aviator_live_bets', JSON.stringify(liveBetsRef.current)) } catch {}
-
-      const realBetTotal = roundRealBetsRef.current
-      const realExitTotal = roundExitedAmtRef.current
-      if (realBetTotal > 0) {
-        updateHouseEdgePool(realBetTotal, realExitTotal, actualCrashedAt)
-      }
-
-      try { localStorage.removeItem('aviator_user_bet_1') } catch {}
-      try { localStorage.removeItem('aviator_user_bet_2') } catch {}
-
-      crashTimer.id = setTimeout(() => {
-        betTimeoutsRef.current.forEach(clearTimeout)
-        betTimeoutsRef.current = []
-        runGame()
-      }, 3000)
-    }
-
-    const runFlight = (crashPt, startTime) => {
-      phaseRef.current = 'running'
-      flightStartRef.current = startTime
-      setPhase('running')
-
-      const settings = getGameSettingsLocal()
-      const heMode = settings?.heMode || 'off'
-      const heTargetPct = settings?.heTargetPct ?? 5
-      const heMinSecs = settings?.heMinSecs ?? 3
-      const heMaxSecs = settings?.heMaxSecs ?? DEFAULT_HE_MAX_SECS
-      const autoTargetSecs = settings?.autoTargetSecs ?? 8
-      let autoCrashed = false
-      let smartTriggered = false
-
-      loopIv.id = setInterval(() => {
-        const elapsed = (Date.now() - flightStartRef.current) / 1000
-        const m = Math.min(100, parseFloat(Math.pow(Math.E, 0.06 * elapsed).toFixed(2)))
-        const mFixed = parseFloat(m.toFixed(2))
-        multRef.current = mFixed
-        setMult(mFixed)
-        saveState({ phase: 'running', mult: mFixed, crashPoint: crashPt, startTime: flightStartRef.current })
-
-        try { localStorage.setItem('aviator_live_bets', JSON.stringify(liveBetsRef.current)) } catch {}
-
-        // Admin manual crash — crash at current actual mult instantly
-        const manualCrashSignal = getManualCrash()
-        if (manualCrashSignal) {
-          clearManualCrash()
-          clearInterval(loopIv.id)
-          broadcastLiveHE({ event: 'crash', mode: 'manual', mult: mFixed, elapsed })
-          broadcastLiveHEMetrics({ event: 'crash', mode: 'manual', mult: mFixed, elapsed })
-          runCrash(mFixed)
-          return
+    if (prevLiveRef.current.length > 0) {
+      const prevMap = new Map(prevLiveRef.current.map(b => [b.id, b]))
+      live.forEach(b => {
+        const prev = prevMap.get(b.id)
+        if (prev && prev.status === 'pending' && b.status === 'won' && b.username !== user?.username) {
+          const won = Number(b.cashout_amount || b.win_amount || 0)
+          addCashoutExit(b.username, won)
         }
-        
-        // Check Supabase crash signal in background (non-blocking)
-        checkManualCrash().then(hasSignal => {
-          if (hasSignal) {
-            clearManualCrash()
-            clearInterval(loopIv.id)
-            broadcastLiveHE({ event: 'crash', mode: 'manual', mult: mFixed, elapsed })
-            broadcastLiveHEMetrics({ event: 'crash', mode: 'manual', mult: mFixed, elapsed })
-            runCrash(mFixed)
-          }
-        })
-
-        // Smart auto house edge — crash when target edge % is reached
-        let targetMult = null
-        let liveEdge = 0
-        let pendingAmt = 0
-        let exitRate = 0
-
-        if (heMode === 'smart' && !smartTriggered && elapsed >= heMinSecs) {
-          const realBets = roundRealBetsRef.current
-          const exitedAmt = roundExitedAmtRef.current
-          const exitedCount = roundExitedCountRef.current
-
-          if (realBets >= MIN_REAL_BETS_FOR_SMART && exitedCount > 0) {
-            pendingAmt = realBets - exitedAmt
-            const safeExitAmt = pendingAmt * (1 - heTargetPct / 100)
-            const exitTarget = realBets - safeExitAmt
-            targetMult = exitTarget / realBets
-            liveEdge = (pendingAmt / realBets) * 100
-            exitRate = (exitedCount / realBets) * 100
-
-            if (mFixed >= targetMult) {
-              smartTriggered = true
-              clearInterval(loopIv.id)
-              broadcastLiveHE({ event: 'crash', mode: 'smart', mult: mFixed, targetMult, elapsed, liveEdge, pendingAmt, exitedAmt, exitRate })
-              broadcastLiveHEMetrics({ event: 'crash', mode: 'smart', mult: mFixed, targetMult, elapsed, liveEdge, pendingAmt, exitedAmt, exitRate, realBets: roundRealBetsRef.current, exitedAmt: roundExitedAmtRef.current })
-              runCrash(mFixed)
-              return
-            }
-          }
-
-          // Max time cap for smart mode
-          if (elapsed >= heMaxSecs) {
-            smartTriggered = true
-            clearInterval(loopIv.id)
-            broadcastLiveHE({ event: 'crash', mode: 'smart_max', mult: mFixed, elapsed })
-            broadcastLiveHEMetrics({ event: 'crash', mode: 'smart_max', mult: mFixed, elapsed })
-            runCrash(mFixed)
-            return
-          }
-        }
-
-        // Time-based auto crash
-        if (heMode === 'time' && !autoCrashed && elapsed >= autoTargetSecs) {
-          autoCrashed = true
-          clearInterval(loopIv.id)
-          broadcastLiveHE({ event: 'crash', mode: 'time', mult: mFixed, elapsed })
-          broadcastLiveHEMetrics({ event: 'crash', mode: 'time', mult: mFixed, elapsed })
-          runCrash(mFixed)
-          return
-        }
-
-        // Natural crash
-        if (mFixed >= crashPt) {
-          const exitedAmt = roundExitedAmtRef.current
-          const realBets = roundRealBetsRef.current
-          pendingAmt = realBets - exitedAmt
-          liveEdge = realBets > 0 ? (pendingAmt / realBets) * 100 : 0
-          exitRate = roundExitedCountRef.current
-          broadcastLiveHE({ event: 'crash', mode: 'natural', mult: mFixed, elapsed, liveEdge, pendingAmt, exitedAmt, exitRate })
-          broadcastLiveHEMetrics({ event: 'crash', mode: 'natural', mult: mFixed, elapsed, liveEdge, pendingAmt, exitedAmt, exitRate, realBets, exitedAmt })
-          clearInterval(loopIv.id)
-          runCrash(mFixed)
-        }
-
-        // Broadcast live metrics every tick for admin panel
-        if (heMode === 'smart') {
-          const realBets = roundRealBetsRef.current
-          const exitedAmt = roundExitedAmtRef.current
-          const exitedCount = roundExitedCountRef.current
-          const pm = realBets - exitedAmt
-          const edge = realBets > 0 ? (pm / realBets) * 100 : 0
-          const rate = realBets > 0 ? (exitedCount / realBets) * 100 : 0
-          const tmult = realBets >= MIN_REAL_BETS_FOR_SMART && exitedCount > 0
-            ? (realBets - pm * (1 - heTargetPct / 100)) / realBets
-            : null
-
-          broadcastLiveHE({
-            event: 'live',
-            realBets,
-            exitedAmt,
-            pendingAmt: pm,
-            liveEdge: edge,
-            exitRate: rate,
-            targetMult: tmult,
-            heTargetPct,
-            heMode,
-            mFixed,
-            elapsed,
-          })
-          
-          broadcastLiveHEMetrics({
-            event: 'live',
-            realBets,
-            exitedAmt,
-            pendingAmt: pm,
-            liveEdge: edge,
-            exitRate: rate,
-            targetMult: tmult,
-            elapsed: Math.floor(elapsed),
-          })
-        }
-      }, TICK_MS)
-    }
-
-    const runBetting = (crashPt, countdownStart) => {
-      phaseRef.current = 'betting'
-      multRef.current = 1.00
-      setPhase('betting')
-      setMult(1.00)
-      setCrashedAt(null)
-      setB1d(null)
-      setB2d(null)
-      roundRealBetsRef.current = 0
-      roundExitedAmtRef.current = 0
-      roundExitedCountRef.current = 0
-
-      // Restore previous round's live bets if they exist (for display after refresh)
-      // Don't clear them — let them show until crash updates them
-
-      const elapsed = (Date.now() - countdownStart) / 1000
-      let tick = Math.max(0, Math.ceil(BETTING_SECONDS - elapsed))
-      setCd(tick)
-      saveState({ phase: 'betting', crashPoint: crashPt, countdownStart, countdown: tick })
-
-      for (let i = 0; i < BOT_COUNT; i++) {
-        const delay = Math.random() * BETTING_SECONDS * 700
-        const amt = generateBotBetAmount(BOT_BET_MIN, BOT_BET_MAX)
-        const auto = generateBotAutoCashout()
-        const name = getRandomBotName()
-        const t = setTimeout(() => {
-          if (phaseRef.current === 'betting') {
-            liveBetsRef.current = [...liveBetsRef.current, {
-              id: `bot_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-              round_id: roundIdRef.current, user_id: null, username: name,
-              amount: amt, auto_cashout_at: auto,
-              cashout_at: null, cashout_amount: null,
-              is_bot: true, status: 'pending', won_amount: 0,
-            }]
-            setLive([...liveBetsRef.current])
-            try { localStorage.setItem('aviator_live_bets', JSON.stringify(liveBetsRef.current)) } catch {}
-          }
-        }, delay)
-        betTimeoutsRef.current.push(t)
-      }
-
-      if (tick <= 0) {
-        runFlight(crashPt, Date.now())
-        return
-      }
-
-      cdIv.id = setInterval(() => {
-        tick--
-        setCd(tick)
-        saveState({ phase: 'betting', crashPoint: crashPt, countdownStart, countdown: tick })
-        if (tick <= 0) {
-          clearInterval(cdIv.id)
-          runFlight(crashPt, Date.now())
-        }
-      }, 1000)
-    }
-
-    const runGame = () => {
-      const settings = getGameSettingsLocal()
-      const houseEdge = settings?.houseEdge != null ? settings.houseEdge : 0.05
-      const crashPt = parseFloat(generateCrashPoint(houseEdge).toFixed(2))
-      crashPtRef.current = crashPt
-      roundIdRef.current = `r_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
-      runBetting(crashPt, Date.now())
-    }
-
-    // On load, check for existing game state and resume
-    const startTimer = setTimeout(() => {
-      // Load saved live bets
-      try {
-        const savedBets = localStorage.getItem('aviator_live_bets')
-        if (savedBets) {
-          liveBetsRef.current = JSON.parse(savedBets)
-          setLive([...liveBetsRef.current])
-        }
-      } catch {}
-
-      // Load saved user bets
-      try {
-        const savedB1 = localStorage.getItem('aviator_user_bet_1')
-        if (savedB1) {
-          const b1 = JSON.parse(savedB1)
-          if (b1 && !b1.cashed) {
-            setB1d(b1)
-            if (b1.autoVal) {
-              setB1o(true)
-              setB1v(b1.autoVal)
-            }
-          }
-        }
-      } catch {}
-      try {
-        const savedB2 = localStorage.getItem('aviator_user_bet_2')
-        if (savedB2) {
-          const b2 = JSON.parse(savedB2)
-          if (b2 && !b2.cashed) {
-            setB2d(b2)
-            if (b2.autoVal) {
-              setB2o(true)
-              setB2v(b2.autoVal)
-            }
-          }
-        }
-      } catch {}
-
-      try {
-        const saved = localStorage.getItem('aviator_game_state')
-        if (saved) {
-          const s = JSON.parse(saved)
-          const age = Date.now() - (s.timestamp || 0)
-
-          if (s.phase === 'running' && s.crashPoint && s.startTime && age < 30000) {
-            // Resume running game
-            const elapsed = (Date.now() - s.startTime) / 1000
-            const m = Math.min(100, parseFloat(Math.pow(Math.E, 0.06 * elapsed).toFixed(2)))
-            const mFixed = parseFloat(m.toFixed(2))
-            if (mFixed >= s.crashPoint) {
-              // Already crashed — show crash value
-              crashPtRef.current = s.crashPoint
-              histRef.current = [s.crashPoint, ...histRef.current.slice(0, 19)]
-              try { localStorage.setItem('aviator_crash_history', JSON.stringify(histRef.current)) } catch {}
-              setHist([...histRef.current])
-              setMult(s.crashPoint)
-              setCrashedAt(s.crashPoint)
-              phaseRef.current = 'crashed'
-              setPhase('crashed')
-              crashTimer.id = setTimeout(runGame, 3000)
-            } else {
-              crashPtRef.current = s.crashPoint
-              setMult(mFixed)
-              runFlight(s.crashPoint, s.startTime)
-            }
-          } else if (s.phase === 'crashed' && s.crashPoint && age < 15000) {
-            // Show crash value and restart soon
-            crashPtRef.current = s.crashPoint
-            histRef.current = [s.crashPoint, ...histRef.current.slice(0, 19)]
-            try { localStorage.setItem('aviator_crash_history', JSON.stringify(histRef.current)) } catch {}
-            setHist([...histRef.current])
-            setMult(s.crashPoint)
-            setCrashedAt(s.crashPoint)
-            phaseRef.current = 'crashed'
-            setPhase('crashed')
-            crashTimer.id = setTimeout(runGame, 3000)
-          } else if (s.phase === 'betting' && s.crashPoint && s.countdownStart && age < 30000) {
-            // Resume betting countdown
-            crashPtRef.current = s.crashPoint
-            runBetting(s.crashPoint, s.countdownStart)
-          } else {
-            // State too old or crashed — start new round
-            runGame()
-          }
-        } else {
-          runGame()
-        }
-      } catch { runGame() }
-    }, 200)
-
-    return () => {
-      clearTimeout(startTimer)
-      clearTimeout(crashTimer.id)
-      clearInterval(cdIv.id)
-      clearInterval(loopIv.id)
-      betTimeoutsRef.current.forEach(clearTimeout)
-      betTimeoutsRef.current = []
-    }
-  }, [showLoading])
-
-  const cashoutInternal = useCallback(async (betData, multiplier, setter, betNum) => {
-    if (!betData || betData.cashed) return
-    const won = Math.floor(betData.amount * multiplier * 1.5)
-    const newBal = bal + won
-    setBal(newBal)
-    setter({ ...betData, cashed: { won } })
-    updateBalance(newBal)
-    try { localStorage.removeItem(betNum === 1 ? 'aviator_user_bet_1' : 'aviator_user_bet_2') } catch {}
-    roundExitedAmtRef.current += betData.amount * multiplier
-    roundExitedCountRef.current++
-    setMyHistory(h => {
-      const updated = h.map(entry => {
-        if (entry.pending && entry.betId === betData.id) {
-          return { amount: betData.amount, mult: multiplier * 1.5, won: true, profit: won, pending: false }
-        }
-        return entry
       })
-      try { localStorage.setItem('aviator_my_bets', JSON.stringify(updated)) } catch {}
-      return updated
-    })
-    addCashoutExit(user?.username || 'You', won)
-    if (betData.dbBetId) apiCashoutBet(betData.dbBetId, multiplier).catch(() => {})
-    toast.success(`Cashed ${(multiplier * 1.5).toFixed(2)}x — +₨${won.toLocaleString()}`)
-  }, [bal, updateBalance, toast, addCashoutExit, user])
-
-  const checkAutoCashout = useCallback((currentMult) => {
-    const check = (betData, setter, betNum) => {
-      if (!betData || betData.cashed) return
-      const autoVal = betData.autoVal
-      if (!autoVal) return
-      const displayTarget = parseFloat(autoVal)
-      const actualTarget = displayTarget / 1.5
-      if (currentMult >= actualTarget) {
-        cashoutInternal(betData, actualTarget, setter, betNum)
-      }
     }
-    check(b1d, setB1d, 1)
-    check(b2d, setB2d, 2)
-  }, [b1d, b2d, cashoutInternal])
+    prevLiveRef.current = [...live]
+  }, [live, addCashoutExit, user])
 
-  useEffect(() => {
-    if (phase === 'running') {
-      autoTickRef.current = setInterval(() => checkAutoCashout(multRef.current), AUTO_TICK_MS)
-    } else {
-      clearInterval(autoTickRef.current)
-    }
-    return () => clearInterval(autoTickRef.current)
-  }, [phase, checkAutoCashout])
-
-  const place = useCallback((num) => {
-    if (!isLoggedIn) { 
-      // Show login prompt - redirect to login with return URL
+  // ──────────────────────────────────────────────
+  // Bet placement — calls Supabase Edge Function
+  // ──────────────────────────────────────────────
+  const place = useCallback(async (num) => {
+    if (!isLoggedIn) {
       navigate('/login', { state: { from: '/play/aviator' } })
-      return 
+      return
     }
-    const a = num === 1 ? b1a : b2a
-    if (a < MIN_BET) { toast.error(`Min PKR ${MIN_BET}`); return }
-    if (a > MAX_BET) { toast.error(`Max PKR ${MAX_BET}`); return }
-    if (bal <= 0) { 
+    const amount = num === 1 ? b1a : b2a
+    if (amount < MIN_BET) { toast.error(`Min PKR ${MIN_BET}`); return }
+    if (amount > MAX_BET) { toast.error(`Max PKR ${MAX_BET}`); return }
+    if (bal <= 0) {
       toast.error('Balance is 0 - please deposit to play')
       navigate('/deposit')
-      return 
+      return
     }
-    if (a > bal) { toast.error('Low balance - please deposit'); return }
-    const autoVal = (num === 1 ? b1o : b2o) ? (num === 1 ? b1v : b2v) : null
-    const betId = `u_${Date.now()}`
+    if (amount > bal) { toast.error('Low balance - please deposit'); return }
+    if (phaseRef.current !== 'betting') { toast.error('Wait for next round'); return }
 
-    setBal(bal - a)
-    updateBalance(bal - a)
+    const autoCashout = (num === 1 ? b1o : b2o) ? parseFloat(num === 1 ? b1v : b2v) : null
 
-    const entry = { id: betId, amount: a, autoVal, cashed: null, dbBetId: null }
-    if (num === 1) { setB1d(entry); try { localStorage.setItem('aviator_user_bet_1', JSON.stringify(entry)) } catch {} }
-    else { setB2d(entry); try { localStorage.setItem('aviator_user_bet_2', JSON.stringify(entry)) } catch {} }
+    // Optimistically deduct balance
+    setBal(prev => prev - amount)
 
-    const liveBet = {
-      id: betId, round_id: roundIdRef.current || null,
-      user_id: user?.id || null, username: user?.username || 'You',
-      amount: a, auto_cashout_at: autoVal ? parseFloat(autoVal) : null,
-      cashout_at: null, cashout_amount: null,
-      is_bot: false, status: 'pending', won_amount: 0,
+    const result = await placeBet({
+      userId: user?.id,
+      username: user?.username || 'You',
+      amount,
+      autoCashout,
+      betNumber: num
+    })
+
+    if (result.success) {
+      const entry = { id: result.bet.id, amount, autoCashout, cashed: null, dbBetId: result.bet.id }
+      if (num === 1) setB1d(entry)
+      else setB2d(entry)
+
+      setMyHistory(prev => [{
+        amount,
+        mult: null,
+        won: false,
+        profit: 0,
+        pending: true,
+        betId: result.bet.id,
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      }, ...prev].slice(0, 15))
+
+      toast.success(`Bet ${num}: PKR ${amount} placed`)
+    } else {
+      // Revert balance on failure
+      setBal(prev => prev + amount)
+      toast.error(result.error || 'Failed to place bet')
     }
-    liveBetsRef.current = [...liveBetsRef.current, liveBet]
-    setLive([...liveBetsRef.current])
-    roundRealBetsRef.current += a
+  }, [isLoggedIn, b1a, b1o, b1v, b2a, b2o, b2v, bal, user, navigate, toast])
 
-    pushMyHistory({ amount: a, mult: null, won: false, profit: 0, pending: true, betId, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) })
-
-    toast.success(`Bet ${num}: ₨${a} placed`)
-  }, [isLoggedIn, b1a, b1o, b1v, b2a, b2o, b2v, bal, user, updateBalance, toast, pushMyHistory])
-
-  const cashout = useCallback((num) => {
+  // ──────────────────────────────────────────────
+  // Cashout — calls Supabase Edge Function
+  // ──────────────────────────────────────────────
+  const cashout = useCallback(async (num) => {
     if (phaseRef.current !== 'running') return
     const betData = num === 1 ? b1d : b2d
-    const setter = num === 1 ? setB1d : setB2d
-    cashoutInternal(betData, multRef.current, setter, num)
-  }, [b1d, b2d, cashoutInternal])
+    if (!betData || betData.cashed) return
 
-  const cancelBet = useCallback((num) => {
+    const result = await cashoutBet(user?.id, num)
+
+    if (result.success) {
+      const won = result.winAmount
+      setBal(prev => prev + won)
+      updateBalance(user?.balance + won)
+
+      const setter = num === 1 ? setB1d : setB2d
+      setter({ ...betData, cashed: { won } })
+
+      setMyHistory(prev => prev.map(entry => {
+        if (entry.pending && entry.betId === betData.id) {
+          return { ...entry, mult: result.multiplier * 1.5, won: true, profit: won, pending: false }
+        }
+        return entry
+      }))
+
+      addCashoutExit(user?.username || 'You', won)
+      toast.success(`Cashed ${(result.multiplier * 1.5).toFixed(2)}x — +PKR ${won.toLocaleString()}`)
+    } else {
+      toast.error(result.error || 'Failed to cash out')
+    }
+  }, [b1d, b2d, user, updateBalance, toast, addCashoutExit])
+
+  // ──────────────────────────────────────────────
+  // Cancel bet (during betting phase)
+  // ──────────────────────────────────────────────
+  const cancelBet = useCallback(async (num) => {
     const betData = num === 1 ? b1d : b2d
     if (!betData) return
-    const newBal = bal + betData.amount
-    setBal(newBal)
-    updateBalance(newBal)
-    if (num === 1) { setB1d(null); try { localStorage.removeItem('aviator_user_bet_1') } catch {} }
-    else { setB2d(null); try { localStorage.removeItem('aviator_user_bet_2') } catch {} }
-    liveBetsRef.current = liveBetsRef.current.filter(b => b.id !== betData.id)
-    setLive([...liveBetsRef.current])
-    setMyHistory(h => {
-      const updated = h.filter(entry => entry.betId !== betData.id)
-      try { localStorage.setItem('aviator_my_bets', JSON.stringify(updated)) } catch {}
-      return updated
-    })
+    if (phaseRef.current !== 'betting') { toast.error('Can only cancel during betting phase'); return }
+
+    // Note: In production, you'd call an API endpoint to cancel the bet in the database
+    // For now, we revert locally since the Edge Function handles this on round transition
+    setBal(prev => prev + betData.amount)
+    updateBalance(user?.balance + betData.amount)
+
+    if (num === 1) setB1d(null)
+    else setB2d(null)
+
+    setMyHistory(prev => prev.filter(entry => entry.betId !== betData.id))
     toast.success('Bet cancelled')
-  }, [b1d, b2d, bal, updateBalance, toast])
+  }, [b1d, b2d, user, updateBalance, toast])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -1351,7 +878,7 @@ export default function AviatorGame() {
     const draw = () => {
       frameCount++
       const currentPhase = phaseRef.current
-      const currentMult = multRef.current
+      const currentMult = mult
 
       if (!bgCanvas || W === 0 || H === 0) {
         raf = requestAnimationFrame(draw)
@@ -1427,7 +954,7 @@ export default function AviatorGame() {
       window.removeEventListener('resize', resize)
       cancelAnimationFrame(raf)
     }
-  }, [showLoading])
+  }, [showLoading, phase, mult])
 
   return (
     <>

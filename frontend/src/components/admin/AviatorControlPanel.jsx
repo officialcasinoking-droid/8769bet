@@ -2,15 +2,16 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { toast } from 'react-hot-toast'
 import { Button } from '../../components/ui/FormElements'
 import { Octagon, Settings, BarChart3, ChevronDown, ChevronUp, Loader2, TrendingUp, TrendingDown, Wallet } from 'lucide-react'
-import { 
-  getHouseEdgePool, 
-  getBackendGameState, 
-  requestBackendCrash, 
-  updateBackendSettings,
-  connectWebSocket,
-  disconnectWebSocket,
-  getGameSettingsLocal
-} from '../../api/aviator'
+import {
+  subscribeToGameState,
+  adminForceCrash,
+  adminNewRound,
+  adminUpdateSettings,
+  fetchGameState,
+  fetchCurrentBets,
+  fetchCrashHistory,
+  fetchAdminWallet
+} from '../../api/aviatorSupabase'
 
 const BetRow = React.memo(function BetRow({ bet }) {
   const time = useMemo(() => {
@@ -109,41 +110,46 @@ export default function AviatorControlPanel() {
   const prevBetsSnapshotRef = useRef([])
   const cumulativePLRef = useRef(0)
 
-  const handleManualCrash = useCallback(() => {
-    requestBackendCrash()
-      .then(() => {
-        toast.success('Crash signal sent to backend')
-      })
-      .catch((err) => {
-        console.error('Failed to request crash:', err)
-        toast.error('Failed to send crash signal')
-      })
+  const handleManualCrash = useCallback(async () => {
+    const result = await adminForceCrash()
+    if (result.success) {
+      toast.success('Game crashed successfully')
+    } else {
+      toast.error(result.error || 'Failed to crash game')
+    }
   }, [])
 
-  const handleSaveSettings = useCallback(() => {
+  const handleNewRound = useCallback(async () => {
+    const result = await adminNewRound()
+    if (result.success) {
+      toast.success('New round started')
+    } else {
+      toast.error(result.error || 'Failed to start new round')
+    }
+  }, [])
+
+  const handleSaveSettings = useCallback(async () => {
     const settingsData = {
       houseEdge: houseEdge / 100,
-      biasStrength,
       heMode,
       heTargetPct,
       heMinSecs,
       heMaxSecs,
       autoTargetSecs,
+      waitTimeSeconds: 8
     }
-    
-    updateBackendSettings(settingsData)
-      .then(() => {
-        localStorage.setItem('aviator_settings', JSON.stringify({ ...settingsData, ts: Date.now() }))
-        toast.success('Settings saved to backend')
-      })
-      .catch((err) => {
-        console.error('Failed to save settings:', err)
-        toast.error('Failed to save settings')
-      })
-  }, [houseEdge, biasStrength, heMode, heTargetPct, heMinSecs, heMaxSecs, autoTargetSecs])
+
+    const result = await adminUpdateSettings(settingsData)
+    if (result.success) {
+      toast.success('Settings updated successfully')
+    } else {
+      toast.error(result.error || 'Failed to save settings')
+    }
+  }, [houseEdge, heMode, heTargetPct, heMinSecs, heMaxSecs, autoTargetSecs])
 
   useEffect(() => {
-    connectWebSocket(
+    // Subscribe to Supabase Realtime
+    const cleanup = subscribeToGameState(
       (state) => {
         if (state.phase === 'betting') {
           setPhase('betting')
@@ -169,32 +175,40 @@ export default function AviatorControlPanel() {
       },
       (settings) => {
         if (settings) {
-          try { localStorage.setItem('aviator_settings', JSON.stringify(settings)) } catch {}
+          // Settings updated from server
         }
       }
     )
 
-    getBackendGameState().then(state => {
-      if (state) {
-        if (state.phase === 'betting') {
+    // Fetch initial data
+    Promise.all([
+      fetchGameState(),
+      fetchCurrentBets(),
+      fetchCrashHistory(),
+      fetchAdminWallet()
+    ]).then(([gameState, bets, history, wallet]) => {
+      if (gameState) {
+        if (gameState.phase === 'betting') {
           setPhase('betting')
-          setCd(state.countdown || 8)
-        } else if (state.phase === 'flying') {
+          setCd(parseFloat(gameState.countdown) || 8)
+        } else if (gameState.phase === 'flying') {
           setPhase('running')
-          setMult(state.mult || 1.00)
-        } else if (state.phase === 'crashed') {
+          setMult(parseFloat(gameState.multiplier) || 1.00)
+        } else if (gameState.phase === 'crashed') {
           setPhase('crashed')
-          setCrashedAt(state.crash_point)
-          setMult(state.crash_point || 1.00)
-        }
-        if (state.settings) {
-          try { localStorage.setItem('aviator_settings', JSON.stringify(state.settings)) } catch {}
+          setCrashedAt(parseFloat(gameState.crash_point))
+          setMult(parseFloat(gameState.crash_point) || 1.00)
         }
         setSynced(true)
       }
-    }).catch(() => {})
+      if (bets) setLiveBets(bets)
+      if (history) setCrashHistory(history)
+      if (wallet) setWallet(wallet)
+    }).catch(err => {
+      console.error('Failed to fetch initial data:', err)
+    })
 
-    return () => disconnectWebSocket()
+    return cleanup
   }, [])
 
   useEffect(() => {
