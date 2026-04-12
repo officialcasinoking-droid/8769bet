@@ -3,15 +3,17 @@ services:
     name: 8769bet-frontend
     env: static
     branch: main
-    buildCommand: cd frontend && npm install && npm run build
-    staticPublishPath: frontend/dist
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    staticPublishPath: ./dist
 
   - type: web
     name: 8769bet-admin
     env: static
     branch: main
-    buildCommand: cd admin && npm install && npm run build
-    staticPublishPath: admin/dist
+    rootDir: admin
+    buildCommand: npm install && npm run build
+    staticPublishPath: ./dist
 
   - type: web
     name: 8769bet-backend
@@ -19,8 +21,13 @@ services:
     region: oregon
     branch: main
     rootDir: backend
-    buildCommand: npm install
+    buildCommand: npm install --production
     startCommand: node src/index.js
+    healthCheckPath: /api/health
     envVars:
       - key: NODE_ENV
         value: production
+      - key: PORT
+        value: 3006
+      - key: SUPABASE_URL
+        value: https://rbcipnwwllkscomatqmc.supabase.co
