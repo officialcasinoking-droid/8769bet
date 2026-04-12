@@ -15,6 +15,7 @@ class AviatorWebSocketClient {
       bet_result: [],
       cashout_result: []
     }
+    // Use environment variable or default to localhost
     this.backendUrl = import.meta.env.VITE_BACKEND_WS_URL || 'ws://localhost:3006'
   }
 

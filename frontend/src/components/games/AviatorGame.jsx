@@ -1,8 +1,9 @@
 /**
  * AviatorGame.jsx — Supabase Realtime Aviator Crash Game
  *
- * Pure client that subscribes to Supabase Realtime for game state.
- * Game engine runs in Supabase Edge Function.
+ * Uses backend WebSocket for real-time game state synchronization.
+ * Game engine runs in backend Node.js server (ws://localhost:3006).
+ * Supabase used for database persistence only.
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react'
@@ -10,14 +11,12 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../components/ui/Toast'
 import { ChevronLeft } from 'lucide-react'
+import { aviatorWS } from '../../api/aviatorWebSocket'
 import {
-  subscribeToGameState,
-  fetchGameState,
   fetchCrashHistory,
   fetchSettings,
   placeBet,
-  cashoutBet,
-  fetchCurrentBets
+  cashoutBet
 } from '../../api/aviatorSupabase'
 
 const CSS = `
@@ -600,43 +599,42 @@ export default function AviatorGame() {
       }
     }).catch(() => {})
 
-    // Subscribe to realtime updates
-    const cleanup = subscribeToGameState(
-      // Game state handler
-      (state) => {
-        if (state.phase === 'betting') {
-          phaseRef.current = 'betting'
-          setPhase('betting')
-          setCd(state.countdown)
-          currentRoundIdRef.current = state.roundId
-        } else if (state.phase === 'flying') {
-          phaseRef.current = 'running'
-          setPhase('running')
-          setMult(state.mult)
-          currentRoundIdRef.current = state.roundId
-        } else if (state.phase === 'crashed') {
-          phaseRef.current = 'crashed'
-          setPhase('crashed')
-          setCrashedAt(state.crash_point)
-          setMult(state.crash_point)
-          currentRoundIdRef.current = state.roundId
-          // Update crash history
-          setHist(prev => {
-            if (prev.includes(state.crash_point)) return prev
-            return [state.crash_point, ...prev].slice(0, 30)
-          })
-        }
-      },
-      // Bets handler
-      (bets) => {
-        setLive(bets || [])
-      },
-      // Settings handler (not used by game UI, but available)
-      () => {}
-    )
+    // Connect to backend WebSocket
+    aviatorWS.connect()
+
+    // Subscribe to realtime updates via WebSocket
+    aviatorWS.on('game_state', (state) => {
+      if (state.phase === 'betting') {
+        phaseRef.current = 'betting'
+        setPhase('betting')
+        setCd(state.countdown)
+        currentRoundIdRef.current = state.roundId
+      } else if (state.phase === 'flying') {
+        phaseRef.current = 'running'
+        setPhase('running')
+        setMult(state.mult)
+        currentRoundIdRef.current = state.roundId
+      } else if (state.phase === 'crashed') {
+        phaseRef.current = 'crashed'
+        setPhase('crashed')
+        setCrashedAt(state.crash_point)
+        setMult(state.crash_point)
+        currentRoundIdRef.current = state.roundId
+        // Update crash history
+        setHist(prev => {
+          if (prev.includes(state.crash_point)) return prev
+          return [state.crash_point, ...prev].slice(0, 30)
+        })
+      }
+    })
+
+    aviatorWS.on('bets_update', (bets) => {
+      setLive(bets || [])
+    })
 
     return () => {
-      if (cleanup) cleanup()
+      // Don't disconnect - keep WebSocket alive for other components
+      // aviatorWS.disconnect()
     }
   }, [showLoading])
 

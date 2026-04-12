@@ -2,8 +2,8 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { toast } from 'react-hot-toast'
 import { Button } from '../../components/ui/FormElements'
 import { Octagon, Settings, BarChart3, ChevronDown, ChevronUp, Loader2, TrendingUp, TrendingDown, Wallet } from 'lucide-react'
+import { aviatorWS } from '../../api/aviatorWebSocket'
 import {
-  subscribeToGameState,
   adminForceCrash,
   adminNewRound,
   adminUpdateSettings,
@@ -111,20 +111,31 @@ export default function AviatorControlPanel() {
   const cumulativePLRef = useRef(0)
 
   const handleManualCrash = useCallback(async () => {
-    const result = await adminForceCrash()
-    if (result.success) {
-      toast.success('Game crashed successfully')
-    } else {
-      toast.error(result.error || 'Failed to crash game')
+    try {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3006'}/api/aviator/crash`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      })
+      const result = await response.json()
+      
+      if (result.success) {
+        toast.success('Game crashed successfully')
+      } else {
+        toast.error(result.error || 'Failed to crash game')
+      }
+    } catch (err) {
+      console.error('Crash error:', err)
+      toast.error('Failed to connect to backend')
     }
   }, [])
 
   const handleNewRound = useCallback(async () => {
-    const result = await adminNewRound()
-    if (result.success) {
-      toast.success('New round started')
-    } else {
-      toast.error(result.error || 'Failed to start new round')
+    try {
+      // New round happens automatically after crash
+      toast.info('New round will start automatically after current round')
+    } catch (err) {
+      console.error('New round error:', err)
+      toast.error('Failed to start new round')
     }
   }, [])
 
@@ -135,52 +146,58 @@ export default function AviatorControlPanel() {
       heTargetPct,
       heMinSecs,
       heMaxSecs,
-      autoTargetSecs,
-      waitTimeSeconds: 8
     }
 
-    const result = await adminUpdateSettings(settingsData)
-    if (result.success) {
-      toast.success('Settings updated successfully')
-    } else {
-      toast.error(result.error || 'Failed to save settings')
+    try {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3006'}/api/aviator/settings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(settingsData)
+      })
+      const result = await response.json()
+      
+      if (result.success) {
+        toast.success('Settings updated successfully')
+      } else {
+        toast.error(result.error || 'Failed to save settings')
+      }
+    } catch (err) {
+      console.error('Settings error:', err)
+      toast.error('Failed to connect to backend')
     }
-  }, [houseEdge, heMode, heTargetPct, heMinSecs, heMaxSecs, autoTargetSecs])
+  }, [houseEdge, heMode, heTargetPct, heMinSecs, heMaxSecs])
 
   useEffect(() => {
-    // Subscribe to Supabase Realtime
-    const cleanup = subscribeToGameState(
-      (state) => {
-        if (state.phase === 'betting') {
-          setPhase('betting')
-          setCd(state.countdown || 8)
-          setMult(1.00)
-          setCrashedAt(null)
-          setSynced(true)
-        } else if (state.phase === 'flying') {
-          setPhase('running')
-          setMult(state.mult || 1.00)
-          setSynced(true)
-        } else if (state.phase === 'crashed') {
-          setPhase('crashed')
-          setCrashedAt(state.crash_point)
-          setMult(state.crash_point || 1.00)
-          setSynced(true)
-        }
-      },
-      (bets) => {
-        if (bets && Array.isArray(bets)) {
-          setLiveBets(bets)
-        }
-      },
-      (settings) => {
-        if (settings) {
-          // Settings updated from server
-        }
-      }
-    )
+    // Connect to backend WebSocket
+    aviatorWS.connect()
 
-    // Fetch initial data
+    // Subscribe to WebSocket updates
+    aviatorWS.on('game_state', (state) => {
+      if (state.phase === 'betting') {
+        setPhase('betting')
+        setCd(state.countdown || 8)
+        setMult(1.00)
+        setCrashedAt(null)
+        setSynced(true)
+      } else if (state.phase === 'flying') {
+        setPhase('running')
+        setMult(state.mult || 1.00)
+        setSynced(true)
+      } else if (state.phase === 'crashed') {
+        setPhase('crashed')
+        setCrashedAt(state.crash_point)
+        setMult(state.crash_point || 1.00)
+        setSynced(true)
+      }
+    })
+
+    aviatorWS.on('bets_update', (bets) => {
+      if (bets && Array.isArray(bets)) {
+        setLiveBets(bets)
+      }
+    })
+
+    // Fetch initial data from Supabase
     Promise.all([
       fetchGameState(),
       fetchCurrentBets(),
