@@ -15,8 +15,17 @@ class AviatorWebSocketClient {
       bet_result: [],
       cashout_result: []
     }
-    // Use environment variable or default to localhost
-    this.backendUrl = import.meta.env.VITE_BACKEND_WS_URL || 'ws://localhost:3006'
+    // Build WebSocket URL with path
+    const envUrl = import.meta.env.VITE_BACKEND_WS_URL
+    if (envUrl) {
+      // Use full URL from env if provided
+      this.backendUrl = envUrl.endsWith('/ws/aviator') ? envUrl : `${envUrl}/ws/aviator`
+    } else {
+      // Auto-detect from current location
+      const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+      const host = window.location.host.replace(/^www\./, '')
+      this.backendUrl = `${wsProtocol}//${host}/ws/aviator`
+    }
   }
 
   /**

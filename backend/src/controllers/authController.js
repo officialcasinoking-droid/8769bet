@@ -4,7 +4,7 @@ import { validationResult } from 'express-validator'
 import { v4 as uuidv4 } from 'uuid'
 import UserModel from '../models/User.js'
 import emailService from '../services/emailService.js'
-import supabase from '../lib/supabase.js'
+import { supabase } from '../lib/supabase.js'
 import dotenv from 'dotenv'
 
 dotenv.config()
