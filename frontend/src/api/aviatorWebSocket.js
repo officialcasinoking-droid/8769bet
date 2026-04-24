@@ -18,13 +18,23 @@ class AviatorWebSocketClient {
     // Build WebSocket URL with path
     const envUrl = import.meta.env.VITE_BACKEND_WS_URL
     if (envUrl) {
-      // Use full URL from env if provided
-      this.backendUrl = envUrl.endsWith('/ws/aviator') ? envUrl : `${envUrl}/ws/aviator`
+      // Clean URL - remove any trailing slashes and /ws/aviator if already present
+      let cleanUrl = envUrl.trim()
+      if (cleanUrl.endsWith('/')) {
+        cleanUrl = cleanUrl.slice(0, -1)
+      }
+      // Remove /ws/aviator if already present to avoid duplication
+      if (cleanUrl.includes('/ws/aviator')) {
+        // Find the base URL before /ws/aviator
+        const idx = cleanUrl.indexOf('/ws/aviator')
+        cleanUrl = cleanUrl.substring(0, idx)
+      }
+      // Now add the path
+      this.backendUrl = `${cleanUrl}/ws/aviator`
     } else {
       // Auto-detect from current location
       const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-      const host = window.location.host.replace(/^www\./, '')
-      this.backendUrl = `${wsProtocol}//${host}/ws/aviator`
+      this.backendUrl = `${wsProtocol}//${window.location.host}/ws/aviator`
     }
   }
 
@@ -32,6 +42,7 @@ class AviatorWebSocketClient {
    * Connect to WebSocket server
    */
   connect() {
+    console.log('[WS] Connecting to:', this.backendUrl)
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       console.log('[WS] Already connected')
       return
