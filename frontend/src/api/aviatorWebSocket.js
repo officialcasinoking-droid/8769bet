@@ -63,6 +63,7 @@ class AviatorWebSocketClient {
       this.ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data)
+          console.log('[WS] Received:', data.type, data)
           this.handleMessage(data)
         } catch (error) {
           console.error('[WS] Failed to parse message:', error)
