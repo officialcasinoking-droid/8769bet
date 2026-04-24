@@ -233,9 +233,7 @@ export default function AviatorPage() {
       })
       .catch(err => console.error('[Aviator] Failed to fetch:', err))
 
-    // Connect to WebSocket for real-time updates
-    aviatorWS.connect()
-    
+    // Register WebSocket handlers BEFORE connecting (to catch initial state)
     const handleGameState = (state) => {
       console.log('[Aviator] WS game_state:', state)
       if (state.phase === 'betting') {
@@ -258,6 +256,9 @@ export default function AviatorPage() {
     aviatorWS.on('bets_update', (bets) => {
       setAllBets(bets || [])
     })
+    
+    // NOW connect - will receive initial state with handlers ready
+    aviatorWS.connect()
     
     return () => {}
   }, [])
