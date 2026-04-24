@@ -237,6 +237,7 @@ export default function AviatorPage() {
     aviatorWS.connect()
     
     const handleGameState = (state) => {
+      console.log('[Aviator] WS game_state:', state)
       if (state.phase === 'betting') {
         setGameState(GAME_STATE.WAITING)
         setCountdown(state.countdown || 8)
