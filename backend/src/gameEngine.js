@@ -5,6 +5,7 @@
  */
 
 import { WebSocketServer } from 'ws'
+import { supabase } from './lib/supabase.js'
 
 // ── Game Configuration ───────────────────────────────────────
 const WAIT_TIME_SECONDS = 8 // Betting phase duration
@@ -94,6 +95,8 @@ function getRandomBotName() {
 let wss = null
 const clients = new Set()
 let gameLoop = null
+let saveInterval = null
+const SAVE_INTERVAL_MS = 5000 // Save state every 5 seconds
 let manualCrashRequested = false
 
 // ── Crash Point Generation ───────────────────────────────────
@@ -122,11 +125,91 @@ function broadcast(data) {
   })
 }
 
-// ── Game Loop ────────────────────────────────────────────────
+// ── Game State Persistence ────────────────────────────
+async function saveGameState() {
+  try {
+    const stateToSave = {
+      id: 'current',
+      phase: gameState.phase,
+      mult: gameState.mult,
+      countdown: gameState.countdown,
+      crash_point: gameState.crashPoint,
+      round_id: gameState.roundId,
+      bets: currentBets,
+      settings: settings,
+      crash_history: crashHistory.slice(0, 30),
+      house_edge_pool: houseEdgePool,
+      updated_at: new Date().toISOString(),
+    }
+
+    const { error } = await supabase
+      .from('aviator_game_state')
+      .upsert(stateToSave, { onConflict: 'id' })
+
+    if (error) {
+      console.error('[GameEngine] Failed to save state:', error.message)
+    } else {
+      console.log('[GameEngine] Game state saved to database')
+    }
+  } catch (err) {
+    console.error('[GameEngine] Save state exception:', err.message)
+  }
+}
+
+async function loadGameState() {
+  try {
+    const { data, error } = await supabase
+      .from('aviator_game_state')
+      .select('*')
+      .eq('id', 'current')
+      .single()
+
+    if (error || !data) {
+      console.log('[GameEngine] No saved state found, starting fresh')
+      return false
+    }
+
+    // Only restore if game was in progress (not crashed)
+    if (data.phase === 'betting' || data.phase === 'flying') {
+      gameState.phase = data.phase
+      gameState.mult = data.mult || 1.00
+      gameState.countdown = data.countdown || WAIT_TIME_SECONDS
+      gameState.crashPoint = data.crash_point || 0
+      gameState.roundId = data.round_id || ''
+      gameState.startTime = Date.now() - (data.phase === 'flying' ? 5000 : 0)
+      
+      if (data.bets) currentBets = data.bets
+      if (data.settings) Object.assign(settings, data.settings)
+      if (data.crash_history) crashHistory = data.crash_history
+      if (data.house_edge_pool) Object.assign(houseEdgePool, data.house_edge_pool)
+
+      console.log(`[GameEngine] Restored game state: phase=${gameState.phase}, round=${gameState.roundId}`)
+      return true
+    }
+
+    console.log('[GameEngine] Saved game was already finished, starting fresh')
+    return false
+  } catch (err) {
+    console.error('[GameEngine] Load state exception:', err.message)
+    return false
+  }
+}
+
+// ── Game Loop ────────────────────────────────────────
 function startGameLoop() {
   if (gameLoop) {
     clearInterval(gameLoop)
   }
+  if (saveInterval) {
+    clearInterval(saveInterval)
+  }
+
+  // Start periodic state saving
+  saveInterval = setInterval(() => {
+    if (gameState.phase !== 'crashed') {
+      saveGameState()
+    }
+  }, SAVE_INTERVAL_MS)
 
   gameLoop = setInterval(() => {
     const now = Date.now()
@@ -218,6 +301,19 @@ function crashRound(crashPoint, reason = 'natural') {
   gameState.phase = 'crashed'
   gameState.crashPoint = parseFloat(crashPoint.toFixed(2))
   gameState.crashedAt = Date.now()
+
+  // Clear intervals
+  if (saveInterval) {
+    clearInterval(saveInterval)
+    saveInterval = null
+  }
+  if (gameLoop) {
+    clearInterval(gameLoop)
+    gameLoop = null
+  }
+
+  // Save final state
+  saveGameState()
 
   // Clear bot bet timeouts
   botBetTimeouts.forEach(clearTimeout)
@@ -397,7 +493,7 @@ function getCurrentState() {
 }
 
 // ── Initialize WebSocket Server ──────────────────────────────
-function initGameEngine(server) {
+async function initGameEngine(server) {
   wss = new WebSocketServer({ server, path: '/ws/aviator' })
 
   wss.on('connection', (ws) => {
@@ -451,15 +547,35 @@ function initGameEngine(server) {
       console.error('[WS] Error:', err.message)
       clients.delete(ws)
     })
-  })
+   })
 
-  // Start the game
-  startNewRound()
-  startGameLoop()
+  // Try to restore game state from database
+  const stateRestored = await loadGameState()
+
+  if (stateRestored) {
+    // Restored state - start game loop and broadcast current state
+    console.log('[GameEngine] Starting with restored state')
+    startGameLoop()
+    broadcast({
+      type: 'game_state',
+      phase: gameState.phase,
+      mult: gameState.mult,
+      countdown: gameState.countdown,
+      crash_point: gameState.crashPoint,
+      roundId: gameState.roundId,
+      settings: { ...settings },
+      bets: [...currentBets],
+    })
+  } else {
+    // No saved state - start fresh
+    console.log('[GameEngine] Starting fresh game')
+    startNewRound()
+    startGameLoop()
+  }
 
   console.log('[GameEngine] WebSocket server started on /ws/aviator')
   console.log(`[GameEngine] Connected clients: 0`)
 }
 
 // ── Export ───────────────────────────────────────────────────
-export { initGameEngine, getCurrentState, requestManualCrash, updateSettings, gameState, settings, placeBet, cashoutBet }
+export { initGameEngine, getCurrentState, requestManualCrash, updateSettings, gameState, settings, placeBet, cashoutBet, houseEdgePool }

@@ -3,6 +3,7 @@ import multer from 'multer'
 import path from 'path'
 import fs from 'fs'
 import { landingContent, wallet, withdrawals, transactions, withdrawalSettings } from '../store.js'
+import { requestManualCrash, startNewRound, updateSettings, getCurrentState, settings, houseEdgePool } from '../gameEngine.js'
 
 const router = express.Router()
 
@@ -81,6 +82,66 @@ router.post('/withdrawals/:id', (req, res) => {
 router.post('/withdrawal/settings', (req, res) => {
   Object.assign(withdrawalSettings, req.body)
   res.json({ ok: true, settings: withdrawalSettings })
+})
+
+// ── Game Control Endpoints ────────────────────────
+
+// Force crash current round
+router.post('/game/crash', (req, res) => {
+  try {
+    requestManualCrash()
+    res.json({ success: true, message: 'Crash signal sent' })
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message })
+  }
+})
+
+// Start new round immediately
+router.post('/game/new-round', (req, res) => {
+  try {
+    startNewRound()
+    res.json({ success: true, message: 'New round started' })
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message })
+  }
+})
+
+// Get current game state
+router.get('/game/state', (req, res) => {
+  try {
+    const state = getCurrentState()
+    res.json({ success: true, state })
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message })
+  }
+})
+
+// Get game statistics
+router.get('/game/stats', (req, res) => {
+  try {
+    res.json({
+      success: true,
+      stats: {
+        houseEdgePool,
+        currentPhase: getCurrentState().phase,
+        totalRounds: houseEdgePool.roundsPlayed,
+        totalBets: houseEdgePool.totalBets,
+        totalWinnings: houseEdgePool.totalWinnings,
+      }
+    })
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message })
+  }
+})
+
+// Update game settings
+router.post('/game/settings', (req, res) => {
+  try {
+    updateSettings(req.body)
+    res.json({ success: true, settings: { ...settings } })
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message })
+  }
 })
 
 export default router

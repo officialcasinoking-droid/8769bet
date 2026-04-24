@@ -71,6 +71,10 @@ CREATE TABLE IF NOT EXISTS aviator_game_state (
   crash_point DECIMAL(10,2),
   start_time TIMESTAMPTZ,
   timestamp BIGINT,
+  bets JSONB DEFAULT '[]'::jsonb,
+  settings JSONB DEFAULT '{}'::jsonb,
+  crash_history JSONB DEFAULT '[]'::jsonb,
+  house_edge_pool JSONB DEFAULT '{}'::jsonb,
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
