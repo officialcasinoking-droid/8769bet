@@ -3,6 +3,9 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useAuth } from '../../context/AuthContext'
 import { useTheme } from '../../context/ThemeContext'
 import { useToast } from '../../components/ui/Toast'
+import { aviatorWS } from '../../api/aviatorWebSocket'
+
+const API_URL = import.meta.env.VITE_API_URL || ''
 
 const GAME_STATE = {
   WAITING: 'waiting',
@@ -197,6 +200,62 @@ export default function AviatorPage() {
     if (rand < 0.92) return 4.50 + Math.random() * 5.50
     if (rand < 0.98) return 10.00 + Math.random() * 15.00
     return 25.00 + Math.random() * 25.00
+  }, [])
+
+  // Sync with backend on mount
+  useEffect(() => {
+    if (!API_URL) return
+    
+    // Fetch initial state from backend
+    fetch(`${API_URL}/api/aviator/state`)
+      .then(res => res.json())
+      .then(state => {
+        console.log('[Aviator] Backend state:', state)
+        if (state.phase === 'betting') {
+          setGameState(GAME_STATE.WAITING)
+          setCountdown(state.countdown || 8)
+          setMultiplier(1.00)
+        } else if (state.phase === 'flying') {
+          setGameState(GAME_STATE.RUNNING)
+          setMultiplier(state.mult || 1.00)
+          crashPointRef.current = state.crash_point || state.crashPoint || 0
+        } else if (state.phase === 'crashed') {
+          setGameState(GAME_STATE.CRASHED)
+          setMultiplier(state.crash_point || 1.00)
+        }
+        if (state.roundId) setRoundId(state.roundId)
+        if (state.crashHistory) {
+          setRecentCrashes(state.crashHistory.map(h => parseFloat(h)).slice(0, 15))
+        }
+      })
+      .catch(err => console.error('[Aviator] Failed to fetch:', err))
+
+    // Connect to WebSocket for real-time updates
+    aviatorWS.connect()
+    
+    const handleGameState = (state) => {
+      if (state.phase === 'betting') {
+        setGameState(GAME_STATE.WAITING)
+        setCountdown(state.countdown || 8)
+        setMultiplier(1.00)
+      } else if (state.phase === 'flying') {
+        setGameState(GAME_STATE.RUNNING)
+        setMultiplier(state.mult || 1.00)
+        crashPointRef.current = state.crash_point || state.crashPoint || 0
+      } else if (state.phase === 'crashed') {
+        setGameState(GAME_STATE.CRASHED)
+        setMultiplier(state.crash_point || 1.00)
+        setRecentCrashes(prev => [state.crash_point, ...prev].slice(0, 15))
+      }
+      if (state.roundId) setRoundId(state.roundId)
+    }
+    
+    aviatorWS.on('game_state', handleGameState)
+    aviatorWS.on('bets_update', (bets) => {
+      setAllBets(bets || [])
+    })
+    
+    return () => {}
   }, [])
 
   const startNewRound = useCallback(() => {
