@@ -578,4 +578,4 @@ async function initGameEngine(server) {
 }
 
 // ── Export ───────────────────────────────────────────────────
-export { initGameEngine, getCurrentState, requestManualCrash, updateSettings, gameState, settings, placeBet, cashoutBet, houseEdgePool }
+export { initGameEngine, getCurrentState, requestManualCrash, startNewRound, updateSettings, gameState, settings, placeBet, cashoutBet, houseEdgePool }
