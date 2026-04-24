@@ -49,7 +49,7 @@ class AviatorWebSocketClient {
     }
 
     try {
-      this.ws = new WebSocket(`${this.backendUrl}/ws/aviator`)
+      this.ws = new WebSocket(this.backendUrl)
 
       this.ws.onopen = () => {
         console.log('[WS] Connected to game server')
