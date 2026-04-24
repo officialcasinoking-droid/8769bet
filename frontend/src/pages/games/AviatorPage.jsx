@@ -259,94 +259,29 @@ export default function AviatorPage() {
   }, [])
 
   const startNewRound = useCallback(() => {
+    // This now just resets local UI state - backend controls the actual game
     setGameState(GAME_STATE.WAITING)
     setMultiplier(1.00)
     setHasBets([false, false])
     setBets([null, null])
     setAllBets([])
-    setCountdown(WAIT_TIME / 1000)
     planeRef.current = { x: 0, y: 0, trail: [] }
-
-    // Countdown timer
-    let cd = WAIT_TIME / 1000
-    const cdInterval = setInterval(() => {
-      cd -= 1
-      setCountdown(cd)
-      if (cd <= 0) clearInterval(cdInterval)
-    }, 1000)
-
-    const timeout = setTimeout(() => {
-      clearInterval(cdInterval)
-      startGame()
-    }, WAIT_TIME)
-
-    return () => { clearTimeout(timeout); clearInterval(cdInterval) }
   }, [])
 
   const startGame = useCallback(() => {
-    crashPointRef.current = generateCrashPoint()
+    // Backend controls the game - we just update UI state
     setGameState(GAME_STATE.RUNNING)
     startTimeRef.current = Date.now()
     setRoundId(prev => prev + 1)
-
-    gameLoopRef.current = setInterval(() => {
-      const elapsed = (Date.now() - startTimeRef.current) / 1000
-      const mult = Math.min(100, Math.pow(Math.E, 0.06 * elapsed))
-
-      setMultiplier(mult)
-
-      if (mult >= crashPointRef.current) {
-        crashGame()
-      }
-
-      // Auto cashout check for both bets
-      setBets(prev => {
-        const newBets = [...prev]
-        for (let i = 0; i < 2; i++) {
-          if (newBets[i] && newBets[i].status === 'placed' && newBets[i].autoCashoutAt) {
-            if (mult >= parseFloat(newBets[i].autoCashoutAt)) {
-              const winAmount = parseFloat(newBets[i].amount) * parseFloat(newBets[i].autoCashoutAt)
-              newBets[i] = {
-                ...newBets[i],
-                status: 'cashed_out',
-                wonAmount: winAmount,
-                cashedOutAt: mult
-              }
-              if (user) {
-                refreshUser()
-              }
-            }
-          }
-        }
-        return newBets
-      })
-    }, TICK_INTERVAL)
-
-    addBotBets()
-  }, [generateCrashPoint, user, refreshUser])
+  }, [])
 
   const crashGame = useCallback(() => {
-    clearInterval(gameLoopRef.current)
+    // Backend controls the crash - we just update UI
     setGameState(GAME_STATE.CRASHED)
-
-    const crashedAt = crashPointRef.current
-
-    setBets(prev => {
-      const newBets = [...prev]
-      for (let i = 0; i < 2; i++) {
-        if (newBets[i] && newBets[i].status === 'placed') {
-          toast.error(`Crashed at ${crashedAt.toFixed(2)}x - Bet ${i+1} lost`)
-        }
-      }
-      return newBets
-    })
-
-    setRecentCrashes(prev => [crashedAt, ...prev.slice(0, 14)])
-
     setTimeout(() => startNewRound(), 3000)
-  }, [toast, startNewRound])
+  }, [startNewRound])
 
-  const handlePlaceBet = useCallback((betIndex, amount, autoCashoutAt) => {
+  const handlePlaceBet = useCallback(async (betIndex, amount, autoCashoutAt) => {
     if (!isLoggedIn) return
 
     const hasAnyBet = hasBets.some(h => h)
@@ -362,73 +297,98 @@ export default function AviatorPage() {
       return
     }
 
-    const newBets = [...bets]
-    newBets[betIndex] = {
-      amount: amount,
-      autoCashoutAt: autoCashoutAt,
-      status: 'placed',
-      placedAt: Date.now()
+    try {
+      // Call backend API
+      const response = await fetch(`${API_URL}/api/aviator/bet`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          username: user.username,
+          amount: amount,
+          autoCashout: autoCashoutAt || null,
+          betNumber: betIndex + 1
+        })
+      })
+      const result = await response.json()
+
+      if (!result.success) {
+        toast.error(result.error || 'Bet failed')
+        return
+      }
+
+      // Update local state with backend result
+      const newBets = [...bets]
+      newBets[betIndex] = {
+        amount: amount,
+        autoCashoutAt: autoCashoutAt,
+        status: 'placed',
+        placedAt: Date.now(),
+        betId: result.bet?.id
+      }
+      setBets(newBets)
+
+      const newHasBets = [...hasBets]
+      newHasBets[betIndex] = true
+      setHasBets(newHasBets)
+
+      // Update balance
+      if (user) {
+        refreshUser()
+      }
+
+      toast.success(`Bet ${betIndex+1}: ₨${amount} placed!`)
+    } catch (err) {
+      console.error('[Aviator] Bet error:', err)
+      toast.error('Failed to place bet')
     }
-    setBets(newBets)
+  }, [isLoggedIn, hasBets, bets, user, toast, API_URL, refreshUser])
 
-    const newHasBets = [...hasBets]
-    newHasBets[betIndex] = true
-    setHasBets(newHasBets)
-
-    setAllBets(prev => [{
-      id: Date.now(),
-      username: 'You',
-      amount: amount,
-      autoCashout: autoCashoutAt,
-      isUser: true,
-      betIndex: betIndex
-    }, ...prev])
-
-    toast.success(`Bet ${betIndex+1}: ₨${amount} placed!`)
-  }, [isLoggedIn, hasBets, bets, user, toast])
-
-  const handleCashout = useCallback((betIndex, currentMultiplier) => {
+  const handleCashout = useCallback(async (betIndex, currentMultiplier) => {
     const bet = bets[betIndex]
     if (!bet || bet.status === 'cashed_out') return
 
-    const winAmount = parseFloat(bet.amount) * currentMultiplier
-
-    const newBets = [...bets]
-    newBets[betIndex] = {
-      ...bet,
-      status: 'cashed_out',
-      wonAmount: winAmount,
-      cashedOutAt: currentMultiplier
-    }
-    setBets(newBets)
-
-    if (user) refreshUser()
-    toast.success(`Cashout ${currentMultiplier.toFixed(2)}x! Won ₨${winAmount.toFixed(2)}`)
-  }, [bets, user, refreshUser, toast])
-
-  const addBotBets = () => {
-    const amounts = [6, 10, 20, 50, 100, 200, 500, 1000]
-    const numBets = 3 + Math.floor(Math.random() * 6)
-    const newBots = []
-
-    for (let i = 0; i < numBets; i++) {
-      newBots.push({
-        id: Date.now() + i,
-        username: BOT_NAMES[Math.floor(Math.random() * BOT_NAMES.length)],
-        amount: amounts[Math.floor(Math.random() * amounts.length)],
-        autoCashout: Math.random() > 0.5 ? (1.1 + Math.random() * 3).toFixed(1) : null,
-        isBot: true
+    try {
+      // Call backend API
+      const response = await fetch(`${API_URL}/api/aviator/cashout`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          betNum: betIndex + 1
+        })
       })
-    }
-    setAllBets(prev => [...prev, ...newBots])
-  }
+      const result = await response.json()
 
-  // Initialize
+      if (!result.success) {
+        toast.error(result.error || 'Cashout failed')
+        return
+      }
+
+      const winAmount = result.winAmount || (parseFloat(bet.amount) * currentMultiplier)
+
+      const newBets = [...bets]
+      newBets[betIndex] = {
+        ...bet,
+        status: 'cashed_out',
+        wonAmount: winAmount,
+        cashedOutAt: currentMultiplier
+      }
+      setBets(newBets)
+
+      if (user) refreshUser()
+      toast.success(`Cashout ${currentMultiplier.toFixed(2)}x! Won ₨${winAmount.toFixed(2)}`)
+    } catch (err) {
+      console.error('[Aviator] Cashout error:', err)
+      toast.error('Failed to cash out')
+    }
+  }, [bets, user, toast, API_URL, refreshUser])
+
+  // Initialize - connect to backend
   useEffect(() => {
-    startNewRound()
+    // Backend sync handles everything now via WebSocket
     return () => {
       if (animationRef.current) cancelAnimationFrame(animationRef.current)
-      if (gameLoopRef.current) clearInterval(gameLoopRef.current)
     }
   }, [])
 

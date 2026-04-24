@@ -135,6 +135,8 @@ async function saveGameState() {
       countdown: gameState.countdown,
       crash_point: gameState.crashPoint,
       round_id: gameState.roundId,
+      start_time: new Date(gameState.startTime).toISOString(),
+      timestamp: gameState.startTime,
       bets: currentBets,
       settings: settings,
       crash_history: crashHistory.slice(0, 30),
@@ -148,8 +150,6 @@ async function saveGameState() {
 
     if (error) {
       console.error('[GameEngine] Failed to save state:', error.message)
-    } else {
-      console.log('[GameEngine] Game state saved to database')
     }
   } catch (err) {
     console.error('[GameEngine] Save state exception:', err.message)
@@ -165,29 +165,41 @@ async function loadGameState() {
       .single()
 
     if (error || !data) {
-      console.log('[GameEngine] No saved state found, starting fresh')
+      console.log('[GameEngine] No saved state found')
       return false
     }
 
-    // Only restore if game was in progress (not crashed)
-    if (data.phase === 'betting' || data.phase === 'flying') {
+    // Check if saved state is from a valid (non-crashed) round
+    // Also check if the round is too old (> 2 minutes = expired)
+    const now = Date.now()
+    const isBetting = data.phase === 'betting'
+    const isFlying = data.phase === 'flying'
+    const isValidPhase = isBetting || isFlying
+    
+    // Calculate how old the state is (in milliseconds)
+    const startTime = data.start_time ? new Date(data.start_time).getTime() : data.timestamp || now
+    const ageMs = now - startTime
+    const isNotExpired = ageMs < 120000 // Less than 2 minutes old
+
+    if (isValidPhase && isNotExpired) {
+      // Restore valid in-progress game
       gameState.phase = data.phase
       gameState.mult = data.mult || 1.00
-      gameState.countdown = data.countdown || WAIT_TIME_SECONDS
+      gameState.countdown = data.countdown || 8
       gameState.crashPoint = data.crash_point || 0
       gameState.roundId = data.round_id || ''
-      gameState.startTime = Date.now() - (data.phase === 'flying' ? 5000 : 0)
+      gameState.startTime = startTime
       
       if (data.bets) currentBets = data.bets
       if (data.settings) Object.assign(settings, data.settings)
       if (data.crash_history) crashHistory = data.crash_history
       if (data.house_edge_pool) Object.assign(houseEdgePool, data.house_edge_pool)
 
-      console.log(`[GameEngine] Restored game state: phase=${gameState.phase}, round=${gameState.roundId}`)
+      console.log(`[GameEngine] Restored valid state: phase=${gameState.phase}, round=${gameState.roundId}, age=${Math.round(ageMs/1000)}s`)
       return true
     }
 
-    console.log('[GameEngine] Saved game was already finished, starting fresh')
+    console.log('[GameEngine] Saved state expired or invalid, starting fresh')
     return false
   } catch (err) {
     console.error('[GameEngine] Load state exception:', err.message)
