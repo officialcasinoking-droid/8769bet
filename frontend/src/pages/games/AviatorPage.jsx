@@ -225,7 +225,10 @@ export default function AviatorPage() {
         }
         if (state.roundId) setRoundId(state.roundId)
         if (state.crashHistory) {
-          setRecentCrashes(state.crashHistory.map(h => parseFloat(h)).slice(0, 15))
+          const history = Array.isArray(state.crashHistory) 
+            ? state.crashHistory.map(h => typeof h === 'object' ? parseFloat(h.crash_point || h) : parseFloat(h))
+            : []
+          setRecentCrashes(history.slice(0, 15))
         }
       })
       .catch(err => console.error('[Aviator] Failed to fetch:', err))
