@@ -4,6 +4,7 @@
  */
 
 import express from 'express'
+import bcrypt from 'bcryptjs'
 import { supabase } from '../lib/supabase.js'
 import { authenticateAdmin, requireRole } from '../middleware/auth.js'
 import { logAudit } from '../middleware/auditLogger.js'
@@ -511,6 +512,53 @@ router.post('/bulk-action', async (req, res) => {
     })
 
     res.json({ success: true, affected: userIds.length })
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message })
+  }
+})
+
+// POST /api/admin/users/:id/reset-pin - Reset user withdrawal PIN
+router.post('/:id/reset-pin', async (req, res) => {
+  try {
+    const { pin } = req.body
+
+    if (!pin || pin.length !== 4 || !/^\d{4}$/.test(pin)) {
+      return res.status(400).json({ success: false, error: 'PIN must be 4 digits' })
+    }
+
+    const pinHash = await bcrypt.hash(pin, 12)
+
+    const { data: user, error: fetchError } = await supabase
+      .from('users')
+      .select('username')
+      .eq('id', req.params.id)
+      .single()
+
+    if (fetchError || !user) {
+      return res.status(404).json({ success: false, error: 'User not found' })
+    }
+
+    const { error } = await supabase
+      .from('users')
+      .update({ withdrawal_pin_hash: pinHash, withdrawal_pin_set: true, updated_at: new Date().toISOString() })
+      .eq('id', req.params.id)
+
+    if (error) throw error
+
+    await logAudit({
+      actorType: 'admin',
+      actorId: req.admin.id,
+      actorUsername: req.admin.username,
+      action: 'reset_withdrawal_pin',
+      targetType: 'user',
+      targetId: req.params.id,
+      targetUsername: user.username,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+      severity: 'warning'
+    })
+
+    res.json({ success: true, message: 'PIN reset successfully' })
   } catch (err) {
     res.status(500).json({ success: false, error: err.message })
   }
