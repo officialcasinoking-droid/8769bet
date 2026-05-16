@@ -104,6 +104,16 @@ export default function SettingsPage() {
       const updates = { admin_username: adminUsername }
       if (adminNewPassword.trim()) {
         updates.admin_password = adminNewPassword
+        const token = localStorage.getItem('admin_token')
+        const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://eight769bet-backend.onrender.com'}/api/admin/change-password`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ newPassword: adminNewPassword })
+        })
+        if (!response.ok) {
+          const err = await response.json()
+          throw new Error(err.error || 'Failed to change password')
+        }
       }
       await updateSettings(updates)
       toast.success('Admin credentials updated')

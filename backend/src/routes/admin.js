@@ -257,4 +257,40 @@ router.post('/game/settings', (req, res) => {
   }
 })
 
+// Change admin password (super admin only)
+router.post('/change-password', async (req, res) => {
+  try {
+    const { newPassword } = req.body
+    if (!newPassword || newPassword.length < 6) {
+      return res.status(400).json({ error: 'Password must be at least 6 characters' })
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 12)
+
+    const { data: admin, error } = await supabase
+      .from('admin_accounts')
+      .update({ password_hash: passwordHash })
+      .eq('username', 'admin')
+      .select('id, username')
+      .single()
+
+    if (error) throw error
+
+    await logAudit({
+      actorType: 'admin',
+      actorId: admin.id,
+      actorUsername: admin.username,
+      action: 'change_admin_password',
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+      severity: 'critical'
+    })
+
+    res.json({ success: true, message: 'Password changed successfully' })
+  } catch (err) {
+    console.error('Change password error:', err)
+    res.status(500).json({ success: false, error: err.message })
+  }
+})
+
 export default router
