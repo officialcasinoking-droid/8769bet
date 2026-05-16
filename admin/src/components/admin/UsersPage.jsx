@@ -1,414 +1,509 @@
-﻿import { useState, useEffect } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { toast } from 'react-hot-toast'
+﻿import { useState, useEffect, useCallback } from 'react'
 import { motion } from 'framer-motion'
-import { supabase } from '../../lib/supabase'
-import { Badge, Button } from '../../components/ui/FormElements'
+import { useNavigate } from 'react-router-dom'
+import { Button, FormField, Input, Select, Badge } from '../../components/ui/FormElements'
 import { Dialog, DialogHeader, DialogTitle, DialogContent, DialogFooter } from '../../components/ui/Dialog'
-import { FormField, Input } from '../../components/ui/FormElements'
-import { Search, User, Shield, X, Ban, CheckCircle, Eye, Wallet, Lock, CreditCard, Trash2, Edit, AlertTriangle } from 'lucide-react'
+import {
+  Search, User, Shield, X, Ban, CheckCircle, Eye, Wallet, Lock,
+  CreditCard, Edit, AlertTriangle, Users, UserCheck, UserX,
+  Filter, ChevronLeft, ChevronRight, Download, CheckSquare, Square,
+  MoreVertical, RefreshCw, TrendingUp, Clock
+} from 'lucide-react'
 
-async function getUsers() {
-  const { data, error } = await supabase
-    .from('users')
-    .select('id, username, email, full_name, balance, role, is_active, created_at')
-    .order('created_at', { ascending: false })
-  if (error) throw error
-  return data || []
+const API_URL = import.meta.env.VITE_API_URL || 'https://eight769bet-backend.onrender.com'
+
+function getAuthToken() {
+  return localStorage.getItem('admin_token')
 }
 
-async function toggleUserStatus(id, isActive) {
-  const { data, error } = await supabase
-    .from('users')
-    .update({ is_active: !isActive, updated_at: new Date().toISOString() })
-    .eq('id', id)
-    .select()
-    .single()
-  if (error) throw error
-  return data
-}
+async function apiCall(endpoint, options = {}) {
+  const token = getAuthToken()
+  const headers = {
+    'Content-Type': 'application/json',
+    ...(token ? { Authorization: `Bearer ${token}` } : {})
+  }
 
-async function updateUserBalance(id, balance) {
-  const { data, error } = await supabase
-    .from('users')
-    .update({ balance: parseFloat(balance), updated_at: new Date().toISOString() })
-    .eq('id', id)
-    .select('id, balance')
-    .single()
-  if (error) throw error
-  return data
-}
+  const response = await fetch(`${API_URL}${endpoint}`, { ...options, headers })
 
-async function updateUserInfo(id, updates) {
-  const { data, error } = await supabase
-    .from('users')
-    .update({ ...updates, updated_at: new Date().toISOString() })
-    .eq('id', id)
-    .select()
-    .single()
-  if (error) throw error
-  return data
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Request failed' }))
+    throw new Error(error.error || 'Request failed')
+  }
+
+  return response.json()
 }
 
 export default function UsersPage() {
-  const qc = useQueryClient()
+  const navigate = useNavigate()
+  const [users, setUsers] = useState([])
+  const [stats, setStats] = useState({ total: 0, active: 0, banned: 0, suspended: 0, highRisk: 0, newLast24h: 0 })
+  const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
-  const [filter, setFilter] = useState('all')
+  const [activeTab, setActiveTab] = useState('all')
+  const [page, setPage] = useState(1)
+  const [limit, setLimit] = useState(20)
+  const [pagination, setPagination] = useState({ total: 0, pages: 0 })
+  const [selectedUsers, setSelectedUsers] = useState([])
+  const [showFilters, setShowFilters] = useState(false)
+  const [filters, setFilters] = useState({ riskLevel: '', kycStatus: '', sortBy: 'created_at', sortOrder: 'desc' })
   const [selectedUser, setSelectedUser] = useState(null)
-  const [editMode, setEditMode] = useState(false)
-  const [editForm, setEditForm] = useState({})
-  const [balanceInput, setBalanceInput] = useState('')
+  const [showUserModal, setShowUserModal] = useState(false)
+  const [showBalanceModal, setShowBalanceModal] = useState(false)
+  const [balanceAmount, setBalanceAmount] = useState('')
+  const [balanceReason, setBalanceReason] = useState('')
+  const [actionLoading, setActionLoading] = useState(false)
 
-  const { data: users = [], isLoading } = useQuery({
-    queryKey: ['admin-users'],
-    queryFn: getUsers,
-    staleTime: 30000,
-    refetchOnWindowFocus: true,
-    retry: 1,
-  })
+  const fetchData = useCallback(async () => {
+    setLoading(true)
+    try {
+      let query = `/api/admin/users?page=${page}&limit=${limit}`
+      if (search) query += `&search=${encodeURIComponent(search)}`
+      if (activeTab === 'active') query += '&status=active'
+      else if (activeTab === 'banned') query += '&status=banned'
+      else if (activeTab === 'suspended') query += '&status=suspended'
+      else if (activeTab === 'high-risk') query += '&riskLevel=high'
+      else if (activeTab === 'new') {
+        const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+        query += `&dateFrom=${yesterday}`
+      }
+      if (filters.riskLevel) query += `&riskLevel=${filters.riskLevel}`
+      if (filters.kycStatus) query += `&kycStatus=${filters.kycStatus}`
+      query += `&sortBy=${filters.sortBy}&sortOrder=${filters.sortOrder}`
 
-  // Realtime subscription
-  useEffect(() => {
-    const channel = supabase
-      .channel('users-rt')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, () => {
-        qc.invalidateQueries({ queryKey: ['admin-users'] })
-      })
-      .subscribe()
+      const data = await apiCall(query)
+      setUsers(data.users || [])
+      setPagination(data.pagination || { total: 0, pages: 0 })
+    } catch (err) {
+      console.error('Failed to fetch users:', err)
+    } finally {
+      setLoading(false)
+    }
+  }, [page, limit, search, activeTab, filters])
 
-    return () => { supabase.removeChannel(channel) }
-  }, [qc])
+  const fetchStats = useCallback(async () => {
+    try {
+      const data = await apiCall('/api/admin/users/stats')
+      setStats(data.stats || {})
+    } catch (err) {
+      console.error('Failed to fetch stats:', err)
+    }
+  }, [])
 
-  const toggleMutation = useMutation({
-    mutationFn: ({ id, isActive }) => toggleUserStatus(id, isActive),
-    onSuccess: (_, { isActive }) => {
-      toast.success(isActive ? 'User blocked' : 'User unblocked')
-      qc.invalidateQueries({ queryKey: ['admin-users'] })
-    },
-    onError: (e) => toast.error(e.message),
-  })
+  useEffect(() => { fetchData(); fetchStats() }, [fetchData, fetchStats])
 
-  const balanceMutation = useMutation({
-    mutationFn: ({ id, balance }) => updateUserBalance(id, balance),
-    onSuccess: () => {
-      toast.success('Balance updated')
-      qc.invalidateQueries({ queryKey: ['admin-users'] })
-    },
-    onError: (e) => toast.error(e.message),
-  })
+  const handleSearch = (e) => {
+    e.preventDefault()
+    setPage(1)
+    fetchData()
+  }
 
-  const updateUserMutation = useMutation({
-    mutationFn: ({ id, updates }) => updateUserInfo(id, updates),
-    onSuccess: () => {
-      toast.success('User updated')
-      qc.invalidateQueries({ queryKey: ['admin-users'] })
-      setEditMode(false)
-    },
-    onError: (e) => toast.error(e.message),
-  })
-
-  const filtered = users.filter(u => {
-    const matchSearch =
-      !search ||
-      u.username?.toLowerCase().includes(search.toLowerCase()) ||
-      u.email?.toLowerCase().includes(search.toLowerCase()) ||
-      u.id?.includes(search)
-    const matchFilter =
-      filter === 'all' ||
-      (filter === 'active' && u.is_active !== false) ||
-      (filter === 'blocked' && u.is_active === false)
-    return matchSearch && matchFilter
-  })
-
-  const totalUsers = users.length
-  const activeUsers = users.filter(u => u.is_active !== false).length
-  const blockedUsers = users.filter(u => u.is_active === false).length
-
-  const handleEditUser = () => {
-    if (selectedUser) {
-      setEditForm({
-        username: selectedUser.username || '',
-        full_name: selectedUser.full_name || '',
-        email: selectedUser.email || '',
-      })
-      setEditMode(true)
+  const handleSelectAll = () => {
+    if (selectedUsers.length === users.length) {
+      setSelectedUsers([])
+    } else {
+      setSelectedUsers(users.map(u => u.id))
     }
   }
 
-  const handleSaveEdit = () => {
-    if (selectedUser) {
-      updateUserMutation.mutate({
-        id: selectedUser.id,
-        updates: editForm
+  const handleSelectUser = (id) => {
+    setSelectedUsers(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id])
+  }
+
+  const handleBulkAction = async (action) => {
+    if (selectedUsers.length === 0) return
+    setActionLoading(true)
+    try {
+      await apiCall('/api/admin/users/bulk-action', {
+        method: 'POST',
+        body: JSON.stringify({ userIds: selectedUsers, action, reason: 'Bulk action from admin panel' })
       })
+      setSelectedUsers([])
+      fetchData()
+      fetchStats()
+    } catch (err) {
+      console.error('Bulk action failed:', err)
+    } finally {
+      setActionLoading(false)
     }
+  }
+
+  const handleExport = async () => {
+    try {
+      const token = getAuthToken()
+      const response = await fetch(`${API_URL}/api/admin/users/export`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      if (response.ok) {
+        const blob = await response.blob()
+        const url = window.URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `users_export_${new Date().toISOString().split('T')[0]}.csv`
+        a.click()
+        window.URL.revokeObjectURL(url)
+      }
+    } catch (err) {
+      console.error('Export failed:', err)
+    }
+  }
+
+  const handleAdjustBalance = async () => {
+    if (!selectedUser || !balanceAmount || !balanceReason) return
+    setActionLoading(true)
+    try {
+      await apiCall(`/api/admin/users/${selectedUser.id}/balance`, {
+        method: 'POST',
+        body: JSON.stringify({ amount: parseFloat(balanceAmount), reason: balanceReason })
+      })
+      setShowBalanceModal(false)
+      setBalanceAmount('')
+      setBalanceReason('')
+      fetchData()
+    } catch (err) {
+      console.error('Balance adjustment failed:', err)
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  const handleChangeStatus = async (userId, newStatus) => {
+    setActionLoading(true)
+    try {
+      await apiCall(`/api/admin/users/${userId}/status`, {
+        method: 'POST',
+        body: JSON.stringify({ status: newStatus, reason: 'Changed from admin panel' })
+      })
+      fetchData()
+      fetchStats()
+    } catch (err) {
+      console.error('Status change failed:', err)
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  const tabs = [
+    { id: 'all', label: 'All Users', icon: Users, count: stats.total },
+    { id: 'active', label: 'Active', icon: UserCheck, count: stats.active },
+    { id: 'suspended', label: 'Suspended', icon: AlertTriangle, count: stats.suspended },
+    { id: 'banned', label: 'Banned', icon: Ban, count: stats.banned },
+    { id: 'high-risk', label: 'High Risk', icon: Shield, count: stats.highRisk },
+    { id: 'new', label: 'New (24h)', icon: Clock, count: stats.newLast24h },
+  ]
+
+  const statusColors = {
+    active: 'emerald',
+    banned: 'red',
+    suspended: 'amber',
+    pending_verification: 'blue'
+  }
+
+  const riskColors = {
+    low: 'emerald',
+    medium: 'amber',
+    high: 'red',
+    critical: 'red'
   }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold text-white flex items-center gap-2">
-          <User className="w-6 h-6 text-blue-400" />
-          User Management
-        </h2>
-        <p className="text-slate-400 mt-1">Manage and monitor all registered users</p>
-      </div>
-
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
       {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-        {[
-          { label: 'Total Users', value: totalUsers, color: 'text-blue-400', bg: 'bg-blue-500/15' },
-          { label: 'Active', value: activeUsers, color: 'text-emerald-400', bg: 'bg-emerald-500/15' },
-          { label: 'Blocked', value: blockedUsers, color: 'text-red-400', bg: 'bg-red-500/15' },
-        ].map((stat) => (
-          <div key={stat.label} className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-4">
-            <p className="text-sm text-slate-400">{stat.label}</p>
-            <p className={`text-2xl font-bold mt-1 ${stat.color}`}>{stat.value}</p>
-          </div>
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+        {tabs.map(tab => (
+          <button key={tab.id} onClick={() => { setActiveTab(tab.id); setPage(1) }}
+            className={`p-3 rounded-xl border transition-all text-left ${
+              activeTab === tab.id
+                ? 'bg-emerald-500/10 border-emerald-500/30'
+                : 'bg-slate-800/50 border-slate-700/50 hover:bg-slate-700/50'
+            }`}>
+            <div className="flex items-center gap-2 mb-1">
+              <tab.icon className={`w-4 h-4 ${activeTab === tab.id ? 'text-emerald-400' : 'text-slate-400'}`} />
+              <span className="text-xs text-slate-400">{tab.label}</span>
+            </div>
+            <div className="text-xl font-bold text-white">{tab.count?.toLocaleString() || 0}</div>
+          </button>
         ))}
       </div>
 
-      {/* Search + Filters */}
-      <div className="flex flex-col sm:flex-row gap-4">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by username, email, or ID..."
-            className="w-full pl-10 pr-4 py-2.5 bg-slate-800/80 border border-slate-700/50 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500/50 focus:ring-2 focus:ring-emerald-500/30"
-          />
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {['all', 'active', 'blocked'].map((status) => (
-            <button
-              key={status}
-              onClick={() => setFilter(status)}
-              className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${
-                filter === status
-                  ? 'bg-emerald-500 text-white'
-                  : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white border border-slate-700/50'
-              }`}
-            >
-              {status === 'all' ? 'All' : status === 'active' ? 'Active' : 'Blocked'}
-            </button>
-          ))}
+      {/* Search & Actions */}
+      <div className="flex flex-col sm:flex-row gap-3">
+        <form onSubmit={handleSearch} className="flex-1 flex gap-2">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <Input value={search} onChange={e => setSearch(e.target.value)}
+              placeholder="Search by username, email, or ID..."
+              className="pl-10" />
+          </div>
+          <Button type="submit" variant="outline">Search</Button>
+        </form>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => setShowFilters(!showFilters)}>
+            <Filter className="w-4 h-4" /> Filters
+          </Button>
+          <Button variant="outline" onClick={handleExport}>
+            <Download className="w-4 h-4" /> Export
+          </Button>
+          <Button variant="outline" onClick={() => { fetchData(); fetchStats() }}>
+            <RefreshCw className="w-4 h-4" />
+          </Button>
         </div>
       </div>
 
-      {/* Table */}
+      {/* Filters */}
+      {showFilters && (
+        <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-4 grid grid-cols-2 md:grid-cols-4 gap-3">
+          <FormField label="Risk Level">
+            <Select value={filters.riskLevel} onChange={e => setFilters(f => ({ ...f, riskLevel: e.target.value }))}>
+              <option value="">All</option>
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+              <option value="critical">Critical</option>
+            </Select>
+          </FormField>
+          <FormField label="KYC Status">
+            <Select value={filters.kycStatus} onChange={e => setFilters(f => ({ ...f, kycStatus: e.target.value }))}>
+              <option value="">All</option>
+              <option value="none">None</option>
+              <option value="pending">Pending</option>
+              <option value="verified">Verified</option>
+              <option value="rejected">Rejected</option>
+            </Select>
+          </FormField>
+          <FormField label="Sort By">
+            <Select value={filters.sortBy} onChange={e => setFilters(f => ({ ...f, sortBy: e.target.value }))}>
+              <option value="created_at">Registration Date</option>
+              <option value="balance">Balance</option>
+              <option value="username">Username</option>
+              <option value="last_login">Last Login</option>
+              <option value="login_count">Login Count</option>
+            </Select>
+          </FormField>
+          <FormField label="Order">
+            <Select value={filters.sortOrder} onChange={e => setFilters(f => ({ ...f, sortOrder: e.target.value }))}>
+              <option value="desc">Descending</option>
+              <option value="asc">Ascending</option>
+            </Select>
+          </FormField>
+          <Button onClick={() => { setPage(1); fetchData() }} className="col-span-2 md:col-span-4">Apply Filters</Button>
+        </div>
+      )}
+
+      {/* Bulk Actions */}
+      {selectedUsers.length > 0 && (
+        <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-3 flex items-center justify-between">
+          <span className="text-sm text-slate-300">{selectedUsers.length} users selected</span>
+          <div className="flex gap-2">
+            <Button size="sm" variant="danger" onClick={() => handleBulkAction('ban')} disabled={actionLoading}>Ban</Button>
+            <Button size="sm" variant="outline" onClick={() => handleBulkAction('suspend')} disabled={actionLoading}>Suspend</Button>
+            <Button size="sm" variant="outline" onClick={() => handleBulkAction('activate')} disabled={actionLoading}>Activate</Button>
+            <Button size="sm" variant="outline" onClick={() => handleBulkAction('unlock')} disabled={actionLoading}>Unlock</Button>
+          </div>
+        </div>
+      )}
+
+      {/* User Table */}
       <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full">
+          <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-700/50">
-                <th className="text-left px-6 py-4 text-xs font-semibold text-slate-400 uppercase">User</th>
-                <th className="text-left px-6 py-4 text-xs font-semibold text-slate-400 uppercase">Balance</th>
-                <th className="text-left px-6 py-4 text-xs font-semibold text-slate-400 uppercase">Status</th>
-                <th className="text-left px-6 py-4 text-xs font-semibold text-slate-400 uppercase">Registered</th>
-                <th className="text-right px-6 py-4 text-xs font-semibold text-slate-400 uppercase">Actions</th>
+                <th className="p-3 text-left">
+                  <button onClick={handleSelectAll} className="text-slate-400 hover:text-white">
+                    {selectedUsers.length === users.length && users.length > 0 ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}
+                  </button>
+                </th>
+                <th className="p-3 text-left text-xs font-medium text-slate-400 uppercase">User</th>
+                <th className="p-3 text-left text-xs font-medium text-slate-400 uppercase">Email</th>
+                <th className="p-3 text-right text-xs font-medium text-slate-400 uppercase">Balance</th>
+                <th className="p-3 text-center text-xs font-medium text-slate-400 uppercase">Status</th>
+                <th className="p-3 text-center text-xs font-medium text-slate-400 uppercase">Risk</th>
+                <th className="p-3 text-center text-xs font-medium text-slate-400 uppercase hidden lg:table-cell">Last Login</th>
+                <th className="p-3 text-center text-xs font-medium text-slate-400 uppercase hidden xl:table-cell">Logins</th>
+                <th className="p-3 text-center text-xs font-medium text-slate-400 uppercase">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-700/30">
-              {isLoading ? (
-                [...Array(5)].map((_, i) => (
-                  <tr key={i}><td colSpan={5} className="px-6 py-4">
-                    <div className="h-12 bg-slate-700/30 rounded animate-pulse" />
-                  </td></tr>
-                ))
-              ) : filtered.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="px-6 py-12 text-center text-slate-500">
-                    <User className="w-12 h-12 mx-auto mb-2 text-slate-700" />
-                    <p>No users found</p>
+            <tbody>
+              {loading ? (
+                <tr><td colSpan="9" className="p-8 text-center text-slate-400">Loading users...</td></tr>
+              ) : users.length === 0 ? (
+                <tr><td colSpan="9" className="p-8 text-center text-slate-400">No users found</td></tr>
+              ) : users.map(user => (
+                <tr key={user.id} className="border-b border-slate-700/30 hover:bg-slate-700/20 transition-colors">
+                  <td className="p-3">
+                    <button onClick={() => handleSelectUser(user.id)} className="text-slate-400 hover:text-white">
+                      {selectedUsers.includes(user.id) ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}
+                    </button>
                   </td>
-                </tr>
-              ) : filtered.map((user) => (
-                <motion.tr
-                  key={user.id}
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  className="hover:bg-slate-700/30 transition-colors"
-                >
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white font-bold text-sm">
-                        {user.username?.charAt(0).toUpperCase() || 'U'}
+                  <td className="p-3">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-full bg-emerald-500/20 flex items-center justify-center text-emerald-400 font-bold text-xs">
+                        {(user.username || '?')[0].toUpperCase()}
                       </div>
                       <div>
-                        <p className="font-medium text-white">{user.username}</p>
-                        <p className="text-xs text-slate-500">{user.email}</p>
+                        <div className="font-medium text-white">{user.username}</div>
+                        {user.full_name && <div className="text-xs text-slate-400">{user.full_name}</div>}
                       </div>
                     </div>
                   </td>
-                  <td className="px-6 py-4">
-                    <p className="text-white font-medium">PKR {Number(user.balance || 0).toLocaleString('en-IN')}</p>
+                  <td className="p-3 text-slate-300">{user.email}</td>
+                  <td className="p-3 text-right font-medium text-emerald-400">₨{parseFloat(user.balance || 0).toLocaleString()}</td>
+                  <td className="p-3 text-center">
+                    <Badge variant={statusColors[user.status] || 'default'}>{user.status || 'active'}</Badge>
                   </td>
-                  <td className="px-6 py-4">
-                    <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${
-                      user.is_active !== false
-                        ? 'bg-emerald-500/15 text-emerald-400'
-                        : 'bg-red-500/15 text-red-400'
-                    }`}>
-                      {user.is_active !== false ? 'Active' : 'Blocked'}
-                    </span>
+                  <td className="p-3 text-center">
+                    <Badge variant={riskColors[user.risk_level] || 'default'}>{user.risk_level || 'low'}</Badge>
                   </td>
-                  <td className="px-6 py-4 text-sm text-slate-400">
-                    {new Date(user.created_at).toLocaleDateString()}
+                  <td className="p-3 text-center text-slate-400 hidden lg:table-cell">
+                    {user.last_login ? new Date(user.last_login).toLocaleDateString() : 'Never'}
                   </td>
-                  <td className="px-6 py-4">
-                    <div className="flex items-center justify-end gap-1">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => {
-                          setSelectedUser(user)
-                          setBalanceInput(user.balance || '0')
-                          setEditMode(false)
-                        }}
-                        className="text-slate-400 hover:text-white"
-                        title="View Details"
-                      >
+                  <td className="p-3 text-center text-slate-400 hidden xl:table-cell">{user.login_count || 0}</td>
+                  <td className="p-3">
+                    <div className="flex items-center justify-center gap-1">
+                      <button onClick={() => { setSelectedUser(user); setShowUserModal(true) }}
+                        className="p-1.5 rounded-lg hover:bg-slate-700/50 text-slate-400 hover:text-white transition-colors" title="View">
                         <Eye className="w-4 h-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => toggleMutation.mutate({ id: user.id, isActive: user.is_active !== false })}
-                        className={user.is_active !== false ? 'text-slate-400 hover:text-red-400' : 'text-emerald-400 hover:text-emerald-300'}
-                        title={user.is_active !== false ? 'Block' : 'Unblock'}
-                      >
-                        {user.is_active !== false ? <Ban className="w-4 h-4" /> : <CheckCircle className="w-4 h-4" />}
-                      </Button>
+                      </button>
+                      <button onClick={() => { setSelectedUser(user); setShowBalanceModal(true) }}
+                        className="p-1.5 rounded-lg hover:bg-slate-700/50 text-slate-400 hover:text-emerald-400 transition-colors" title="Adjust Balance">
+                        <Wallet className="w-4 h-4" />
+                      </button>
+                      <div className="relative group">
+                        <button className="p-1.5 rounded-lg hover:bg-slate-700/50 text-slate-400 hover:text-white transition-colors">
+                          <MoreVertical className="w-4 h-4" />
+                        </button>
+                        <div className="absolute right-0 top-full mt-1 w-40 bg-slate-800 border border-slate-700/50 rounded-xl shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10">
+                          <button onClick={() => handleChangeStatus(user.id, 'active')}
+                            className="w-full px-3 py-2 text-left text-xs text-slate-300 hover:bg-slate-700/50 flex items-center gap-2 rounded-t-xl">
+                            <CheckCircle className="w-3 h-3 text-emerald-400" /> Activate
+                          </button>
+                          <button onClick={() => handleChangeStatus(user.id, 'suspended')}
+                            className="w-full px-3 py-2 text-left text-xs text-slate-300 hover:bg-slate-700/50 flex items-center gap-2">
+                            <AlertTriangle className="w-3 h-3 text-amber-400" /> Suspend
+                          </button>
+                          <button onClick={() => handleChangeStatus(user.id, 'banned')}
+                            className="w-full px-3 py-2 text-left text-xs text-slate-300 hover:bg-slate-700/50 flex items-center gap-2 rounded-b-xl">
+                            <Ban className="w-3 h-3 text-red-400" /> Ban
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   </td>
-                </motion.tr>
+                </tr>
               ))}
             </tbody>
           </table>
         </div>
-        <div className="px-6 py-3 border-t border-slate-700/50">
-          <p className="text-sm text-slate-500">Showing {filtered.length} of {totalUsers} users</p>
-        </div>
+
+        {/* Pagination */}
+        {pagination.pages > 1 && (
+          <div className="p-3 border-t border-slate-700/50 flex items-center justify-between">
+            <span className="text-xs text-slate-400">
+              Showing {(page - 1) * limit + 1}-{Math.min(page * limit, pagination.total)} of {pagination.total}
+            </span>
+            <div className="flex items-center gap-2">
+              <Select value={limit} onChange={e => { setLimit(parseInt(e.target.value)); setPage(1) }} className="w-20">
+                <option value={10}>10</option>
+                <option value={20}>20</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+              </Select>
+              <Button size="sm" variant="outline" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>
+                <ChevronLeft className="w-4 h-4" />
+              </Button>
+              <span className="text-sm text-slate-300">{page} / {pagination.pages}</span>
+              <Button size="sm" variant="outline" onClick={() => setPage(p => Math.min(pagination.pages, p + 1))} disabled={page === pagination.pages}>
+                <ChevronRight className="w-4 h-4" />
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* User Detail Modal */}
-      <Dialog open={!!selectedUser} onClose={() => { setSelectedUser(null); setEditMode(false) }} className="max-w-lg">
-        <DialogHeader onClose={() => { setSelectedUser(null); setEditMode(false) }}>
-          <DialogTitle>{editMode ? 'Edit User' : 'User Details'}</DialogTitle>
-        </DialogHeader>
+      {/* Balance Adjustment Modal */}
+      <Dialog open={showBalanceModal} onOpenChange={setShowBalanceModal}>
         <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Adjust Balance - {selectedUser?.username}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="bg-slate-900/50 rounded-lg p-3">
+              <div className="text-xs text-slate-400">Current Balance</div>
+              <div className="text-xl font-bold text-emerald-400">₨{parseFloat(selectedUser?.balance || 0).toLocaleString()}</div>
+            </div>
+            <FormField label="Amount (positive to add, negative to deduct)">
+              <Input type="number" value={balanceAmount} onChange={e => setBalanceAmount(e.target.value)} placeholder="e.g. 1000 or -500" />
+            </FormField>
+            <FormField label="Reason">
+              <Input value={balanceReason} onChange={e => setBalanceReason(e.target.value)} placeholder="e.g. Bonus, Refund, Adjustment" />
+            </FormField>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setShowBalanceModal(false)}>Cancel</Button>
+            <Button onClick={handleAdjustBalance} disabled={actionLoading || !balanceAmount || !balanceReason}>
+              {actionLoading ? 'Processing...' : 'Apply'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* User Detail Modal */}
+      <Dialog open={showUserModal} onOpenChange={setShowUserModal}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>User Details - {selectedUser?.username}</DialogTitle>
+          </DialogHeader>
           {selectedUser && (
             <div className="space-y-4">
-              {editMode ? (
-                <div className="space-y-4">
-                  <FormField label="Username">
-                    <Input value={editForm.username} onChange={(e) => setEditForm({ ...editForm, username: e.target.value })} />
-                  </FormField>
-                  <FormField label="Full Name">
-                    <Input value={editForm.full_name} onChange={(e) => setEditForm({ ...editForm, full_name: e.target.value })} />
-                  </FormField>
-                  <FormField label="Email">
-                    <Input type="email" value={editForm.email} onChange={(e) => setEditForm({ ...editForm, email: e.target.value })} />
-                  </FormField>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-slate-900/50 rounded-lg p-3">
+                  <div className="text-xs text-slate-400">Email</div>
+                  <div className="text-sm text-white">{selectedUser.email}</div>
                 </div>
-              ) : (
-                <>
-                  <div className="flex items-center gap-4 p-4 bg-slate-700/30 rounded-xl">
-                    <div className="w-16 h-16 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white font-bold text-xl">
-                      {selectedUser.username?.charAt(0).toUpperCase() || 'U'}
-                    </div>
-                    <div>
-                      <h3 className="text-lg font-bold text-white">{selectedUser.username}</h3>
-                      <p className="text-sm text-slate-400">{selectedUser.email}</p>
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium mt-1 inline-block ${
-                        selectedUser.is_active !== false ? 'bg-emerald-500/15 text-emerald-400' : 'bg-red-500/15 text-red-400'
-                      }`}>
-                        {selectedUser.is_active !== false ? 'Active' : 'Blocked'}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="p-3 bg-slate-700/30 rounded-lg">
-                      <p className="text-xs text-slate-400">Balance</p>
-                      <p className="text-lg font-bold text-white">PKR {Number(selectedUser.balance || 0).toLocaleString('en-IN')}</p>
-                    </div>
-                    <div className="p-3 bg-slate-700/30 rounded-lg">
-                      <p className="text-xs text-slate-400">Role</p>
-                      <p className="text-lg font-bold text-white capitalize">{selectedUser.role || 'User'}</p>
-                    </div>
-                  </div>
-
-                  <div className="p-4 bg-slate-700/30 rounded-xl">
-                    <h4 className="text-sm font-semibold text-white mb-3">User Information</h4>
-                    <div className="grid grid-cols-2 gap-2 text-sm">
-                      <div>
-                        <p className="text-slate-500">Full Name</p>
-                        <p className="text-white">{selectedUser.full_name || 'N/A'}</p>
-                      </div>
-                      <div>
-                        <p className="text-slate-500">User ID</p>
-                        <p className="text-white text-xs font-mono">{selectedUser.id?.slice(0, 12)}...</p>
-                      </div>
-                      <div>
-                        <p className="text-slate-500">Registered</p>
-                        <p className="text-white">{new Date(selectedUser.created_at).toLocaleString()}</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <FormField label="Adjust Balance (PKR )" hint="Enter new balance amount">
-                    <Input
-                      type="number"
-                      step="0.01"
-                      value={balanceInput}
-                      onChange={(e) => setBalanceInput(e.target.value)}
-                      placeholder="0.00"
-                    />
-                  </FormField>
-                </>
-              )}
+                <div className="bg-slate-900/50 rounded-lg p-3">
+                  <div className="text-xs text-slate-400">Full Name</div>
+                  <div className="text-sm text-white">{selectedUser.full_name || '-'}</div>
+                </div>
+                <div className="bg-slate-900/50 rounded-lg p-3">
+                  <div className="text-xs text-slate-400">Balance</div>
+                  <div className="text-sm font-bold text-emerald-400">₨{parseFloat(selectedUser.balance || 0).toLocaleString()}</div>
+                </div>
+                <div className="bg-slate-900/50 rounded-lg p-3">
+                  <div className="text-xs text-slate-400">Status</div>
+                  <Badge variant={statusColors[selectedUser.status] || 'default'}>{selectedUser.status || 'active'}</Badge>
+                </div>
+                <div className="bg-slate-900/50 rounded-lg p-3">
+                  <div className="text-xs text-slate-400">Risk Level</div>
+                  <Badge variant={riskColors[selectedUser.risk_level] || 'default'}>{selectedUser.risk_level || 'low'}</Badge>
+                </div>
+                <div className="bg-slate-900/50 rounded-lg p-3">
+                  <div className="text-xs text-slate-400">KYC Status</div>
+                  <div className="text-sm text-white capitalize">{selectedUser.kyc_status || 'none'}</div>
+                </div>
+                <div className="bg-slate-900/50 rounded-lg p-3">
+                  <div className="text-xs text-slate-400">Registered</div>
+                  <div className="text-sm text-white">{new Date(selectedUser.created_at).toLocaleDateString()}</div>
+                </div>
+                <div className="bg-slate-900/50 rounded-lg p-3">
+                  <div className="text-xs text-slate-400">Last Login</div>
+                  <div className="text-sm text-white">{selectedUser.last_login ? new Date(selectedUser.last_login).toLocaleString() : 'Never'}</div>
+                </div>
+                <div className="bg-slate-900/50 rounded-lg p-3">
+                  <div className="text-xs text-slate-400">Login Count</div>
+                  <div className="text-sm text-white">{selectedUser.login_count || 0}</div>
+                </div>
+                <div className="bg-slate-900/50 rounded-lg p-3">
+                  <div className="text-xs text-slate-400">User ID</div>
+                  <div className="text-xs text-white font-mono">{selectedUser.id}</div>
+                </div>
+              </div>
             </div>
           )}
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setShowUserModal(false)}>Close</Button>
+          </DialogFooter>
         </DialogContent>
-        <DialogFooter className="flex-col sm:flex-row gap-2">
-          {editMode ? (
-            <>
-              <Button variant="outline" onClick={() => setEditMode(false)} className="w-full sm:w-auto">Cancel</Button>
-              <Button onClick={handleSaveEdit} disabled={updateUserMutation.isPending} className="w-full sm:w-auto flex-1">
-                {updateUserMutation.isPending ? 'Saving...' : 'Save Changes'}
-              </Button>
-            </>
-          ) : (
-            <>
-              <Button variant="outline" onClick={handleEditUser} className="w-full sm:w-auto">
-                <Edit className="w-4 h-4 mr-2" /> Edit
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => balanceMutation.mutate({ id: selectedUser.id, balance: balanceInput })}
-                disabled={balanceMutation.isPending}
-                className="w-full sm:w-auto flex-1"
-              >
-                <Wallet className="w-4 h-4 mr-2" /> Update Balance
-              </Button>
-              <Button
-                onClick={() => toggleMutation.mutate({ id: selectedUser.id, isActive: selectedUser.is_active !== false })}
-                className={`w-full sm:w-auto ${selectedUser?.is_active !== false ? 'bg-red-500 hover:bg-red-600' : 'bg-emerald-500 hover:bg-emerald-600'}`}
-              >
-                {selectedUser?.is_active !== false ? (
-                  <><Ban className="w-4 h-4 mr-2" /> Block</>
-                ) : (
-                  <><CheckCircle className="w-4 h-4 mr-2" /> Unblock</>
-                )}
-              </Button>
-            </>
-          )}
-        </DialogFooter>
       </Dialog>
-    </div>
+    </motion.div>
   )
 }
-

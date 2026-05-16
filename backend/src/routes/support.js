@@ -20,17 +20,15 @@ router.get('/tickets', async (req, res) => {
     const limit = parseInt(req.query.limit) || 20
     const status = req.query.status || ''
     const priority = req.query.priority || ''
-    const assignedTo = req.query.assignedTo || ''
     const offset = (page - 1) * limit
 
     let query = supabase
       .from('support_tickets')
-      .select('*, users(username, email), admin_accounts(username)')
+      .select('*, users(username, email)')
       .order('created_at', { ascending: false })
 
     if (status) query = query.eq('status', status)
     if (priority) query = query.eq('priority', priority)
-    if (assignedTo) query = query.eq('assigned_to', assignedTo)
 
     query = query.range(offset, offset + limit - 1)
 
@@ -58,7 +56,7 @@ router.get('/tickets/:id', async (req, res) => {
   try {
     const { data: ticket, error } = await supabase
       .from('support_tickets')
-      .select('*, users(*), admin_accounts(username)')
+      .select('*, users(*)')
       .eq('id', req.params.id)
       .single()
 
