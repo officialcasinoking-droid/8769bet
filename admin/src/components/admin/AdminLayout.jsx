@@ -6,7 +6,7 @@ import {
   MegaphoneIcon, UsersIcon, CogIcon, ChevronLeftIcon,
   ChevronRightIcon, EyeIcon, ArrowRightOnRectangleIcon,
   BanknotesIcon, SparklesIcon, ArrowLeftIcon, UserGroupIcon,
-  ChatBubbleLeftRightIcon, MagnifyingGlassIcon
+  ChatBubbleLeftRightIcon, MagnifyingGlassIcon, ShieldCheckIcon
 } from '@heroicons/react/24/outline'
 import { supabase } from '../../lib/supabase'
 
@@ -20,6 +20,7 @@ const menuItems = [
   { id: 'announcements', name: 'Announcements', icon: MegaphoneIcon, path: '/announcements' },
   { id: 'referrals', name: 'Referrals', icon: UserGroupIcon, path: '/referrals' },
   { id: 'users', name: 'Users', icon: UsersIcon, path: '/users' },
+  { id: 'audit', name: 'Audit Logs', icon: ShieldCheckIcon, path: '/audit' },
   { id: 'support', name: 'Support', icon: ChatBubbleLeftRightIcon, path: '/support' },
   { id: 'ai-agent', name: 'AI Agent', icon: SparklesIcon, path: '/ai-agent' },
   { id: 'settings', name: 'Settings', icon: CogIcon, path: '/settings' },
@@ -34,6 +35,7 @@ const PAGE_TITLES = {
   '/announcements': 'Announcements',
   '/referrals': 'Referral Management',
   '/users': 'User Management',
+  '/audit': 'Audit Logs',
   '/support': 'Support Center',
   '/settings': 'Settings',
   '/ai-agent': 'AI Agent Settings',
@@ -48,6 +50,7 @@ const IS_SECTION = {
   '/announcements': true,
   '/referrals': true,
   '/users': true,
+  '/audit': true,
   '/support': true,
   '/settings': true,
   '/ai-agent': true,

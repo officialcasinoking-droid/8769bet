@@ -9,6 +9,7 @@ import LandingPageEditor from './components/admin/LandingPageEditor'
 import GamesPage from './components/admin/GamesPage'
 import GameControlPanel from './components/admin/GameControlPanel'
 import UsersPage from './components/admin/UsersPage'
+import AuditLogViewer from './components/admin/AuditLogViewer'
 import AiAgentSettings from './pages/AiAgentSettings'
 import JackpotSettings from './pages/JackpotSettings'
 import AnnouncementsPage from './pages/AnnouncementsPage'
@@ -50,6 +51,7 @@ function AppRoutes() {
         <Route path="games" element={<GamesPage />} />
         <Route path="games/:slug" element={<GameControlPanel />} />
         <Route path="users" element={<UsersPage />} />
+        <Route path="audit" element={<AuditLogViewer />} />
         <Route path="support" element={<SupportSection />} />
         <Route path="ai-agent" element={<AiAgentSettings />} />
         <Route path="jackpot" element={<JackpotSettings />} />
