@@ -439,13 +439,11 @@ export default function GameControlPanel() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          settings: {
-            houseEdge: settings.house_edge,
-            heMode: settings.he_mode,
-            heTargetPct: settings.he_target_pct,
-            heMinSecs: settings.he_min_secs,
-            heMaxSecs: settings.he_max_secs,
-          }
+          houseEdge: settings.house_edge,
+          heMode: settings.he_mode,
+          heTargetPct: settings.he_target_pct,
+          heMinSecs: settings.he_min_secs,
+          heMaxSecs: settings.he_max_secs,
         })
       })
       if (response.ok) {
