@@ -250,6 +250,7 @@ function startGameLoop() {
           phase: 'betting',
           countdown: gameState.countdown,
           roundId: gameState.roundId,
+          houseEdge: houseEdgePool,
         })
       }
 
@@ -313,6 +314,7 @@ function startGameLoop() {
           phase: 'flying',
           mult: gameState.mult,
           roundId: gameState.roundId,
+          houseEdge: houseEdgePool,
         })
       }
     }
@@ -330,6 +332,7 @@ function startFlying() {
     mult: 1.00,
     crashPoint: gameState.crashPoint,
     roundId: gameState.roundId,
+    houseEdge: houseEdgePool,
   })
 }
 
@@ -400,6 +403,7 @@ function startNewRound() {
     phase: 'betting',
     countdown: WAIT_TIME_SECONDS,
     roundId: gameState.roundId,
+    houseEdge: houseEdgePool,
   })
 
   // Schedule bot bets during betting phase
@@ -541,6 +545,7 @@ async function initGameEngine(server) {
       settings: { ...settings },
       crashHistory: [...crashHistory],
       bets: [...currentBets],
+      houseEdge: houseEdgePool,
     }))
 
     // Handle client messages
@@ -599,6 +604,7 @@ async function initGameEngine(server) {
       roundId: gameState.roundId,
       settings: { ...settings },
       bets: [...currentBets],
+      houseEdge: houseEdgePool,
     })
   } else {
     // No saved state - start fresh

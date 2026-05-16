@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { Button, FormField, Input, Select } from '../../components/ui/FormElements'
@@ -6,10 +6,11 @@ import {
   ArrowLeft, Zap, Users, Bot, TrendingUp, TrendingDown,
   Clock, Settings, Shield, Eye, Loader2, ExternalLink,
   MessageSquare, Send, Play, RotateCcw, BarChart3, AlertTriangle,
-  Check, X, ChevronRight, Lightbulb, Target
+  Check, X, ChevronRight, Lightbulb, Target, Wallet, DollarSign,
+  PieChart, Activity
 } from 'lucide-react'
 
-const BACKEND_URL = import.meta.env.VITE_API_URL || 'https://8769bet-backend.onrender.com'
+const BACKEND_URL = import.meta.env.VITE_API_URL || 'https://eight769bet-backend.onrender.com'
 
 // ── AI Assistant Messages ────────────────────────────────────
 const AI_MESSAGES = {
@@ -106,7 +107,6 @@ function AIChat({ settings }) {
 
   return (
     <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl overflow-hidden flex flex-col h-[400px]">
-      {/* Messages */}
       <div className="flex-1 overflow-y-auto p-3 space-y-3">
         {messages.map((msg, i) => (
           <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
@@ -135,7 +135,6 @@ function AIChat({ settings }) {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Quick Actions */}
       <div className="px-3 py-2 border-t border-slate-700/50">
         <div className="flex gap-1.5 overflow-x-auto pb-1">
           {quickActions.map(qa => (
@@ -147,7 +146,6 @@ function AIChat({ settings }) {
         </div>
       </div>
 
-      {/* Input */}
       <div className="p-3 border-t border-slate-700/50">
         <div className="flex gap-2">
           <input type="text" value={input} onChange={e => setInput(e.target.value)}
@@ -168,129 +166,115 @@ function AIChat({ settings }) {
 function GameCanvas({ phase, mult, countdown, crashPoint }) {
   const canvasRef = useRef(null)
   const animRef = useRef(null)
-  const trailRef = useRef([])
+  const planeXRef = useRef(0)
+  const planeYRef = useRef(0)
+  const frameCountRef = useRef(0)
 
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
     const ctx = canvas.getContext('2d')
 
+    let W = 0, H = 0
+    const planeImg = new Image()
+    planeImg.src = '/img/aviator_jogo.png'
+    let planeImgReady = false
+    planeImg.onload = () => { planeImgReady = true }
+
+    const buildBg = (w, h) => {
+      const off = document.createElement('canvas')
+      off.width = w; off.height = h
+      const c = off.getContext('2d')
+      const bg = c.createLinearGradient(0, 0, 0, h)
+      bg.addColorStop(0, '#0c1220'); bg.addColorStop(1, '#060e1a')
+      c.fillStyle = bg; c.fillRect(0, 0, w, h)
+      c.strokeStyle = 'rgba(255,255,255,0.022)'; c.lineWidth = 1
+      for (let i = 0; i < w; i += 28) { c.beginPath(); c.moveTo(i, 0); c.lineTo(i, h); c.stroke() }
+      for (let i = 0; i < h; i += 28) { c.beginPath(); c.moveTo(0, i); c.lineTo(w, i); c.stroke() }
+      c.fillStyle = 'rgba(255,255,255,0.12)'; c.font = 'bold 10px monospace'
+      for (let i = 1; i <= 10; i++) {
+        const y = h - (i / 10) * h * 0.84 - h * 0.07
+        c.fillText(`${i}x`, 3, y + 3)
+        c.strokeStyle = 'rgba(0,232,135,0.06)'
+        c.beginPath(); c.moveTo(20, y); c.lineTo(w, y); c.stroke()
+      }
+      return off
+    }
+
+    let bgCanvas = buildBg(canvas.offsetWidth, canvas.offsetHeight)
+
+    const resize = () => {
+      W = canvas.offsetWidth; H = canvas.offsetHeight
+      canvas.width = W; canvas.height = H
+      bgCanvas = buildBg(W, H)
+    }
+    resize()
+    window.addEventListener('resize', resize)
+
     const draw = () => {
-      const dpr = 2
-      const w = canvas.offsetWidth
-      const h = canvas.offsetHeight
-      canvas.width = w * dpr
-      canvas.height = h * dpr
-      ctx.scale(dpr, dpr)
+      frameCountRef.current++
+      const currentPhase = phase
+      const currentMult = mult
 
-      // Background
-      ctx.fillStyle = '#0c1220'
-      ctx.fillRect(0, 0, w, h)
-
-      // Grid
-      ctx.strokeStyle = 'rgba(255,255,255,0.04)'
-      ctx.lineWidth = 0.5
-      for (let i = 0; i < 10; i++) {
-        ctx.beginPath(); ctx.moveTo(0, (h / 10) * i); ctx.lineTo(w, (h / 10) * i); ctx.stroke()
-        ctx.beginPath(); ctx.moveTo((w / 10) * i, 0); ctx.lineTo((w / 10) * i, h); ctx.stroke()
+      if (!bgCanvas || W === 0 || H === 0) {
+        animRef.current = requestAnimationFrame(draw)
+        return
       }
 
-      if (phase === 'flying') {
-        const maxMult = Math.max(mult, 5)
-        const progress = Math.min(1, Math.log(mult) / Math.log(maxMult))
+      ctx.clearRect(0, 0, W, H)
+      ctx.drawImage(bgCanvas, 0, 0)
+
+      if (currentPhase === 'flying' && currentMult > 1) {
+        const originX = 5, originY = H * 0.90
+        const maxTravelX = Math.max(W - 220, W * 0.65), maxTravelY = H * 0.78
+        const progress = Math.min(1, Math.log(currentMult) / Math.log(50))
         const eased = Math.pow(progress, 0.6)
-
-        const originX = 5
-        const originY = h * 0.90
-        const maxTravelX = w - 10
-        const maxTravelY = h * 0.78
-
         const nx = originX + eased * maxTravelX
         const ny = originY - eased * maxTravelY
+        const endX = nx - 15, endY = ny + 5
+        const cpx = (originX + endX) * 0.5, cpy = originY - (originY - endY) * 0.08
 
-        trailRef.current.push({ x: nx, y: ny })
-        if (trailRef.current.length > 200) trailRef.current.shift()
+        ctx.strokeStyle = 'rgba(0,255,157,0.18)'; ctx.lineWidth = 10; ctx.lineCap = 'round'
+        ctx.beginPath(); ctx.moveTo(originX, originY); ctx.quadraticCurveTo(cpx, cpy, endX, endY); ctx.stroke()
+        ctx.strokeStyle = '#00ff9d'; ctx.lineWidth = 3
+        ctx.beginPath(); ctx.moveTo(originX, originY); ctx.quadraticCurveTo(cpx, cpy, endX, endY); ctx.stroke()
 
-        // Draw trail
-        if (trailRef.current.length > 1) {
-          ctx.beginPath()
-          ctx.strokeStyle = '#00e887'
-          ctx.lineWidth = 2.5
-          ctx.shadowColor = '#00e887'
-          ctx.shadowBlur = 10
-          ctx.moveTo(trailRef.current[0].x, trailRef.current[0].y)
-          for (let i = 1; i < trailRef.current.length; i++) {
-            ctx.lineTo(trailRef.current[i].x, trailRef.current[i].y)
-          }
-          ctx.stroke()
-          ctx.shadowBlur = 0
+        planeXRef.current = nx; planeYRef.current = ny
+
+        if (planeImgReady) {
+          ctx.save()
+          ctx.translate(nx, ny)
+          ctx.rotate(-0.3)
+          ctx.drawImage(planeImg, -40, -20, 80, 40)
+          ctx.restore()
         }
 
-        // Plane
-        ctx.beginPath()
-        ctx.arc(nx, ny, 10, 0, Math.PI * 2)
-        ctx.fillStyle = 'rgba(0,232,135,0.3)'
-        ctx.fill()
-        ctx.font = '16px sans-serif'
-        ctx.textAlign = 'center'
-        ctx.textBaseline = 'middle'
-        ctx.fillText('✈️', nx, ny)
+        const mc = currentMult >= 10 ? '#ff4d4d' : currentMult >= 5 ? '#ffd600' : '#00e887'
+        ctx.fillStyle = mc; ctx.font = 'bold 24px sans-serif'
+        ctx.fillText(`${currentMult.toFixed(2)}x`, nx + 10, ny + 8)
+      }
 
-        // Multiplier
-        ctx.font = 'bold 48px sans-serif'
-        ctx.fillStyle = '#00e887'
-        ctx.shadowColor = '#00e887'
-        ctx.shadowBlur = 20
-        ctx.fillText(`${mult.toFixed(2)}x`, w / 2, h / 2)
-        ctx.shadowBlur = 0
-      } else if (phase === 'crashed') {
-        // Explosion
-        const cx = w / 2
-        const cy = h / 2
-        const t = Date.now() % 1000 / 1000
-
+      if (currentPhase === 'crashed' && planeXRef.current > 0) {
         for (let i = 0; i < 15; i++) {
           const ag = (i / 15) * Math.PI * 2
-          const di = 14 + Math.sin(t * 4 + i) * 12
-          ctx.fillStyle = ['#ff4d4d', '#ff8c00', '#ffd600'][i % 3]
-          ctx.globalAlpha = 0.35 + Math.sin(t * 4 + i) * 0.2
-          ctx.beginPath()
-          ctx.arc(cx + Math.cos(ag) * di, cy + Math.sin(ag) * di, 2, 0, Math.PI * 2)
-          ctx.fill()
+          const di = 14 + Math.sin(frameCountRef.current * 0.4 + i) * 12
+          ctx.fillStyle = ['#dc2626', '#f97316', '#fde047'][i % 3]
+          ctx.globalAlpha = 0.35 + Math.sin(frameCountRef.current * 0.4 + i) * 0.2
+          ctx.beginPath(); ctx.arc(planeXRef.current + Math.cos(ag) * di, planeYRef.current + Math.sin(ag) * di, 2, 0, Math.PI * 2); ctx.fill()
         }
         ctx.globalAlpha = 1
+      }
 
-        ctx.font = 'bold 48px sans-serif'
-        ctx.fillStyle = '#ff4d4d'
-        ctx.shadowColor = '#ff4d4d'
-        ctx.shadowBlur = 20
-        ctx.textAlign = 'center'
-        ctx.textBaseline = 'middle'
-        ctx.fillText(`${crashPoint.toFixed(2)}x`, w / 2, h / 2)
-        ctx.shadowBlur = 0
-      } else {
-        // Betting
-        ctx.font = 'bold 56px sans-serif'
-        ctx.fillStyle = '#00e887'
-        ctx.shadowColor = '#00e887'
-        ctx.shadowBlur = 20
-        ctx.textAlign = 'center'
-        ctx.textBaseline = 'middle'
-        ctx.fillText(`${countdown.toFixed(1)}`, w / 2, h / 2 - 10)
-        ctx.shadowBlur = 0
-
-        ctx.font = '14px sans-serif'
-        ctx.fillStyle = 'rgba(255,255,255,0.4)'
-        ctx.fillText('Waiting for next round', w / 2, h / 2 + 20)
+      if (currentPhase !== 'flying') {
+        if (planeXRef.current !== 0) { planeXRef.current = 0; planeYRef.current = 0; frameCountRef.current = 0 }
+        bgCanvas = buildBg(W, H)
       }
 
       animRef.current = requestAnimationFrame(draw)
     }
 
     animRef.current = requestAnimationFrame(draw)
-    return () => {
-      if (animRef.current) cancelAnimationFrame(animRef.current)
-    }
+    return () => { window.removeEventListener('resize', resize); if (animRef.current) cancelAnimationFrame(animRef.current) }
   }, [phase, mult, countdown, crashPoint])
 
   return (
@@ -305,6 +289,28 @@ function GameCanvas({ phase, mult, countdown, crashPoint }) {
           {phase === 'flying' ? 'FLYING' : phase === 'crashed' ? 'CRASHED' : 'BETTING'}
         </span>
       </div>
+      {phase === 'betting' && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <div className="bg-black/60 backdrop-blur-md border border-white/10 rounded-2xl px-8 py-6 text-center">
+            <div className="text-5xl font-black text-white" style={{ fontFamily: "'Exo 2', sans-serif" }}>
+              {countdown.toFixed(1)}
+            </div>
+            <div className="text-xs font-semibold text-white/40 uppercase tracking-widest mt-2">
+              Place your bets
+            </div>
+          </div>
+        </div>
+      )}
+      {phase === 'crashed' && crashPoint > 0 && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <div className="text-4xl font-black text-red-500" style={{
+            fontFamily: "'Exo 2', sans-serif",
+            textShadow: '0 0 20px rgba(255,77,77,0.6), 0 0 40px rgba(255,77,77,0.3)'
+          }}>
+            {crashPoint.toFixed(2)}x
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -315,32 +321,48 @@ export default function GameControlPanel() {
   const navigate = useNavigate()
   const wsRef = useRef(null)
 
-  // Game state from backend WebSocket
   const [phase, setPhase] = useState('betting')
   const [mult, setMult] = useState(1.00)
   const [countdown, setCountdown] = useState(8)
   const [crashPoint, setCrashPoint] = useState(0)
   const [connected, setConnected] = useState(false)
-
-  // Settings
-  const [settings, setSettings] = useState({
-    house_edge: 0.05,
-    he_mode: 'off',
-    he_target_pct: 5,
-    he_min_secs: 3,
-    he_max_secs: 50,
+  const [crashHistory, setCrashHistory] = useState([])
+  const [houseEdgeStats, setHouseEdgeStats] = useState({
+    totalBets: 0,
+    totalWinnings: 0,
+    houseEdgeAmount: 0,
+    roundsPlayed: 0,
   })
 
-  // Crash history
-  const [crashHistory, setCrashHistory] = useState([])
+  const [settings, setSettings] = useState({
+    houseEdge: 0.05,
+    heMode: 'off',
+    heTargetPct: 5,
+    heMinSecs: 3,
+    heMaxSecs: 50,
+  })
 
-  // ── WebSocket Connection to Backend ─────────────────────────
+  const [saving, setSaving] = useState(false)
+  const [saveSuccess, setSaveSuccess] = useState(false)
+
+  const updateHouseEdgeStats = useCallback((stats) => {
+    if (stats) {
+      setHouseEdgeStats({
+        totalBets: stats.totalBets || 0,
+        totalWinnings: stats.totalWinnings || 0,
+        houseEdgeAmount: stats.houseEdgeAmount || 0,
+        roundsPlayed: stats.roundsPlayed || 0,
+      })
+    }
+  }, [])
+
   useEffect(() => {
     const fetchInitialState = async () => {
       try {
         const response = await fetch(`${BACKEND_URL}/api/admin/game/state`)
         if (response.ok) {
-          const state = await response.json()
+          const data = await response.json()
+          const state = data.state || data
           setPhase(state.phase || 'betting')
           if (state.phase === 'betting') {
             setCountdown(parseFloat(state.countdown) || 8)
@@ -351,12 +373,20 @@ export default function GameControlPanel() {
             setCrashPoint(parseFloat(state.crash_point || state.crashPoint) || 0)
           }
           if (state.settings) {
-            setSettings(prev => ({ ...prev, ...state.settings }))
+            setSettings({
+              houseEdge: state.settings.houseEdge || 0.05,
+              heMode: state.settings.heMode || 'off',
+              heTargetPct: state.settings.heTargetPct || 5,
+              heMinSecs: state.settings.heMinSecs || 3,
+              heMaxSecs: state.settings.heMaxSecs || 50,
+            })
           }
           if (state.crashHistory) {
             setCrashHistory(state.crashHistory.map(h => typeof h === 'object' ? parseFloat(h.crash_point || h) : parseFloat(h)))
           }
-          setConnected(true)
+          if (state.houseEdge) {
+            updateHouseEdgeStats(state.houseEdge)
+          }
         }
       } catch (e) {
         console.error('[GameControl] Failed to fetch initial state:', e)
@@ -365,120 +395,125 @@ export default function GameControlPanel() {
 
     fetchInitialState()
 
-    // Connect to WebSocket for real-time updates
-    const wsUrl = BACKEND_URL.replace('http', 'ws') + '/ws/aviator'
-    const ws = new WebSocket(wsUrl)
+    const wsUrl = BACKEND_URL.replace('https', 'wss').replace('http', 'ws') + '/ws/aviator'
 
-    ws.onopen = () => {
-      console.log('[GameControl] WebSocket connected')
-      setConnected(true)
-    }
+    const connectWebSocket = () => {
+      const ws = new WebSocket(wsUrl)
 
-    ws.onmessage = (event) => {
-      try {
-        const msg = JSON.parse(event.data)
-        if (msg.type === 'game_state') {
-          if (msg.phase === 'betting') {
-            setPhase('betting')
-            setCountdown(parseFloat(msg.countdown) || 8)
-            setMult(1.00)
-          } else if (msg.phase === 'flying') {
-            setPhase('flying')
-            setMult(parseFloat(msg.mult) || 1.00)
-          } else if (msg.phase === 'crashed') {
-            setPhase('crashed')
-            const cp = parseFloat(msg.crash_point || msg.crashPoint) || 0
-            setCrashPoint(cp)
-            setCrashHistory(prev => [cp, ...prev].slice(0, 30))
-          }
-          if (msg.settings) {
-            setSettings(prev => ({ ...prev, ...msg.settings }))
-          }
-        }
-      } catch (e) {
-        console.error('[GameControl] WS parse error:', e)
+      ws.onopen = () => {
+        console.log('[GameControl] WebSocket connected')
+        setConnected(true)
       }
+
+      ws.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data)
+          if (msg.type === 'game_state') {
+            if (msg.phase === 'betting') {
+              setPhase('betting')
+              setCountdown(parseFloat(msg.countdown) || 8)
+              setMult(1.00)
+            } else if (msg.phase === 'flying') {
+              setPhase('flying')
+              setMult(parseFloat(msg.mult) || 1.00)
+            } else if (msg.phase === 'crashed') {
+              setPhase('crashed')
+              const cp = parseFloat(msg.crash_point || msg.crashPoint) || 0
+              setCrashPoint(cp)
+              setCrashHistory(prev => {
+                if (prev.length > 0 && prev[0] === cp) return prev
+                return [cp, ...prev].slice(0, 30)
+              })
+            }
+            if (msg.settings) {
+              setSettings(prev => ({
+                houseEdge: msg.settings.houseEdge ?? prev.houseEdge,
+                heMode: msg.settings.heMode ?? prev.heMode,
+                heTargetPct: msg.settings.heTargetPct ?? prev.heTargetPct,
+                heMinSecs: msg.settings.heMinSecs ?? prev.heMinSecs,
+                heMaxSecs: msg.settings.heMaxSecs ?? prev.heMaxSecs,
+              }))
+            }
+            if (msg.houseEdge) {
+              updateHouseEdgeStats(msg.houseEdge)
+            }
+          }
+        } catch (e) {
+          console.error('[GameControl] WS parse error:', e)
+        }
+      }
+
+      ws.onerror = (err) => {
+        console.error('[GameControl] WebSocket error:', err)
+        setConnected(false)
+      }
+
+      ws.onclose = () => {
+        console.log('[GameControl] WebSocket disconnected, reconnecting in 3s...')
+        setConnected(false)
+        setTimeout(connectWebSocket, 3000)
+      }
+
+      wsRef.current = ws
     }
 
-    ws.onerror = (err) => {
-      console.error('[GameControl] WebSocket error:', err)
-      setConnected(false)
-    }
-
-    ws.onclose = () => {
-      console.log('[GameControl] WebSocket disconnected')
-      setConnected(false)
-    }
-
-    wsRef.current = ws
+    connectWebSocket()
 
     return () => {
       if (wsRef.current) {
         wsRef.current.close()
       }
     }
-  }, [])
+  }, [updateHouseEdgeStats])
 
-  // ── Controls ───────────────────────────────────────────────
   const handleManualCrash = async () => {
     try {
-      const response = await fetch(`${BACKEND_URL}/api/admin/game/crash`, {
-        method: 'POST',
-      })
-      if (response.ok) {
-        console.log('[GameControl] Crash forced')
-      }
+      await fetch(`${BACKEND_URL}/api/admin/game/crash`, { method: 'POST' })
     } catch (e) {
       console.error('[GameControl] Failed to force crash:', e)
     }
   }
 
-  const handleSaveSettings = async () => {
-    try {
-      const response = await fetch(`${BACKEND_URL}/api/admin/game/settings`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          houseEdge: settings.house_edge,
-          heMode: settings.he_mode,
-          heTargetPct: settings.he_target_pct,
-          heMinSecs: settings.he_min_secs,
-          heMaxSecs: settings.he_max_secs,
-        })
-      })
-      if (response.ok) {
-        console.log('[GameControl] Settings saved')
-      }
-    } catch (e) {
-      console.error('[GameControl] Failed to save settings:', e)
-    }
-  }
-
   const handleNewRound = async () => {
     try {
-      const response = await fetch(`${BACKEND_URL}/api/admin/game/new-round`, {
-        method: 'POST',
-      })
-      if (response.ok) {
-        console.log('[GameControl] New round started')
-      }
+      await fetch(`${BACKEND_URL}/api/admin/game/new-round`, { method: 'POST' })
     } catch (e) {
       console.error('[GameControl] Failed to start new round:', e)
     }
   }
 
-  const handleTest = () => {
-    // Simulate a test round
-    const he = settings.house_edge
-    const crashPoint = (Math.random() < 0.4 - he * 2) ? 1 + Math.random() * 0.5 :
-                     (Math.random() < 0.25 - he) ? 1.5 + Math.random() :
-                     2.5 + Math.random() * 2
-    alert(`Test Result: Crash at ${crashPoint.toFixed(2)}x`)
+  const handleSaveSettings = async () => {
+    setSaving(true)
+    setSaveSuccess(false)
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/admin/game/settings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          houseEdge: settings.houseEdge,
+          heMode: settings.heMode,
+          heTargetPct: settings.heTargetPct,
+          heMinSecs: settings.heMinSecs,
+          heMaxSecs: settings.heMaxSecs,
+        })
+      })
+      if (response.ok) {
+        setSaveSuccess(true)
+        setTimeout(() => setSaveSuccess(false), 2000)
+      }
+    } catch (e) {
+      console.error('[GameControl] Failed to save settings:', e)
+    } finally {
+      setSaving(false)
+    }
   }
+
+  const profitMargin = houseEdgeStats.totalBets > 0
+    ? ((houseEdgeStats.houseEdgeAmount / houseEdgeStats.totalBets) * 100).toFixed(2)
+    : '0.00'
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Button variant="ghost" onClick={() => navigate('/games')}><ArrowLeft className="w-4 h-4" /></Button>
@@ -487,91 +522,137 @@ export default function GameControlPanel() {
               <Zap className="w-5 h-5 text-amber-400" />
               Aviator Game Control
             </h2>
-            <p className="text-xs text-slate-400">
+            <p className="text-xs text-slate-400 flex items-center gap-1.5">
+              <span className={`w-2 h-2 rounded-full ${connected ? 'bg-emerald-500' : 'bg-red-500 animate-pulse'}`} />
               {connected ? 'Connected to game server' : 'Connecting...'}
             </p>
           </div>
         </div>
-        <a href="https://8769bet.onrender.com/play/aviator" target="_blank" rel="noreferrer"
+        <a href="https://eight769bet.onrender.com/play/aviator" target="_blank" rel="noreferrer"
           className="flex items-center gap-1 px-3 py-2 bg-slate-800 text-slate-300 rounded-lg text-xs hover:bg-slate-700 transition-colors">
           <ExternalLink className="w-3.5 h-3.5" /> Open User Game
         </a>
       </div>
 
-      {/* Game Canvas */}
       <GameCanvas phase={phase} mult={mult} countdown={countdown} crashPoint={crashPoint} />
 
-      {/* Control Bar */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* Controls */}
         <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-4 space-y-4">
           <h3 className="text-sm font-bold text-white flex items-center gap-2">
             <Settings className="w-4 h-4 text-slate-400" />
             Controls
           </h3>
 
-          <Button variant="danger" onClick={handleManualCrash} disabled={phase !== 'flying'} className="w-full">
-            <Zap className="w-4 h-4" /> Manual Crash
-          </Button>
+          <div className="grid grid-cols-2 gap-2">
+            <Button variant="danger" onClick={handleManualCrash} disabled={phase !== 'flying'}>
+              <Zap className="w-4 h-4" /> Crash
+            </Button>
+            <Button variant="outline" onClick={handleNewRound}>
+              <RotateCcw className="w-4 h-4" /> New Round
+            </Button>
+          </div>
 
-          <FormField label={`House Edge (${(settings.house_edge * 100).toFixed(1)}%)`}>
+          <FormField label={`House Edge (${(settings.houseEdge * 100).toFixed(1)}%)`}>
             <div className="flex items-center gap-3">
               <input type="range" min="0.01" max="0.20" step="0.01"
-                value={settings.house_edge}
-                onChange={e => setSettings(s => ({ ...s, house_edge: parseFloat(e.target.value) }))}
+                value={settings.houseEdge}
+                onChange={e => setSettings(s => ({ ...s, houseEdge: parseFloat(e.target.value) }))}
                 className="flex-1 accent-emerald-500" />
               <Input type="number" min="1" max="20" step="0.5"
-                value={(settings.house_edge * 100).toFixed(1)}
-                onChange={e => setSettings(s => ({ ...s, house_edge: parseFloat(e.target.value) / 100 }))}
+                value={(settings.houseEdge * 100).toFixed(1)}
+                onChange={e => setSettings(s => ({ ...s, houseEdge: parseFloat(e.target.value) / 100 }))}
                 className="w-20" />
             </div>
           </FormField>
 
           <FormField label="HE Mode">
-            <Select value={settings.he_mode} onChange={e => setSettings(s => ({ ...s, he_mode: e.target.value }))}>
+            <Select value={settings.heMode} onChange={e => setSettings(s => ({ ...s, heMode: e.target.value }))}>
               <option value="off">Off (Random)</option>
               <option value="smart">Smart Auto</option>
               <option value="aggressive">Aggressive</option>
             </Select>
           </FormField>
 
-          {settings.he_mode !== 'off' && (
+          {settings.heMode !== 'off' && (
             <>
-              <FormField label={`Auto-Crash Target (${settings.he_target_pct}%)`}>
+              <FormField label={`Auto-Crash Target (${settings.heTargetPct}%)`}>
                 <div className="flex items-center gap-3">
                   <input type="range" min="1" max="20" step="1"
-                    value={settings.he_target_pct}
-                    onChange={e => setSettings(s => ({ ...s, he_target_pct: parseInt(e.target.value) }))}
+                    value={settings.heTargetPct}
+                    onChange={e => setSettings(s => ({ ...s, heTargetPct: parseInt(e.target.value) }))}
                     className="flex-1 accent-amber-500" />
                   <Input type="number" min="1" max="20"
-                    value={settings.he_target_pct}
-                    onChange={e => setSettings(s => ({ ...s, he_target_pct: parseInt(e.target.value) }))}
+                    value={settings.heTargetPct}
+                    onChange={e => setSettings(s => ({ ...s, heTargetPct: parseInt(e.target.value) }))}
                     className="w-16" />
                 </div>
               </FormField>
               <div className="grid grid-cols-2 gap-3">
                 <FormField label="Min Flight (sec)">
-                  <Input type="number" min="1" max="30" value={settings.he_min_secs}
-                    onChange={e => setSettings(s => ({ ...s, he_min_secs: parseInt(e.target.value) }))} />
+                  <Input type="number" min="1" max="30" value={settings.heMinSecs}
+                    onChange={e => setSettings(s => ({ ...s, heMinSecs: parseInt(e.target.value) }))} />
                 </FormField>
                 <FormField label="Max Flight (sec)">
-                  <Input type="number" min="5" max="120" value={settings.he_max_secs}
-                    onChange={e => setSettings(s => ({ ...s, he_max_secs: parseInt(e.target.value) }))} />
+                  <Input type="number" min="5" max="120" value={settings.heMaxSecs}
+                    onChange={e => setSettings(s => ({ ...s, heMaxSecs: parseInt(e.target.value) }))} />
                 </FormField>
               </div>
             </>
           )}
 
-          <Button onClick={handleSaveSettings} className="w-full">
-            <Settings className="w-4 h-4" /> Save Settings
+          <Button onClick={handleSaveSettings} disabled={saving} className="w-full">
+            {saving ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : saveSuccess ? (
+              <Check className="w-4 h-4" />
+            ) : (
+              <Settings className="w-4 h-4" />
+            )}
+            {saving ? 'Saving...' : saveSuccess ? 'Saved!' : 'Save Settings'}
           </Button>
 
-          <Button variant="outline" onClick={handleTest} className="w-full">
-            <Play className="w-4 h-4" /> Test Settings
-          </Button>
+          <div className="border-t border-slate-700/50 pt-4">
+            <h3 className="text-sm font-bold text-white flex items-center gap-2 mb-3">
+              <PieChart className="w-4 h-4 text-emerald-400" />
+              Live Stats
+            </h3>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-slate-900/50 rounded-lg p-3 border border-slate-700/30">
+                <div className="flex items-center gap-1.5 text-xs text-slate-400 mb-1">
+                  <Activity className="w-3 h-3" /> Rounds
+                </div>
+                <div className="text-lg font-bold text-white">{houseEdgeStats.roundsPlayed.toLocaleString()}</div>
+              </div>
+              <div className="bg-slate-900/50 rounded-lg p-3 border border-slate-700/30">
+                <div className="flex items-center gap-1.5 text-xs text-slate-400 mb-1">
+                  <DollarSign className="w-3 h-3" /> Total Bets
+                </div>
+                <div className="text-lg font-bold text-emerald-400">₨{houseEdgeStats.totalBets.toLocaleString()}</div>
+              </div>
+              <div className="bg-slate-900/50 rounded-lg p-3 border border-slate-700/30">
+                <div className="flex items-center gap-1.5 text-xs text-slate-400 mb-1">
+                  <TrendingUp className="w-3 h-3" /> Winnings
+                </div>
+                <div className="text-lg font-bold text-amber-400">₨{houseEdgeStats.totalWinnings.toLocaleString()}</div>
+              </div>
+              <div className="bg-slate-900/50 rounded-lg p-3 border border-slate-700/30">
+                <div className="flex items-center gap-1.5 text-xs text-slate-400 mb-1">
+                  <Wallet className="w-3 h-3" /> House Edge
+                </div>
+                <div className="text-lg font-bold text-red-400">₨{houseEdgeStats.houseEdgeAmount.toLocaleString()}</div>
+              </div>
+              <div className="col-span-2 bg-gradient-to-r from-emerald-500/10 to-emerald-500/5 rounded-lg p-3 border border-emerald-500/20">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-xs text-emerald-400">
+                    <TrendingDown className="w-3 h-3" /> Profit Margin
+                  </div>
+                  <div className="text-xl font-black text-emerald-400">{profitMargin}%</div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
-        {/* Crash History */}
         <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-4 space-y-3">
           <h3 className="text-sm font-bold text-white flex items-center gap-2">
             <BarChart3 className="w-4 h-4 text-slate-400" />
@@ -579,7 +660,7 @@ export default function GameControlPanel() {
           </h3>
           <div className="flex flex-wrap gap-2">
             {crashHistory.map((cp, i) => (
-              <div key={i}
+              <div key={`${cp}-${i}`}
                 className={`px-3 py-1.5 rounded-lg text-xs font-bold ${
                   cp >= 10 ? 'bg-emerald-500/20 text-emerald-400' :
                   cp >= 2 ? 'bg-amber-500/20 text-amber-400' :
@@ -594,7 +675,6 @@ export default function GameControlPanel() {
           </div>
         </div>
 
-        {/* AI Chat */}
         <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-4">
           <h3 className="text-sm font-bold text-white flex items-center gap-2 mb-3">
             <MessageSquare className="w-4 h-4 text-slate-400" />
