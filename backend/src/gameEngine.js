@@ -243,12 +243,15 @@ function startGameLoop() {
       const remaining = Math.max(0, WAIT_TIME_SECONDS - elapsed)
       gameState.countdown = parseFloat(remaining.toFixed(1))
 
-      broadcast({
-        type: 'game_state',
-        phase: 'betting',
-        countdown: gameState.countdown,
-        roundId: gameState.roundId,
-      })
+      if (now - lastStateBroadcast >= STATE_BROADCAST_MS) {
+        lastStateBroadcast = now
+        broadcast({
+          type: 'game_state',
+          phase: 'betting',
+          countdown: gameState.countdown,
+          roundId: gameState.roundId,
+        })
+      }
 
       if (remaining <= 0) {
         startFlying()

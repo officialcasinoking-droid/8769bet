@@ -248,7 +248,13 @@ export default function AviatorPage() {
     
     aviatorWS.on('game_state', handleGameState)
     aviatorWS.on('bets_update', (data) => {
-      setAllBets(Array.isArray(data) ? data : (data?.bets || []))
+      try {
+        const betsArray = Array.isArray(data) ? data : (data?.bets && Array.isArray(data.bets) ? data.bets : [])
+        setAllBets(betsArray)
+      } catch (e) {
+        console.error('[Aviator] bets_update error:', e)
+        setAllBets([])
+      }
     })
     
     // NOW connect - will receive initial state with handlers ready
@@ -677,13 +683,13 @@ export default function AviatorPage() {
               <h3 className="font-semibold text-white text-xs">Live Bets</h3>
             </div>
             <div className="max-h-80 overflow-y-auto">
-              {allBets.length === 0 ? (
+              {!Array.isArray(allBets) || allBets.length === 0 ? (
                 <div className="p-4 text-center text-gray-500 text-xs">
                   No bets yet
                 </div>
               ) : (
                 <div className="divide-y divide-dark-100">
-                  {allBets.slice(0, 20).map((bet) => (
+                  {(Array.isArray(allBets) ? allBets : []).slice(0, 20).filter(Boolean).map((bet) => (
                     <div
                       key={bet.id}
                       className={`flex items-center justify-between px-2.5 py-1.5 ${bet.isUser ? 'bg-emerald-500/10' : ''}`}
