@@ -1,6 +1,7 @@
 /**
- * AviatorGame.jsx — Backend WebSocket Aviator Crash Game
- * All game state, bets, and cashouts go through the backend WebSocket.
+ * AviatorGame.jsx — Full-featured Aviator Crash Game
+ * Backend WebSocket for real-time state, REST API for bets/cashouts.
+ * Canvas-based rendering with plane image, trail, explosions.
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react'
@@ -12,24 +13,30 @@ import { aviatorWS } from '../../api/aviatorWebSocket'
 
 const API_URL = import.meta.env.VITE_API_URL || 'https://eight769bet-backend.onrender.com'
 
+const QUICK_BET = [6, 10, 20, 50, 100, 200, 500]
+const MIN_BET = 6
+const MAX_BET = 1000
+const AUTO_PRESETS = ['2.00', '3.00', '4.00', '5.00', '8.00', '10.00', '20.00']
+
+// ── Inline CSS ────────────────────────────────────────────────
 const CSS = `
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Exo+2:wght@400;500;600;700;800;900&display=swap');
   * { box-sizing: border-box; }
-  .av-root {
+  :root {
     --bg-primary: #0c1220; --bg-secondary: #0f1929; --bg-panel: rgba(15,25,41,0.88);
     --border: rgba(255,255,255,0.06); --border-active: rgba(255,255,255,0.12);
     --green: #00e887; --green-dim: rgba(0,232,135,0.15); --green-border: rgba(0,232,135,0.3);
     --red: #ff4d4d; --red-dim: rgba(255,77,77,0.15); --yellow: #ffd600;
     --text: #ffffff; --text-sec: rgba(255,255,255,0.5);
-    font-family: 'Inter','Exo 2',-apple-system,BlinkMacSystemFont,sans-serif;
   }
+  .av-root { font-family: 'Inter','Exo 2',-apple-system,sans-serif; }
   .av-loading { position:fixed;inset:0;z-index:200; background:var(--bg-primary); display:flex;flex-direction:column;align-items:center;justify-content:center; }
-  .av-loading-icon { width:72px;height:72px;border-radius:18px; background:linear-gradient(135deg,#ff4d4d,#ff8c00); display:flex;align-items:center;justify-content:center; box-shadow:0 0 50px rgba(255,77,77,0.4);margin-bottom:28px; }
+  .av-loading-icon { width:72px;height:72px;border-radius:18px; background:linear-gradient(135deg,#ff4d4d,#ff8c00); display:flex;align-items:center;justify-content:center; box-shadow:0 0 50px rgba(255,77,77,0.4); margin-bottom:28px; font-size:36px; }
   .av-loading-title { font-family:'Exo 2',sans-serif;font-size:38px;font-weight:900; color:var(--text);letter-spacing:.15em;text-transform:uppercase;margin:0 0 6px; }
   .av-loading-sub { font-size:11px;color:rgba(255,255,255,.28);letter-spacing:.3em; text-transform:uppercase;margin:0 0 36px; }
   .av-bar-wrap {width:260px;margin-bottom:28px;}
   .av-bar-track {width:100%;height:3px;background:rgba(255,255,255,.1);border-radius:3px;overflow:hidden;}
-  .av-bar-fill { height:100%;border-radius:3px; background:linear-gradient(90deg,var(--green),#00d4aa); box-shadow:0 0 10px rgba(0,232,135,.5); transition:width .08s linear; }
+  .av-bar-fill { height:100%;border-radius:3px; background:linear-gradient(90deg,var(--green),#00d4aa); box-shadow:0 0 10px rgba(0,232,135,.5); transition:width .15s linear; }
   .av-header { display:flex;align-items:center;justify-content:space-between; padding:9px 14px; background:var(--bg-secondary); border-bottom:1px solid var(--border); z-index:10;flex-shrink:0; }
   .av-header-left{display:flex;align-items:center;gap:10px;}
   .av-back { width:30px;height:30px;border-radius:7px; background:rgba(255,255,255,.04);border:none; display:flex;align-items:center;justify-content:center; cursor:pointer;color:rgba(255,255,255,.45); transition:background .12s; }
@@ -112,7 +119,6 @@ const CSS = `
   .av-wait-label{font-size:9px;font-weight:700;color:rgba(255,255,255,.28);text-transform:uppercase}
   .av-wait-amt{font-family:'Exo 2',sans-serif;font-size:12px;font-weight:700;color:rgba(255,255,255,.45)}
   .av-canvas{flex:7;position:relative;min-width:0;overflow:hidden;background:var(--bg-primary)}
-  .av-canvas-bg { position:absolute;inset:0;width:100%;height:100%; object-fit:cover;opacity:0.1;z-index:0; }
   .av-canvas-el{position:absolute;inset:0;width:100%;height:100%;z-index:1}
   @media(max-width:767px){
     .av-top-row{flex-direction:row;flex:1;height:0;min-height:0;overflow:hidden}
@@ -160,11 +166,7 @@ const CSS = `
   .av-live-empty{display:flex;align-items:center;justify-content:center;height:80px;font-size:10px;color:rgba(255,255,255,.13)}
 `
 
-const QUICK_BET = [6, 10, 20, 50, 100, 200, 500]
-const MIN_BET = 6
-const MAX_BET = 1000
-const AUTO_PRESETS = ['2.00', '3.00', '4.00', '5.00', '8.00', '10.00', '20.00']
-
+// ── Loading Screen ────────────────────────────────────────────
 function LoadingScreen({ progress }) {
   return (
     <div className="av-loading">
@@ -180,6 +182,7 @@ function LoadingScreen({ progress }) {
   )
 }
 
+// ── Bet Panel ─────────────────────────────────────────────────
 function BetPanel({ num, amt, setAmt, autoOn, setAutoOn, autoVal, setAutoVal, betData, phase, mult, bal, onPlace, onCash, onCancel }) {
   const hasBet = !!betData
   const isBetting = phase === 'betting'
@@ -206,9 +209,7 @@ function BetPanel({ num, amt, setAmt, autoOn, setAutoOn, autoVal, setAutoVal, be
       </div>
     )
   } else if (isRunning) {
-    actionBtn = (
-      <button className="av-cashbtn" onClick={onCash}>Cash ₨{cashAmt}</button>
-    )
+    actionBtn = <button className="av-cashbtn" onClick={onCash}>Cash ₨{cashAmt}</button>
   } else if (isCrashed) {
     actionBtn = (
       <div className="av-result lost">
@@ -217,9 +218,7 @@ function BetPanel({ num, amt, setAmt, autoOn, setAutoOn, autoVal, setAutoVal, be
       </div>
     )
   } else if (isBetting) {
-    actionBtn = (
-      <button className="av-betbtn av-cancelbtn-orange" onClick={onCancel}>Cancel ₨{betData.amount}</button>
-    )
+    actionBtn = <button className="av-betbtn av-cancelbtn-orange" onClick={onCancel}>Cancel ₨{betData.amount}</button>
   } else {
     actionBtn = (
       <div className="av-wait">
@@ -262,12 +261,7 @@ function BetPanel({ num, amt, setAmt, autoOn, setAutoOn, autoVal, setAutoVal, be
   )
 }
 
-function multColor(m) {
-  if (m >= 10) return 'var(--red)'
-  if (m >= 5) return 'var(--yellow)'
-  if (m >= 2) return 'var(--green)'
-  return '#fff'
-}
+// ── Helpers ───────────────────────────────────────────────────
 function histClass(v) {
   const n = typeof v === 'number' ? v : parseFloat(v)
   if (n >= 10) return 'av-pill-high'
@@ -275,6 +269,7 @@ function histClass(v) {
   return 'av-pill-low'
 }
 
+// ── Main Component ────────────────────────────────────────────
 export default function AviatorGame() {
   const navigate = useNavigate()
   const { user, isLoggedIn } = useAuth()
@@ -304,7 +299,6 @@ export default function AviatorGame() {
 
   const phaseRef = useRef('betting')
   const canvasRef = useRef(null)
-  const planeRef = useRef({ x: 0, y: 0, trail: [], fr: 0 })
 
   useEffect(() => {
     if (user?.balance !== undefined) setBal(user.balance)
@@ -315,7 +309,6 @@ export default function AviatorGame() {
   // ── WebSocket connection ──
   useEffect(() => {
     if (showLoading) return
-
     aviatorWS.connect()
 
     aviatorWS.on('game_state', (state) => {
@@ -356,7 +349,7 @@ export default function AviatorGame() {
     return () => {}
   }, [showLoading])
 
-  // Handle round transitions
+  // ── Round transitions ──
   const prevPhaseRef = useRef('betting')
   useEffect(() => {
     const prev = prevPhaseRef.current
@@ -370,14 +363,13 @@ export default function AviatorGame() {
         return entry
       }))
     }
-
     if (phase === 'betting' && prev === 'crashed') {
       setB1d(null)
       setB2d(null)
     }
   }, [phase])
 
-  // Loading animation
+  // ── Loading animation ──
   useEffect(() => {
     let prog = 0
     const tick = setInterval(() => {
@@ -394,7 +386,7 @@ export default function AviatorGame() {
     return () => clearInterval(tick)
   }, [])
 
-  // Exit popups
+  // ── Exit popups ──
   const addCashoutExit = useCallback((name, profit) => {
     exitCountRef.current++
     const id = `ex_${exitCountRef.current}_${Date.now()}`
@@ -419,12 +411,9 @@ export default function AviatorGame() {
     prevLiveRef.current = [...live]
   }, [live, addCashoutExit, user])
 
-  // ── Bet placement via backend API ──
+  // ── Bet placement ──
   const place = useCallback(async (num) => {
-    if (!isLoggedIn) {
-      navigate('/login', { state: { from: '/play/aviator' } })
-      return
-    }
+    if (!isLoggedIn) { navigate('/login', { state: { from: '/play/aviator' } }); return }
     const amount = num === 1 ? b1a : b2a
     if (amount < MIN_BET) { toast.error(`Min ₨${MIN_BET}`); return }
     if (amount > MAX_BET) { toast.error(`Max ₨${MAX_BET}`); return }
@@ -432,30 +421,20 @@ export default function AviatorGame() {
     if (phaseRef.current !== 'betting') { toast.error('Wait for next round'); return }
 
     const autoCashout = (num === 1 ? b1o : b2o) ? parseFloat(num === 1 ? b1v : b2v) : null
-
     setBal(prev => prev - amount)
 
     try {
       const response = await fetch(`${API_URL}/api/aviator/bet`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: user?.id,
-          username: user?.username || 'You',
-          amount,
-          autoCashout,
-          betNumber: num,
-        }),
+        body: JSON.stringify({ userId: user?.id, username: user?.username || 'You', amount, autoCashout, betNumber: num }),
       })
       const result = await response.json()
-
       if (result.success) {
         const entry = { id: result.bet.id, amount, autoCashout, cashed: null }
-        if (num === 1) setB1d(entry)
-        else setB2d(entry)
+        if (num === 1) setB1d(entry); else setB2d(entry)
         setMyHistory(prev => [{
-          amount, mult: null, won: false, profit: 0, pending: true,
-          betId: result.bet.id,
+          amount, mult: null, won: false, profit: 0, pending: true, betId: result.bet.id,
           time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
         }, ...prev].slice(0, 15))
         toast.success(`Bet ${num}: ₨${amount} placed`)
@@ -469,7 +448,7 @@ export default function AviatorGame() {
     }
   }, [isLoggedIn, b1a, b1o, b1v, b2a, b2o, b2v, bal, user, navigate, toast])
 
-  // ── Cashout via backend API ──
+  // ── Cashout ──
   const cashout = useCallback(async (num) => {
     if (phaseRef.current !== 'running') return
     const betData = num === 1 ? b1d : b2d
@@ -479,13 +458,9 @@ export default function AviatorGame() {
       const response = await fetch(`${API_URL}/api/aviator/cashout`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: user?.id,
-          betNum: num,
-        }),
+        body: JSON.stringify({ userId: user?.id, betNum: num }),
       })
       const result = await response.json()
-
       if (result.success) {
         const won = result.winAmount
         setBal(prev => prev + won)
@@ -512,10 +487,8 @@ export default function AviatorGame() {
     const betData = num === 1 ? b1d : b2d
     if (!betData) return
     if (phaseRef.current !== 'betting') { toast.error('Can only cancel during betting phase'); return }
-
     setBal(prev => prev + betData.amount)
-    if (num === 1) setB1d(null)
-    else setB2d(null)
+    if (num === 1) setB1d(null); else setB2d(null)
     setMyHistory(prev => prev.filter(entry => entry.betId !== betData.id))
     toast.success('Bet cancelled')
   }, [b1d, b2d, toast])
@@ -533,22 +506,23 @@ export default function AviatorGame() {
     planeImg.onload = () => { planeImgReady = true }
 
     const buildBg = (w, h) => {
-      const offCtx = document.createElement('canvas').getContext('2d')
-      offCtx.canvas.width = w; offCtx.canvas.height = h
-      const bc = offCtx.createLinearGradient(0, 0, 0, h)
-      bc.addColorStop(0, '#0c1220'); bc.addColorStop(1, '#060e1a')
-      offCtx.fillStyle = bc; offCtx.fillRect(0, 0, w, h)
-      offCtx.strokeStyle = 'rgba(255,255,255,0.022)'; offCtx.lineWidth = 1
-      for (let i = 0; i < w; i += 28) { offCtx.beginPath(); offCtx.moveTo(i, 0); offCtx.lineTo(i, h); offCtx.stroke() }
-      for (let i = 0; i < h; i += 28) { offCtx.beginPath(); offCtx.moveTo(0, i); offCtx.lineTo(w, i); offCtx.stroke() }
-      offCtx.fillStyle = 'rgba(255,255,255,0.12)'; offCtx.font = 'bold 10px monospace'
+      const off = document.createElement('canvas')
+      off.width = w; off.height = h
+      const c = off.getContext('2d')
+      const bg = c.createLinearGradient(0, 0, 0, h)
+      bg.addColorStop(0, '#0c1220'); bg.addColorStop(1, '#060e1a')
+      c.fillStyle = bg; c.fillRect(0, 0, w, h)
+      c.strokeStyle = 'rgba(255,255,255,0.022)'; c.lineWidth = 1
+      for (let i = 0; i < w; i += 28) { c.beginPath(); c.moveTo(i, 0); c.lineTo(i, h); c.stroke() }
+      for (let i = 0; i < h; i += 28) { c.beginPath(); c.moveTo(0, i); c.lineTo(w, i); c.stroke() }
+      c.fillStyle = 'rgba(255,255,255,0.12)'; c.font = 'bold 10px monospace'
       for (let i = 1; i <= 10; i++) {
         const y = h - (i / 10) * h * 0.84 - h * 0.07
-        offCtx.fillText(`${i}x`, 3, y + 3)
-        offCtx.strokeStyle = 'rgba(0,232,135,0.06)'
-        offCtx.beginPath(); offCtx.moveTo(20, y); offCtx.lineTo(w, y); offCtx.stroke()
+        c.fillText(`${i}x`, 3, y + 3)
+        c.strokeStyle = 'rgba(0,232,135,0.06)'
+        c.beginPath(); c.moveTo(20, y); c.lineTo(w, y); c.stroke()
       }
-      return offCtx.canvas
+      return off
     }
 
     let bgCanvas = buildBg(canvas.offsetWidth, canvas.offsetHeight)
@@ -584,29 +558,31 @@ export default function AviatorGame() {
         const endX = nx - 15, endY = ny + 5
         const cpx = (originX + endX) * 0.5, cpy = originY - (originY - endY) * 0.08
 
+        // Trail glow
         ctx.strokeStyle = 'rgba(0,255,157,0.18)'; ctx.lineWidth = 10; ctx.lineCap = 'round'
         ctx.beginPath(); ctx.moveTo(originX, originY); ctx.quadraticCurveTo(cpx, cpy, endX, endY); ctx.stroke()
+        // Trail line
         ctx.strokeStyle = '#00ff9d'; ctx.lineWidth = 3
         ctx.beginPath(); ctx.moveTo(originX, originY); ctx.quadraticCurveTo(cpx, cpy, endX, endY); ctx.stroke()
 
         planeX = nx; planeY = ny
 
+        // Draw plane image
         if (planeImgReady) {
           ctx.save()
           ctx.translate(nx, ny)
           ctx.rotate(-0.3)
           ctx.drawImage(planeImg, -40, -20, 80, 40)
           ctx.restore()
-        } else {
-          ctx.font = '32px sans-serif'
-          ctx.fillText('✈', nx - 16, ny + 10)
         }
 
+        // Multiplier text
         const mc = currentMult >= 10 ? '#ff4d4d' : currentMult >= 5 ? '#ffd600' : '#00e887'
         ctx.fillStyle = mc; ctx.font = 'bold 24px sans-serif'
         ctx.fillText(`${currentMult.toFixed(2)}x`, nx + 10, ny + 8)
       }
 
+      // Explosion on crash
       if (currentPhase === 'crashed' && planeX > 0) {
         for (let i = 0; i < 15; i++) {
           const ag = (i / 15) * Math.PI * 2
@@ -618,6 +594,7 @@ export default function AviatorGame() {
         ctx.globalAlpha = 1
       }
 
+      // Reset plane when not running
       if (currentPhase !== 'running') {
         if (planeX !== 0) { planeX = 0; planeY = 0; frameCount = 0 }
         bgCanvas = buildBg(W, H)
@@ -630,6 +607,7 @@ export default function AviatorGame() {
     return () => { window.removeEventListener('resize', resize); cancelAnimationFrame(raf) }
   }, [showLoading, phase, mult])
 
+  // ── Render ──
   return (
     <>
       <style>{CSS}</style>
@@ -638,11 +616,10 @@ export default function AviatorGame() {
 
         {!showLoading && (
           <>
+            {/* Header */}
             <div className="av-header">
               <div className="av-header-left">
-                <button className="av-back" onClick={() => navigate(-1)}>
-                  <ChevronLeft size={15} />
-                </button>
+                <button className="av-back" onClick={() => navigate(-1)}><ChevronLeft size={15} /></button>
                 <div className="av-logo">
                   <div className="av-logo-icon">✈</div>
                   <span className="av-logo-text">Aviator</span>
@@ -655,10 +632,9 @@ export default function AviatorGame() {
               </div>
             </div>
 
+            {/* Crash History */}
             <div className="av-history">
-              {hist.length === 0 && (
-                <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.18)', paddingRight: 6 }}>Waiting...</span>
-              )}
+              {hist.length === 0 && <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.18)', paddingRight: 6 }}>Waiting...</span>}
               {hist.map((h, i) => (
                 <div key={`${h}-${i}`} className={`av-pill ${histClass(h)}`}>
                   {typeof h === 'number' ? h.toFixed(2) : h}x
@@ -666,10 +642,14 @@ export default function AviatorGame() {
               ))}
             </div>
 
+            {/* Main Content */}
             <div className="av-main">
               <div className="av-top-row">
+                {/* Canvas */}
                 <div className="av-canvas">
                   <canvas ref={canvasRef} className="av-canvas-el" />
+
+                  {/* Exit popups */}
                   <div className="av-exit-layer">
                     {cashoutExits.map(e => (
                       <div key={e.id} className="av-exit-item" style={{ left: `${e.left}%`, top: `${e.top}%` }}>
@@ -679,6 +659,8 @@ export default function AviatorGame() {
                       </div>
                     ))}
                   </div>
+
+                  {/* Overlay: countdown / crash */}
                   <div className="av-overlay">
                     {phase === 'betting' && (
                       <div className="av-cd-box">
@@ -692,6 +674,7 @@ export default function AviatorGame() {
                   </div>
                 </div>
 
+                {/* Live Bets */}
                 <div className="av-live">
                   <div className="av-live-head">
                     <div className="av-live-dot" />
@@ -715,6 +698,7 @@ export default function AviatorGame() {
                 </div>
               </div>
 
+              {/* Bet Panels */}
               <div className="av-bets-row">
                 <div className="av-panel">
                   <BetPanel num={1} amt={b1a} setAmt={setB1a} autoOn={b1o} setAutoOn={setB1o} autoVal={b1v} setAutoVal={setB1v} betData={b1d} phase={phase} mult={mult} bal={bal} onPlace={() => place(1)} onCash={() => cashout(1)} onCancel={() => cancelBet(1)} />
@@ -724,6 +708,7 @@ export default function AviatorGame() {
                 </div>
               </div>
 
+              {/* My Betting History */}
               <div className="av-my-history">
                 <span className="av-my-history-title">My Bets</span>
                 {myHistory.length === 0 ? (
