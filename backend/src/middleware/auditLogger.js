@@ -3,15 +3,16 @@
  * Logs all admin actions to the audit_logs table and broadcasts via WebSocket
  */
 
+import { WebSocketServer } from 'ws'
 import { supabase } from '../lib/supabase.js'
 
 let auditClients = new Set()
+let auditWss = null
 
 export function initAuditWebSocket(server) {
-  const { WebSocketServer } = await import('ws')
-  const wss = new WebSocketServer({ server, path: '/ws/audit' })
+  auditWss = new WebSocketServer({ server, path: '/ws/audit' })
 
-  wss.on('connection', (ws) => {
+  auditWss.on('connection', (ws) => {
     auditClients.add(ws)
 
     ws.on('close', () => {
@@ -23,7 +24,7 @@ export function initAuditWebSocket(server) {
     })
   })
 
-  return wss
+  return auditWss
 }
 
 export function broadcastAudit(event) {
