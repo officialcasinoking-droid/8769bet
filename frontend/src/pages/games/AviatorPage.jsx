@@ -247,8 +247,8 @@ export default function AviatorPage() {
     }
     
     aviatorWS.on('game_state', handleGameState)
-    aviatorWS.on('bets_update', (bets) => {
-      setAllBets(bets || [])
+    aviatorWS.on('bets_update', (data) => {
+      setAllBets(Array.isArray(data) ? data : (data?.bets || []))
     })
     
     // NOW connect - will receive initial state with handlers ready

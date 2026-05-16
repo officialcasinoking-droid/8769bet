@@ -238,12 +238,12 @@ function startGameLoop() {
     if (gameState.phase === 'betting') {
       const elapsed = (now - gameState.startTime) / 1000
       const remaining = Math.max(0, WAIT_TIME_SECONDS - elapsed)
-      gameState.countdown = remaining
+      gameState.countdown = parseFloat(remaining.toFixed(1))
 
       broadcast({
         type: 'game_state',
         phase: 'betting',
-        countdown: remaining,
+        countdown: gameState.countdown,
         roundId: gameState.roundId,
       })
 
