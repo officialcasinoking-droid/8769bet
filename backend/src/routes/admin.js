@@ -10,7 +10,7 @@ import { supabase } from '../lib/supabase.js'
 import { logAudit } from '../middleware/auditLogger.js'
 
 const router = express.Router()
-const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-in-production'
+const JWT_SECRET = process.env.JWT_SECRET || 'fallback-secret-change-in-production'
 
 // Admin login endpoint
 router.post('/login', async (req, res) => {
