@@ -532,6 +532,25 @@ export default function AviatorGame() {
     let planeImgReady = false
     planeImg.onload = () => { planeImgReady = true }
 
+    const buildBg = (w, h) => {
+      const offCtx = document.createElement('canvas').getContext('2d')
+      offCtx.canvas.width = w; offCtx.canvas.height = h
+      const bc = offCtx.createLinearGradient(0, 0, 0, h)
+      bc.addColorStop(0, '#0c1220'); bc.addColorStop(1, '#060e1a')
+      offCtx.fillStyle = bc; offCtx.fillRect(0, 0, w, h)
+      offCtx.strokeStyle = 'rgba(255,255,255,0.022)'; offCtx.lineWidth = 1
+      for (let i = 0; i < w; i += 28) { offCtx.beginPath(); offCtx.moveTo(i, 0); offCtx.lineTo(i, h); offCtx.stroke() }
+      for (let i = 0; i < h; i += 28) { offCtx.beginPath(); offCtx.moveTo(0, i); offCtx.lineTo(w, i); offCtx.stroke() }
+      offCtx.fillStyle = 'rgba(255,255,255,0.12)'; offCtx.font = 'bold 10px monospace'
+      for (let i = 1; i <= 10; i++) {
+        const y = h - (i / 10) * h * 0.84 - h * 0.07
+        offCtx.fillText(`${i}x`, 3, y + 3)
+        offCtx.strokeStyle = 'rgba(0,232,135,0.06)'
+        offCtx.beginPath(); offCtx.moveTo(20, y); offCtx.lineTo(w, y); offCtx.stroke()
+      }
+      return offCtx.canvas
+    }
+
     let bgCanvas = buildBg(canvas.offsetWidth, canvas.offsetHeight)
 
     const resize = () => {
