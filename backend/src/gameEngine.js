@@ -10,8 +10,10 @@ import { supabase } from './lib/supabase.js'
 let supabaseAvailable = true
 
 // ── Game Configuration ───────────────────────────────────────
-const WAIT_TIME_SECONDS = 8 // Betting phase duration
-const TICK_INTERVAL_MS = 33 // ~30fps
+const WAIT_TIME_SECONDS = 8
+const TICK_INTERVAL_MS = 33
+const CRASH_DELAY_MS = 3000
+const STATE_BROADCAST_MS = 100
 
 // ── Game State ───────────────────────────────────────────────
 let gameState = {
@@ -100,6 +102,7 @@ let gameLoop = null
 let saveInterval = null
 const SAVE_INTERVAL_MS = 5000 // Save state every 5 seconds
 let manualCrashRequested = false
+let lastStateBroadcast = 0
 
 // ── Crash Point Generation ───────────────────────────────────
 function generateCrashPoint(houseEdge = 0.05) {
@@ -254,18 +257,22 @@ function startGameLoop() {
       const elapsed = (now - gameState.startTime) / 1000
       const mult = parseFloat(Math.pow(Math.E, 0.06 * elapsed).toFixed(2))
 
-      // Check auto-cashouts
+      // Check auto-cashouts and track if any changed
+      let betsChanged = false
       currentBets.forEach(bet => {
         if (!bet.cashedOut && bet.autoCashout && mult >= bet.autoCashout) {
           bet.cashedOut = true
-          bet.cashoutMult = mult
-          bet.winAmount = Math.floor(bet.amount * mult)
+          bet.cashoutMult = parseFloat(bet.autoCashout.toFixed(2))
+          bet.winAmount = Math.floor(bet.amount * bet.autoCashout)
           bet.status = 'won'
+          betsChanged = true
         }
       })
 
-      // Broadcast bet updates
-      broadcast({ type: 'bets_update', bets: currentBets })
+      // Only broadcast bets when something actually changed
+      if (betsChanged) {
+        broadcast({ type: 'bets_update', bets: currentBets })
+      }
 
       // Check manual crash
       if (manualCrashRequested) {
@@ -295,12 +302,16 @@ function startGameLoop() {
 
       gameState.mult = parseFloat(mult.toFixed(2))
 
-      broadcast({
-        type: 'game_state',
-        phase: 'flying',
-        mult: gameState.mult,
-        roundId: gameState.roundId,
-      })
+      // Throttle state broadcast to reduce network load
+      if (now - lastStateBroadcast >= STATE_BROADCAST_MS) {
+        lastStateBroadcast = now
+        broadcast({
+          type: 'game_state',
+          phase: 'flying',
+          mult: gameState.mult,
+          roundId: gameState.roundId,
+        })
+      }
     }
   }, TICK_INTERVAL_MS)
 }
