@@ -185,10 +185,18 @@ async function loadGameState() {
       // Restore valid in-progress game
       gameState.phase = data.phase
       gameState.mult = data.mult || 1.00
-      gameState.countdown = data.countdown || 8
       gameState.crashPoint = data.crash_point || 0
       gameState.roundId = data.round_id || ''
-      gameState.startTime = startTime
+      
+      // If betting phase, reset startTime to now so countdown works correctly
+      if (data.phase === 'betting') {
+        gameState.startTime = Date.now()
+        gameState.countdown = WAIT_TIME_SECONDS
+      } else {
+        // Flying phase - keep original startTime to continue multiplier
+        gameState.startTime = startTime
+        gameState.countdown = data.countdown || 8
+      }
       
       if (data.bets) currentBets = data.bets
       if (data.settings) Object.assign(settings, data.settings)
