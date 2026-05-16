@@ -4,8 +4,16 @@ import dotenv from 'dotenv'
 import { createServer } from 'http'
 import authRoutes from './routes/auth.js'
 import adminRoutes from './routes/admin.js'
+import userRoutes from './routes/users.js'
+import auditRoutes from './routes/audit.js'
+import adminAccountRoutes from './routes/admin-accounts.js'
+import securityRoutes from './routes/security.js'
+import supportRoutes from './routes/support.js'
 import { landingContent } from './store.js'
 import { initGameEngine, getCurrentState, requestManualCrash, updateSettings, placeBet, cashoutBet } from './gameEngine.js'
+import { authenticateAdmin, getRequiredRoleForPath, requireRole } from './middleware/auth.js'
+import { createAuditMiddleware } from './middleware/auditLogger.js'
+import { createLoginRateLimiter } from './middleware/rateLimiter.js'
 
 dotenv.config()
 
@@ -17,9 +25,21 @@ app.get('/', (req, res) => {
   res.json({ status: 'ok', message: '8769bet backend running' })
 })
 
-// Simple CORS - allow all for now
+// Simple CORS - allow specific origins
+const ALLOWED_ORIGINS = [
+  'https://eight769bet.onrender.com',
+  'https://eight769bet-frontend.onrender.com',
+  'https://eight769bet-admin.onrender.com',
+  'http://localhost:5173',
+  'http://localhost:5174',
+  'http://localhost:3000'
+]
+
 app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*')
+  const origin = req.headers.origin
+  if (ALLOWED_ORIGINS.includes(origin)) {
+    res.header('Access-Control-Allow-Origin', origin)
+  }
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH')
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization')
   if (req.method === 'OPTIONS') {
@@ -33,9 +53,22 @@ app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
 app.use('/public', express.static('public'))
 
+// Login rate limiter
+const loginLimiter = createLoginRateLimiter()
+app.use('/api/auth/login', loginLimiter)
+
+// Audit middleware for admin routes
+app.use('/api/admin', createAuditMiddleware())
+
 // Routes
 app.use('/api/auth', authRoutes)
 app.use('/api/admin', adminRoutes)
+app.use('/api/admin/users', authenticateAdmin, userRoutes)
+app.use('/api/admin/audit', authenticateAdmin, auditRoutes)
+app.use('/api/admin/accounts', authenticateAdmin, adminAccountRoutes)
+app.use('/api/admin/security', authenticateAdmin, securityRoutes)
+app.use('/api/admin/support', authenticateAdmin, supportRoutes)
+app.use('/api/support', supportRoutes)
 
 // Public landing page endpoint
 app.get('/api/landing', (req, res) => {

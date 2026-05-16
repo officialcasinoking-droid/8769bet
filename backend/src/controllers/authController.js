@@ -5,6 +5,8 @@ import { v4 as uuidv4 } from 'uuid'
 import UserModel from '../models/User.js'
 import emailService from '../services/emailService.js'
 import { supabase } from '../lib/supabase.js'
+import { logAudit } from '../middleware/auditLogger.js'
+import { recordLoginAttempt, isAccountLocked, getLockoutRemaining, clearLoginAttempts } from '../middleware/rateLimiter.js'
 import dotenv from 'dotenv'
 
 dotenv.config()
@@ -20,31 +22,62 @@ export const login = async (req, res) => {
     }
 
     const { username, password } = req.body
+    const ipAddress = req.ip || req.connection.remoteAddress
+    const userAgent = req.headers['user-agent']
 
-    // Find user by email or username
+    const lockoutRemaining = getLockoutRemaining(username)
+    if (lockoutRemaining > 0) {
+      return res.status(429).json({
+        error: 'Too many failed login attempts',
+        locked: true,
+        retryAfter: Math.ceil(lockoutRemaining / 1000)
+      })
+    }
+
     const user = await UserModel.findByCredential(username)
 
     if (!user) {
+      recordLoginAttempt(username, false)
+      await supabase.from('login_attempts').insert({ username, ip_address: ipAddress, user_agent: userAgent, success: false })
+      await logAudit({ actorType: 'user', action: 'login_failed', details: { username, reason: 'user_not_found' }, ipAddress, userAgent, success: false })
       return res.status(401).json({ error: 'Invalid credentials' })
     }
 
-    // Check if account is active
     if (user.status === 'banned' || user.status === 'suspended') {
+      recordLoginAttempt(username, false)
+      await supabase.from('login_attempts').insert({ username, ip_address: ipAddress, user_agent: userAgent, success: false })
       return res.status(403).json({ error: 'Account is suspended or banned' })
+    }
+
+    if (user.is_locked && user.locked_until && new Date(user.locked_until) > new Date()) {
+      recordLoginAttempt(username, false)
+      return res.status(403).json({ error: 'Account is locked', lockedUntil: user.locked_until })
     }
 
     const isValidPassword = await bcrypt.compare(password, user.password_hash)
     if (!isValidPassword) {
+      recordLoginAttempt(username, false)
+      await supabase.from('login_attempts').insert({ username, ip_address: ipAddress, user_agent: userAgent, success: false })
+      await supabase.from('users').update({ failed_login_count: (user.failed_login_count || 0) + 1 }).eq('id', user.id)
+      await logAudit({ actorType: 'user', action: 'login_failed', targetId: user.id, targetUsername: user.username, details: { reason: 'invalid_password' }, ipAddress, userAgent, success: false })
       return res.status(401).json({ error: 'Invalid credentials' })
     }
 
+    clearLoginAttempts(username)
+    await supabase.from('login_attempts').insert({ username, ip_address: ipAddress, user_agent: userAgent, success: true })
+    await supabase.from('users').update({
+      last_login: new Date().toISOString(),
+      last_login_ip: ipAddress,
+      login_count: (user.login_count || 0) + 1,
+      failed_login_count: 0,
+      is_locked: false,
+      locked_until: null
+    }).eq('id', user.id)
+
+    await logAudit({ actorType: 'user', action: 'login_success', targetId: user.id, targetUsername: user.username, ipAddress, userAgent })
+
     const token = jwt.sign(
-      { 
-        id: user.id, 
-        username: user.username, 
-        email: user.email, 
-        role: user.role || 'user' 
-      },
+      { id: user.id, username: user.username, email: user.email, role: user.role || 'user' },
       JWT_SECRET,
       { expiresIn: JWT_EXPIRES_IN }
     )
