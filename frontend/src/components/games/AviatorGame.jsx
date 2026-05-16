@@ -527,25 +527,10 @@ export default function AviatorGame() {
     const ctx = canvas.getContext('2d')
 
     let W = 0, H = 0, planeX = 0, planeY = 0, frameCount = 0
-
-    const buildBg = (w, h) => {
-      const offCtx = document.createElement('canvas').getContext('2d')
-      offCtx.canvas.width = w; offCtx.canvas.height = h
-      const bc = offCtx.createLinearGradient(0, 0, 0, h)
-      bc.addColorStop(0, '#0c1220'); bc.addColorStop(1, '#060e1a')
-      offCtx.fillStyle = bc; offCtx.fillRect(0, 0, w, h)
-      offCtx.strokeStyle = 'rgba(255,255,255,0.022)'; offCtx.lineWidth = 1
-      for (let i = 0; i < w; i += 28) { offCtx.beginPath(); offCtx.moveTo(i, 0); offCtx.lineTo(i, h); offCtx.stroke() }
-      for (let i = 0; i < h; i += 28) { offCtx.beginPath(); offCtx.moveTo(0, i); offCtx.lineTo(w, i); offCtx.stroke() }
-      offCtx.fillStyle = 'rgba(255,255,255,0.12)'; offCtx.font = 'bold 10px monospace'
-      for (let i = 1; i <= 10; i++) {
-        const y = h - (i / 10) * h * 0.84 - h * 0.07
-        offCtx.fillText(`${i}x`, 3, y + 3)
-        offCtx.strokeStyle = 'rgba(0,232,135,0.06)'
-        offCtx.beginPath(); offCtx.moveTo(20, y); offCtx.lineTo(w, y); offCtx.stroke()
-      }
-      return offCtx.canvas
-    }
+    const planeImg = new Image()
+    planeImg.src = '/img/aviator_jogo.png'
+    let planeImgReady = false
+    planeImg.onload = () => { planeImgReady = true }
 
     let bgCanvas = buildBg(canvas.offsetWidth, canvas.offsetHeight)
 
@@ -587,9 +572,16 @@ export default function AviatorGame() {
 
         planeX = nx; planeY = ny
 
-        // Draw plane emoji
-        ctx.font = '32px sans-serif'
-        ctx.fillText('✈', nx - 16, ny + 10)
+        if (planeImgReady) {
+          ctx.save()
+          ctx.translate(nx, ny)
+          ctx.rotate(-0.3)
+          ctx.drawImage(planeImg, -40, -20, 80, 40)
+          ctx.restore()
+        } else {
+          ctx.font = '32px sans-serif'
+          ctx.fillText('✈', nx - 16, ny + 10)
+        }
 
         const mc = currentMult >= 10 ? '#ff4d4d' : currentMult >= 5 ? '#ffd600' : '#00e887'
         ctx.fillStyle = mc; ctx.font = 'bold 24px sans-serif'
