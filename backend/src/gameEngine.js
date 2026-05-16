@@ -7,6 +7,8 @@
 import { WebSocketServer } from 'ws'
 import { supabase } from './lib/supabase.js'
 
+let supabaseAvailable = true
+
 // ── Game Configuration ───────────────────────────────────────
 const WAIT_TIME_SECONDS = 8 // Betting phase duration
 const TICK_INTERVAL_MS = 33 // ~30fps
@@ -127,6 +129,7 @@ function broadcast(data) {
 
 // ── Game State Persistence ────────────────────────────
 async function saveGameState() {
+  if (!supabaseAvailable) return
   try {
     const stateToSave = {
       id: 'current',
@@ -150,13 +153,16 @@ async function saveGameState() {
 
     if (error) {
       console.error('[GameEngine] Failed to save state:', error.message)
+      supabaseAvailable = false
     }
   } catch (err) {
     console.error('[GameEngine] Save state exception:', err.message)
+    supabaseAvailable = false
   }
 }
 
 async function loadGameState() {
+  if (!supabaseAvailable) return false
   try {
     const { data, error } = await supabase
       .from('aviator_game_state')
@@ -169,31 +175,25 @@ async function loadGameState() {
       return false
     }
 
-    // Check if saved state is from a valid (non-crashed) round
-    // Also check if the round is too old (> 2 minutes = expired)
     const now = Date.now()
     const isBetting = data.phase === 'betting'
     const isFlying = data.phase === 'flying'
     const isValidPhase = isBetting || isFlying
     
-    // Calculate how old the state is (in milliseconds)
     const startTime = data.start_time ? new Date(data.start_time).getTime() : data.timestamp || now
     const ageMs = now - startTime
-    const isNotExpired = ageMs < 120000 // Less than 2 minutes old
+    const isNotExpired = ageMs < 120000
 
     if (isValidPhase && isNotExpired) {
-      // Restore valid in-progress game
       gameState.phase = data.phase
       gameState.mult = data.mult || 1.00
       gameState.crashPoint = data.crash_point || 0
       gameState.roundId = data.round_id || ''
       
-      // If betting phase, reset startTime to now so countdown works correctly
       if (data.phase === 'betting') {
         gameState.startTime = Date.now()
         gameState.countdown = WAIT_TIME_SECONDS
       } else {
-        // Flying phase - keep original startTime to continue multiplier
         gameState.startTime = startTime
         gameState.countdown = data.countdown || 8
       }
@@ -211,6 +211,7 @@ async function loadGameState() {
     return false
   } catch (err) {
     console.error('[GameEngine] Load state exception:', err.message)
+    supabaseAvailable = false
     return false
   }
 }
@@ -313,6 +314,7 @@ function startFlying() {
     type: 'game_state',
     phase: 'flying',
     mult: 1.00,
+    crashPoint: gameState.crashPoint,
     roundId: gameState.roundId,
   })
 }
@@ -321,16 +323,6 @@ function crashRound(crashPoint, reason = 'natural') {
   gameState.phase = 'crashed'
   gameState.crashPoint = parseFloat(crashPoint.toFixed(2))
   gameState.crashedAt = Date.now()
-
-  // Clear intervals
-  if (saveInterval) {
-    clearInterval(saveInterval)
-    saveInterval = null
-  }
-  if (gameLoop) {
-    clearInterval(gameLoop)
-    gameLoop = null
-  }
 
   // Save final state
   saveGameState()
@@ -346,14 +338,12 @@ function crashRound(crashPoint, reason = 'natural') {
 
   currentBets.forEach(bet => {
     if (!bet.cashedOut) {
-      // Check if this bet had auto-cashout and reached it
       if (bet.autoCashout && currentMult >= bet.autoCashout) {
         bet.cashedOut = true
         bet.cashoutMult = currentMult
         bet.winAmount = Math.floor(bet.amount * currentMult)
         bet.status = 'won'
       } else {
-        // Lost
         bet.status = 'lost'
       }
     }
@@ -367,6 +357,7 @@ function crashRound(crashPoint, reason = 'natural') {
     type: 'game_state',
     phase: 'crashed',
     crash_point: gameState.crashPoint,
+    crashPoint: gameState.crashPoint,
     reason,
     roundId: gameState.roundId,
     bets: currentBets,
@@ -399,6 +390,9 @@ function startNewRound() {
 
   // Schedule bot bets during betting phase
   scheduleBotBets()
+
+  // Restart the game loop
+  startGameLoop()
 }
 
 let botBetTimeouts = []
@@ -410,8 +404,11 @@ function scheduleBotBets() {
 
   if (gameState.phase !== 'betting') return
 
+  // Vary bot count between 10-15
+  const botCount = Math.floor(Math.random() * 6) + 10
+
   // Generate bot bets with random delays
-  for (let i = 0; i < BOT_COUNT; i++) {
+  for (let i = 0; i < botCount; i++) {
     const delay = Math.random() * WAIT_TIME_SECONDS * 800
     const timeout = setTimeout(() => {
       if (gameState.phase === 'betting') {
@@ -451,6 +448,7 @@ function placeBet(betData) {
     cashoutMult: null,
     winAmount: 0,
     status: 'pending',
+    betNum: betData.betNumber || 1,
   }
 
   currentBets.push(bet)
@@ -506,6 +504,8 @@ function updateSettings(newSettings) {
 function getCurrentState() {
   return {
     ...gameState,
+    crashPoint: gameState.crashPoint,
+    crash_point: gameState.crashPoint,
     settings: { ...settings },
     crashHistory: [...crashHistory],
     bets: [...currentBets],
@@ -590,7 +590,6 @@ async function initGameEngine(server) {
     // No saved state - start fresh
     console.log('[GameEngine] Starting fresh game')
     startNewRound()
-    startGameLoop()
   }
 
   console.log('[GameEngine] WebSocket server started on /ws/aviator')

@@ -2,13 +2,14 @@ import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { Button, FormField, Input, Select } from '../../components/ui/FormElements'
-import { supabase } from '../../lib/supabase'
 import {
   ArrowLeft, Zap, Users, Bot, TrendingUp, TrendingDown,
   Clock, Settings, Shield, Eye, Loader2, ExternalLink,
   MessageSquare, Send, Play, RotateCcw, BarChart3, AlertTriangle,
   Check, X, ChevronRight, Lightbulb, Target
 } from 'lucide-react'
+
+const BACKEND_URL = import.meta.env.VITE_API_URL || 'https://8769bet-backend.onrender.com'
 
 // ── AI Assistant Messages ────────────────────────────────────
 const AI_MESSAGES = {
@@ -312,9 +313,9 @@ function GameCanvas({ phase, mult, countdown, crashPoint }) {
 export default function GameControlPanel() {
   const { slug } = useParams()
   const navigate = useNavigate()
-  const channelRef = useRef(null)
+  const wsRef = useRef(null)
 
-  // Game state from Supabase
+  // Game state from backend WebSocket
   const [phase, setPhase] = useState('betting')
   const [mult, setMult] = useState(1.00)
   const [countdown, setCountdown] = useState(8)
@@ -323,7 +324,7 @@ export default function GameControlPanel() {
 
   // Settings
   const [settings, setSettings] = useState({
-    house_edge: 5,
+    house_edge: 0.05,
     he_mode: 'off',
     he_target_pct: 5,
     he_min_secs: 3,
@@ -333,52 +334,30 @@ export default function GameControlPanel() {
   // Crash history
   const [crashHistory, setCrashHistory] = useState([])
 
-  // ── Supabase Realtime Subscription ─────────────────────────
+  // ── WebSocket Connection to Backend ─────────────────────────
   useEffect(() => {
     const fetchInitialState = async () => {
       try {
-        // Get game state
-        const { data: state } = await supabase
-          .from('aviator_game_state')
-          .select('*')
-          .eq('id', 'current')
-          .single()
-
-        if (state) {
-          setPhase(state.phase)
+        const response = await fetch(`${BACKEND_URL}/api/admin/game/state`)
+        if (response.ok) {
+          const state = await response.json()
+          setPhase(state.phase || 'betting')
           if (state.phase === 'betting') {
-            setCountdown(parseFloat(state.countdown))
+            setCountdown(parseFloat(state.countdown) || 8)
             setMult(1.00)
           } else if (state.phase === 'flying') {
-            setMult(parseFloat(state.multiplier))
+            setMult(parseFloat(state.mult) || 1.00)
           } else if (state.phase === 'crashed') {
-            setCrashPoint(parseFloat(state.crash_point))
+            setCrashPoint(parseFloat(state.crash_point || state.crashPoint) || 0)
           }
+          if (state.settings) {
+            setSettings(prev => ({ ...prev, ...state.settings }))
+          }
+          if (state.crashHistory) {
+            setCrashHistory(state.crashHistory.map(h => typeof h === 'object' ? parseFloat(h.crash_point || h) : parseFloat(h)))
+          }
+          setConnected(true)
         }
-
-        // Get settings
-        const { data: settingsData } = await supabase
-          .from('aviator_settings')
-          .select('*')
-          .eq('id', 'config')
-          .single()
-
-        if (settingsData) {
-          setSettings(settingsData)
-        }
-
-        // Get crash history
-        const { data: history } = await supabase
-          .from('aviator_crash_history')
-          .select('crash_point')
-          .order('created_at', { ascending: false })
-          .limit(30)
-
-        if (history) {
-          setCrashHistory(history.map(h => h.crash_point))
-        }
-
-        setConnected(true)
       } catch (e) {
         console.error('[GameControl] Failed to fetch initial state:', e)
       }
@@ -386,44 +365,56 @@ export default function GameControlPanel() {
 
     fetchInitialState()
 
-    // Subscribe to realtime updates
-    const channel = supabase.channel('aviator-admin')
-      .on('postgres_changes', {
-        event: '*',
-        schema: 'public',
-        table: 'aviator_game_state'
-      }, (payload) => {
-        console.log('[GameControl] Game state changed:', payload.new)
-        const state = payload.new
-        setPhase(state.phase)
-        if (state.phase === 'betting') {
-          setCountdown(parseFloat(state.countdown))
-          setMult(1.00)
-        } else if (state.phase === 'flying') {
-          setMult(parseFloat(state.multiplier))
-        } else if (state.phase === 'crashed') {
-          setCrashPoint(parseFloat(state.crash_point))
-          setCrashHistory(prev => [parseFloat(state.crash_point), ...prev].slice(0, 30))
-        }
-        setConnected(true)
-      })
-      .on('postgres_changes', {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'aviator_crash_history'
-      }, (payload) => {
-        console.log('[GameControl] New crash:', payload.new)
-        setCrashHistory(prev => [payload.new.crash_point, ...prev].slice(0, 30))
-      })
-      .subscribe((status) => {
-        console.log('[GameControl] Realtime status:', status)
-      })
+    // Connect to WebSocket for real-time updates
+    const wsUrl = BACKEND_URL.replace('http', 'ws') + '/ws/aviator'
+    const ws = new WebSocket(wsUrl)
 
-    channelRef.current = channel
+    ws.onopen = () => {
+      console.log('[GameControl] WebSocket connected')
+      setConnected(true)
+    }
+
+    ws.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data)
+        if (msg.type === 'game_state') {
+          if (msg.phase === 'betting') {
+            setPhase('betting')
+            setCountdown(parseFloat(msg.countdown) || 8)
+            setMult(1.00)
+          } else if (msg.phase === 'flying') {
+            setPhase('flying')
+            setMult(parseFloat(msg.mult) || 1.00)
+          } else if (msg.phase === 'crashed') {
+            setPhase('crashed')
+            const cp = parseFloat(msg.crash_point || msg.crashPoint) || 0
+            setCrashPoint(cp)
+            setCrashHistory(prev => [cp, ...prev].slice(0, 30))
+          }
+          if (msg.settings) {
+            setSettings(prev => ({ ...prev, ...msg.settings }))
+          }
+        }
+      } catch (e) {
+        console.error('[GameControl] WS parse error:', e)
+      }
+    }
+
+    ws.onerror = (err) => {
+      console.error('[GameControl] WebSocket error:', err)
+      setConnected(false)
+    }
+
+    ws.onclose = () => {
+      console.log('[GameControl] WebSocket disconnected')
+      setConnected(false)
+    }
+
+    wsRef.current = ws
 
     return () => {
-      if (channelRef.current) {
-        supabase.removeChannel(channelRef.current)
+      if (wsRef.current) {
+        wsRef.current.close()
       }
     }
   }, [])
@@ -431,10 +422,10 @@ export default function GameControlPanel() {
   // ── Controls ───────────────────────────────────────────────
   const handleManualCrash = async () => {
     try {
-      const { data, error } = await supabase.functions.invoke('aviator-game-engine', {
-        body: { action: 'force_crash' }
+      const response = await fetch(`${BACKEND_URL}/api/admin/game/crash`, {
+        method: 'POST',
       })
-      if (!error && data?.success) {
+      if (response.ok) {
         console.log('[GameControl] Crash forced')
       }
     } catch (e) {
@@ -444,21 +435,20 @@ export default function GameControlPanel() {
 
   const handleSaveSettings = async () => {
     try {
-      const { data, error } = await supabase
-        .from('aviator_settings')
-        .update({
-          house_edge: settings.house_edge,
-          he_mode: settings.he_mode,
-          he_target_pct: settings.he_target_pct,
-          he_min_secs: settings.he_min_secs,
-          he_max_secs: settings.he_max_secs,
-          updated_at: new Date().toISOString()
+      const response = await fetch(`${BACKEND_URL}/api/admin/game/settings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          settings: {
+            houseEdge: settings.house_edge,
+            heMode: settings.he_mode,
+            heTargetPct: settings.he_target_pct,
+            heMinSecs: settings.he_min_secs,
+            heMaxSecs: settings.he_max_secs,
+          }
         })
-        .eq('id', 'config')
-        .select()
-        .single()
-
-      if (!error) {
+      })
+      if (response.ok) {
         console.log('[GameControl] Settings saved')
       }
     } catch (e) {
@@ -468,10 +458,10 @@ export default function GameControlPanel() {
 
   const handleNewRound = async () => {
     try {
-      const { data, error } = await supabase.functions.invoke('aviator-game-engine', {
-        body: { action: 'new_round' }
+      const response = await fetch(`${BACKEND_URL}/api/admin/game/new-round`, {
+        method: 'POST',
       })
-      if (!error && data?.success) {
+      if (response.ok) {
         console.log('[GameControl] New round started')
       }
     } catch (e) {

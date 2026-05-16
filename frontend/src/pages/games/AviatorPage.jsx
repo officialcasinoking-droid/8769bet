@@ -13,9 +13,6 @@ const GAME_STATE = {
   CRASHED: 'crashed'
 }
 
-const TICK_INTERVAL = 50
-const WAIT_TIME = 8000
-
 const QUICK_AMOUNTS = [6, 10, 20, 50, 100, 200, 500]
 
 const BOT_NAMES = [
@@ -171,11 +168,9 @@ export default function AviatorPage() {
   // Game state
   const [gameState, setGameState] = useState(GAME_STATE.WAITING)
   const [multiplier, setMultiplier] = useState(1.00)
-  const [recentCrashes, setRecentCrashes] = useState([
-    1.23, 4.56, 2.10, 8.92, 1.45, 15.67, 3.21, 6.78, 2.34, 1.02, 9.45, 4.12, 1.89, 7.65, 2.45
-  ])
+  const [recentCrashes, setRecentCrashes] = useState([])
   const [roundId, setRoundId] = useState(0)
-  const [countdown, setCountdown] = useState(WAIT_TIME / 1000)
+  const [countdown, setCountdown] = useState(8)
 
   // Dual bets - two separate bet panels
   const [bets, setBets] = useState([null, null])
@@ -189,18 +184,6 @@ export default function AviatorPage() {
   const animationRef = useRef(null)
   const gameLoopRef = useRef(null)
   const planeRef = useRef({ x: 0, y: 0, trail: [] })
-  const startTimeRef = useRef(0)
-  const crashPointRef = useRef(0)
-
-  const generateCrashPoint = useCallback(() => {
-    const rand = Math.random()
-    if (rand < 0.40) return 1.00 + Math.random() * 0.50
-    if (rand < 0.65) return 1.50 + Math.random() * 1.00
-    if (rand < 0.80) return 2.50 + Math.random() * 2.00
-    if (rand < 0.92) return 4.50 + Math.random() * 5.50
-    if (rand < 0.98) return 10.00 + Math.random() * 15.00
-    return 25.00 + Math.random() * 25.00
-  }, [])
 
   // Sync with backend on mount
   useEffect(() => {
@@ -218,10 +201,9 @@ export default function AviatorPage() {
         } else if (state.phase === 'flying') {
           setGameState(GAME_STATE.RUNNING)
           setMultiplier(state.mult || 1.00)
-          crashPointRef.current = state.crash_point || state.crashPoint || 0
         } else if (state.phase === 'crashed') {
           setGameState(GAME_STATE.CRASHED)
-          setMultiplier(state.crash_point || 1.00)
+          setMultiplier(state.crash_point || state.crashPoint || 1.00)
         }
         if (state.roundId) setRoundId(state.roundId)
         if (state.crashHistory) {
@@ -240,14 +222,26 @@ export default function AviatorPage() {
         setGameState(GAME_STATE.WAITING)
         setCountdown(state.countdown || 8)
         setMultiplier(1.00)
+        setHasBets([false, false])
+        setBets([null, null])
+        planeRef.current = { x: 0, y: 0, trail: [] }
       } else if (state.phase === 'flying') {
         setGameState(GAME_STATE.RUNNING)
         setMultiplier(state.mult || 1.00)
-        crashPointRef.current = state.crash_point || state.crashPoint || 0
       } else if (state.phase === 'crashed') {
         setGameState(GAME_STATE.CRASHED)
-        setMultiplier(state.crash_point || 1.00)
-        setRecentCrashes(prev => [state.crash_point, ...prev].slice(0, 15))
+        const crashVal = state.crash_point || state.crashPoint || 1.00
+        setMultiplier(crashVal)
+        setRecentCrashes(prev => {
+          const updated = [crashVal, ...prev]
+          return updated.slice(0, 15)
+        })
+        // Auto-reset to WAITING after 3 seconds
+        setTimeout(() => {
+          setGameState(GAME_STATE.WAITING)
+          setCountdown(8)
+          setMultiplier(1.00)
+        }, 3000)
       }
       if (state.roundId) setRoundId(state.roundId)
     }
@@ -262,29 +256,6 @@ export default function AviatorPage() {
     
     return () => {}
   }, [])
-
-  const startNewRound = useCallback(() => {
-    // This now just resets local UI state - backend controls the actual game
-    setGameState(GAME_STATE.WAITING)
-    setMultiplier(1.00)
-    setHasBets([false, false])
-    setBets([null, null])
-    setAllBets([])
-    planeRef.current = { x: 0, y: 0, trail: [] }
-  }, [])
-
-  const startGame = useCallback(() => {
-    // Backend controls the game - we just update UI state
-    setGameState(GAME_STATE.RUNNING)
-    startTimeRef.current = Date.now()
-    setRoundId(prev => prev + 1)
-  }, [])
-
-  const crashGame = useCallback(() => {
-    // Backend controls the crash - we just update UI
-    setGameState(GAME_STATE.CRASHED)
-    setTimeout(() => startNewRound(), 3000)
-  }, [startNewRound])
 
   const handlePlaceBet = useCallback(async (betIndex, amount, autoCashoutAt) => {
     if (!isLoggedIn) return
@@ -605,7 +576,7 @@ export default function AviatorPage() {
                   className="text-center"
                 >
                   <p className="text-gray-400 text-xs mb-1">Next round in</p>
-                  <p className="text-5xl font-bold text-emerald-400">{countdown}</p>
+                  <p className="text-5xl font-bold text-emerald-400">{countdown.toFixed(1)}</p>
                 </motion.div>
               )}
 
