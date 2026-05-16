@@ -4,7 +4,7 @@
  */
 
 import express from 'express'
-import bcrypt from 'bcrypt'
+import bcrypt from 'bcryptjs'
 import { supabase } from '../lib/supabase.js'
 import { authenticateAdmin, requireRole } from '../middleware/auth.js'
 import { logAudit } from '../middleware/auditLogger.js'
