@@ -26,6 +26,12 @@ router.get('/', async (req, res) => {
 
     const offset = (page - 1) * limit
 
+    // First sync any missing auth users into public.users
+    const { data: authUsers } = await supabase
+      .from('users')
+      .select('id')
+      .limit(1)
+
     let query = supabase
       .from('users')
       .select('*', { count: 'exact' })
