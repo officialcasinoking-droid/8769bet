@@ -9,10 +9,9 @@ import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../components/ui/Toast'
 import { ChevronLeft } from 'lucide-react'
 import { aviatorWS } from '../../api/aviatorWebSocket'
-import supabaseModule from '../../lib/supabase'
+import { supabase } from '../../lib/supabase'
 
 const API_URL = import.meta.env.VITE_API_URL || 'https://eight769bet-backend.onrender.com'
-const supabase = supabaseModule.supabase
 
 const QUICK_BET = [6, 10, 20, 50, 100, 200, 500]
 const MIN_BET = 6
