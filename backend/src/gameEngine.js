@@ -368,25 +368,25 @@ function startGameLoop() {
         // Check manual crash
         if (manualCrashRequested) {
           manualCrashRequested = false
-          await crashRound(mult, 'manual')
+          crashRound(mult, 'manual').catch(err => console.error('[GameLoop] crashRound error:', err.message))
           return
         }
 
         // Check auto house edge
         if (settings.heMode !== 'off') {
           if (elapsed >= settings.heMinSecs && mult >= gameState.crashPoint) {
-            await crashRound(mult, settings.heMode)
+            crashRound(mult, settings.heMode).catch(err => console.error('[GameLoop] crashRound error:', err.message))
             return
           }
           // Max flight safety
           if (elapsed >= settings.heMaxSecs) {
-            await crashRound(mult, 'max_time')
+            crashRound(mult, 'max_time').catch(err => console.error('[GameLoop] crashRound error:', err.message))
             return
           }
         } else {
           // Normal mode - crash at predetermined point
           if (mult >= gameState.crashPoint) {
-            await crashRound(gameState.crashPoint, 'natural')
+            crashRound(gameState.crashPoint, 'natural').catch(err => console.error('[GameLoop] crashRound error:', err.message))
             return
           }
         }
