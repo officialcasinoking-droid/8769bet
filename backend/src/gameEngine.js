@@ -724,6 +724,39 @@ async function cashoutBet(userId, betNum) {
   return { success: true, winAmount: bet.winAmount, multiplier: gameState.mult }
 }
 
+// ── Cancel Bet ─────────────────────────────────────────────
+function cancelBet(userId, betNum, betId) {
+  if (gameState.phase !== 'betting') {
+    return { success: false, error: 'Not in betting phase' }
+  }
+
+  const betIndex = currentBets.findIndex(b => b.userId === userId && b.betNum === betNum && b.status === 'pending')
+  if (betIndex === -1) {
+    return { success: false, error: 'Bet not found' }
+  }
+
+  const bet = currentBets[betIndex]
+  
+  // Refund balance
+  if (supabaseAvailable) {
+    supabase.from('users').select('balance').eq('id', userId).single()
+      .then(({ data: user, error }) => {
+        if (user && !error) {
+          supabase.from('users').update({ balance: Number(user.balance) + bet.amount, updated_at: new Date().toISOString() }).eq('id', userId)
+        }
+      })
+      .catch(() => {})
+    
+    supabase.from('aviator_bets').update({ status: 'cancelled', updated_at: new Date().toISOString() }).eq('id', betId)
+      .catch(() => {})
+  }
+
+  currentBets.splice(betIndex, 1)
+  broadcast({ type: 'bets_update', bets: currentBets })
+  
+  return { success: true }
+}
+
 // ── Manual Crash ─────────────────────────────────────────────
 function requestManualCrash() {
   if (gameState.phase === 'flying') {
@@ -795,6 +828,11 @@ async function initGameEngine(server) {
           if (msg.type === 'cashout') {
             const result = await cashoutBet(msg.userId, msg.betNum)
             ws.send(JSON.stringify({ type: 'cashout_result', ...result, betNum: msg.betNum }))
+          }
+
+          if (msg.type === 'cancel_bet') {
+            const result = cancelBet(msg.userId, msg.betNum, msg.betId)
+            ws.send(JSON.stringify({ type: 'cancel_result', ...result }))
           }
 
           if (msg.type === 'manual_crash') {
@@ -882,4 +920,4 @@ async function initGameEngine(server) {
 }
 
 // ── Export ───────────────────────────────────────────────────
-export { initGameEngine, getCurrentState, requestManualCrash, startNewRound, updateSettings, gameState, settings, placeBet, cashoutBet, houseEdgePool }
+export { initGameEngine, getCurrentState, requestManualCrash, startNewRound, updateSettings, gameState, settings, placeBet, cashoutBet, cancelBet, houseEdgePool }

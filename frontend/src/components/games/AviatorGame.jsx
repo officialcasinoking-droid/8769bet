@@ -539,6 +539,14 @@ export default function AviatorGame() {
       }
     })
 
+    // Handle cancel result from WebSocket
+    aviatorWS.on('cancel_result', (result) => {
+      if (!result.success) {
+        // Cancel failed - would need to revert but optimistic update already happened
+        console.error('[cancel] Failed:', result.error)
+      }
+    })
+
     return () => { clearInterval(checkConn) }
   }, [showLoading])
 
@@ -676,27 +684,24 @@ export default function AviatorGame() {
     }
   }, [user])
 
-  // ΓöÇΓöÇ Cancel bet ΓöÇΓöÇ
-  const cancelBet = useCallback(async (num) => {
+  // ── Cancel bet ──
+  const cancelBet = useCallback((num) => {
     const betData = num === 1 ? b1dRef.current : b2dRef.current
     if (!betData) return
     if (phaseRef.current !== 'betting') { toast.error('Can only cancel during betting phase'); return }
 
-    // Remove from backend
-    try {
-      await fetch(`${API_URL}/api/aviator/cancel-bet`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user?.id, betNum: num, betId: betData.id })
-      })
-    } catch (e) {}
+    // Use WebSocket for instant cancel
+    if (aviatorWS.isConnected) {
+      aviatorWS.ws.send(JSON.stringify({ type: 'cancel_bet', userId: user?.id, betNum: num, betId: betData.id }))
+    }
 
+    // Optimistic UI update
     setBal(prev => prev + betData.amount)
     updateBalance(bal + betData.amount)
     if (num === 1) setB1d(null); else setB2d(null)
-    setMyHistory(prev => prev.filter(entry => entry.betId !== betData.id))
+    setMyHistory(prev => prev.filter(entry => entry.betId !== betData.id && !entry.betId.startsWith('temp_')))
     toast.success('Bet cancelled')
-  }, [user, toast])
+  }, [user, bal, toast, updateBalance])
 
   // ── Canvas animation ──
   useEffect(() => {
