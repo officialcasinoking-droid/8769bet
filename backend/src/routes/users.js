@@ -436,12 +436,45 @@ router.get('/:id/activity', async (req, res) => {
       .order('timestamp', { ascending: false })
       .limit(20)
 
+    // Get user's game history from crash_history (stored in game state)
+    const { data: userBets } = await supabase
+      .from('bets')
+      .select('*')
+      .eq('user_id', req.params.id)
+      .order('created_at', { ascending: false })
+      .limit(50)
+
+    const { data: userTransactions } = await supabase
+      .from('transactions')
+      .select('*')
+      .eq('user_id', req.params.id)
+      .order('created_at', { ascending: false })
+      .limit(50)
+
+    const { data: userWithdrawals } = await supabase
+      .from('withdrawals')
+      .select('*')
+      .eq('user_id', req.params.id)
+      .order('created_at', { ascending: false })
+      .limit(20)
+
+    const { data: userDeposits } = await supabase
+      .from('deposits')
+      .select('*')
+      .eq('user_id', req.params.id)
+      .order('created_at', { ascending: false })
+      .limit(20)
+
     res.json({
       success: true,
       activity: {
         auditLogs: auditLogs || [],
         balanceHistory: balanceHistory || [],
-        loginAttempts: loginAttempts || []
+        loginAttempts: loginAttempts || [],
+        bets: userBets || [],
+        transactions: userTransactions || [],
+        withdrawals: userWithdrawals || [],
+        deposits: userDeposits || []
       }
     })
   } catch (err) {

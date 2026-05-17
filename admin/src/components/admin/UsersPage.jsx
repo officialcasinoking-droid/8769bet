@@ -8,7 +8,7 @@ import {
   Filter, ChevronLeft, ChevronRight, Download, CheckSquare, Square,
   MoreVertical, RefreshCw, Clock, Key, Phone, Mail, User,
   Calendar, Activity, History, ArrowUpRight, ArrowDownRight,
-  Copy, EyeOff, Pencil, Save, XCircle
+  Copy, EyeOff, Pencil, Save, XCircle, LogIn
 } from 'lucide-react'
 
 const API_URL = import.meta.env.VITE_API_URL || 'https://eight769bet-backend.onrender.com'
@@ -907,79 +907,134 @@ export default function UsersPage() {
                 {/* ACTIVITY TAB */}
                 {activeModalTab === 'activity' && (
                   <div className="space-y-4">
-                    {/* Audit Logs */}
+                    {/* Combined Activity Timeline */}
                     <div className="bg-slate-900/50 border border-slate-700/30 rounded-xl p-4">
                       <h4 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
-                        <Activity className="w-4 h-4 text-blue-400" /> Audit Logs
+                        <Activity className="w-4 h-4 text-blue-400" /> Activity Timeline
                       </h4>
-                      {!userActivity?.auditLogs?.length ? (
-                        <p className="text-sm text-slate-400 text-center py-4">No audit logs</p>
-                      ) : (
-                        <div className="space-y-2 max-h-48 overflow-y-auto">
-                          {userActivity.auditLogs.map((log, i) => (
-                            <div key={i} className="flex items-center justify-between py-2 px-3 bg-slate-800/50 rounded-lg">
-                              <div>
-                                <p className="text-xs text-white">{log.action.replace(/_/g, ' ')}</p>
-                                <p className="text-[10px] text-slate-500">{log.actor_username} • {new Date(log.timestamp).toLocaleString()}</p>
-                              </div>
-                              <Badge variant={log.severity === 'critical' ? 'red' : log.severity === 'warning' ? 'amber' : 'blue'}>{log.severity}</Badge>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
+                      {(() => {
+                        const timeline = []
 
-                    {/* Balance History (also shown here) */}
-                    <div className="bg-slate-900/50 border border-slate-700/30 rounded-xl p-4">
-                      <h4 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
-                        <Wallet className="w-4 h-4 text-emerald-400" /> Balance History
-                      </h4>
-                      {!balanceHistory.length ? (
-                        <p className="text-sm text-slate-400 text-center py-4">No balance history</p>
-                      ) : (
-                        <div className="space-y-2 max-h-48 overflow-y-auto">
-                          {balanceHistory.map((entry, i) => (
-                            <div key={i} className="flex items-center justify-between py-2 px-3 bg-slate-800/50 rounded-lg">
-                              <div className="flex items-center gap-2">
-                                {parseFloat(entry.amount) > 0 ? <ArrowUpRight className="w-4 h-4 text-emerald-400" /> : <ArrowDownRight className="w-4 h-4 text-red-400" />}
-                                <div>
-                                  <p className="text-xs text-white">{entry.reason}</p>
-                                  <p className="text-[10px] text-slate-500">{entry.admin_username} • {new Date(entry.created_at).toLocaleString()}</p>
+                        // Login attempts
+                        userActivity?.loginAttempts?.forEach(a => {
+                          timeline.push({
+                            time: new Date(a.timestamp),
+                            type: a.success ? 'login' : 'login_failed',
+                            icon: a.success ? CheckCircle : XCircle,
+                            iconColor: a.success ? 'text-emerald-400' : 'text-red-400',
+                            title: a.success ? 'Logged in' : 'Failed login',
+                            subtitle: `IP: ${a.ip_address}`,
+                            badge: null
+                          })
+                        })
+
+                        // Bets
+                        userActivity?.bets?.forEach(b => {
+                          timeline.push({
+                            time: new Date(b.created_at),
+                            type: 'bet',
+                            icon: b.cashed_out ? CheckCircle : XCircle,
+                            iconColor: b.cashed_out ? 'text-emerald-400' : 'text-red-400',
+                            title: b.cashed_out ? `Won ₨${parseFloat(b.win_amount || 0).toLocaleString()}` : `Lost ₨${parseFloat(b.amount || 0).toLocaleString()}`,
+                            subtitle: `Bet ₨${parseFloat(b.amount || 0).toLocaleString()} at ${b.cashout_mult || '-'}x • Round ${b.round_id?.slice(0, 8) || '-'}`,
+                            badge: b.cashed_out ? { text: 'WON', color: 'emerald' } : { text: 'LOST', color: 'red' }
+                          })
+                        })
+
+                        // Deposits
+                        userActivity?.deposits?.forEach(d => {
+                          timeline.push({
+                            time: new Date(d.created_at),
+                            type: 'deposit',
+                            icon: ArrowUpRight,
+                            iconColor: 'text-emerald-400',
+                            title: `Deposited ₨${parseFloat(d.amount || 0).toLocaleString()}`,
+                            subtitle: `Method: ${d.method || 'N/A'} • ${d.status || 'pending'}`,
+                            badge: { text: (d.status || 'pending').toUpperCase(), color: d.status === 'approved' ? 'emerald' : d.status === 'rejected' ? 'red' : 'amber' }
+                          })
+                        })
+
+                        // Withdrawals
+                        userActivity?.withdrawals?.forEach(w => {
+                          timeline.push({
+                            time: new Date(w.created_at),
+                            type: 'withdrawal',
+                            icon: ArrowDownRight,
+                            iconColor: 'text-amber-400',
+                            title: `Withdrew ₨${parseFloat(w.amount || 0).toLocaleString()}`,
+                            subtitle: `Account: ${w.account_number || w.account_name || 'N/A'} • ${w.status || 'pending'}`,
+                            badge: { text: (w.status || 'pending').toUpperCase(), color: w.status === 'approved' ? 'emerald' : w.status === 'rejected' ? 'red' : 'amber' }
+                          })
+                        })
+
+                        // Balance adjustments
+                        userActivity?.balanceHistory?.forEach(b => {
+                          timeline.push({
+                            time: new Date(b.created_at),
+                            type: 'balance',
+                            icon: parseFloat(b.amount) > 0 ? ArrowUpRight : ArrowDownRight,
+                            iconColor: parseFloat(b.amount) > 0 ? 'text-emerald-400' : 'text-red-400',
+                            title: `${parseFloat(b.amount) > 0 ? '+' : '-'}₨${Math.abs(b.amount).toLocaleString()}`,
+                            subtitle: `${b.reason} • by ${b.admin_username || 'system'}`,
+                            badge: null
+                          })
+                        })
+
+                        // Transactions
+                        userActivity?.transactions?.forEach(t => {
+                          timeline.push({
+                            time: new Date(t.created_at),
+                            type: 'transaction',
+                            icon: t.type === 'credit' ? ArrowUpRight : ArrowDownRight,
+                            iconColor: t.type === 'credit' ? 'text-emerald-400' : 'text-red-400',
+                            title: `${t.type}: ₨${parseFloat(t.amount || 0).toLocaleString()}`,
+                            subtitle: t.note || t.reference || 'Transaction',
+                            badge: null
+                          })
+                        })
+
+                        // Audit logs
+                        userActivity?.auditLogs?.forEach(l => {
+                          timeline.push({
+                            time: new Date(l.timestamp),
+                            type: 'audit',
+                            icon: Activity,
+                            iconColor: l.severity === 'critical' ? 'text-red-400' : l.severity === 'warning' ? 'text-amber-400' : 'text-blue-400',
+                            title: l.action.replace(/_/g, ' '),
+                            subtitle: l.actor_username ? `By ${l.actor_username}` : '',
+                            badge: { text: l.severity.toUpperCase(), color: l.severity === 'critical' ? 'red' : l.severity === 'warning' ? 'amber' : 'blue' }
+                          })
+                        })
+
+                        // Sort by time descending
+                        timeline.sort((a, b) => b.time - a.time)
+
+                        if (timeline.length === 0) {
+                          return <p className="text-sm text-slate-400 text-center py-8">No activity recorded</p>
+                        }
+
+                        return (
+                          <div className="space-y-1 max-h-[500px] overflow-y-auto">
+                            {timeline.slice(0, 100).map((item, i) => (
+                              <div key={i} className="flex items-start gap-3 py-2.5 px-3 hover:bg-slate-800/30 rounded-lg transition-colors">
+                                <item.icon className={`w-4 h-4 ${item.iconColor} mt-0.5 flex-shrink-0`} />
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <p className="text-xs text-white font-medium">{item.title}</p>
+                                    {item.badge && (
+                                      <Badge variant={item.badge.color} className="text-[9px] px-1.5 py-0">{item.badge.text}</Badge>
+                                    )}
+                                  </div>
+                                  <p className="text-[10px] text-slate-500 truncate">{item.subtitle}</p>
                                 </div>
+                                <span className="text-[10px] text-slate-600 whitespace-nowrap flex-shrink-0">
+                                  {item.time.toLocaleDateString()} {item.time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                </span>
                               </div>
-                              <p className={`text-sm font-medium ${parseFloat(entry.amount) > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                                {parseFloat(entry.amount) > 0 ? '+' : ''}₨{Math.abs(entry.amount).toLocaleString()}
-                              </p>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Login Attempts */}
-                    <div className="bg-slate-900/50 border border-slate-700/30 rounded-xl p-4">
-                      <h4 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
-                        <LogIn className="w-4 h-4 text-amber-400" /> Recent Login Attempts
-                      </h4>
-                      {!userActivity?.loginAttempts?.length ? (
-                        <p className="text-sm text-slate-400 text-center py-4">No login attempts recorded</p>
-                      ) : (
-                        <div className="space-y-2 max-h-48 overflow-y-auto">
-                          {userActivity.loginAttempts.map((attempt, i) => (
-                            <div key={i} className="flex items-center justify-between py-2 px-3 bg-slate-800/50 rounded-lg">
-                              <div>
-                                <p className="text-xs text-white">{attempt.ip_address}</p>
-                                <p className="text-[10px] text-slate-500">{new Date(attempt.timestamp).toLocaleString()}</p>
-                              </div>
-                              {attempt.success ? (
-                                <CheckCircle className="w-4 h-4 text-emerald-400" />
-                              ) : (
-                                <XCircle className="w-4 h-4 text-red-400" />
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      )}
+                            ))}
+                          </div>
+                        )
+                      })()}
                     </div>
                   </div>
                 )}
