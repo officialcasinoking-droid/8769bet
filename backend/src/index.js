@@ -94,15 +94,73 @@ app.post('/api/aviator/settings', (req, res) => {
 })
 
 // Place bet
-app.post('/api/aviator/bet', (req, res) => {
-  const result = placeBet(req.body)
+app.post('/api/aviator/bet', async (req, res) => {
+  const result = await placeBet(req.body)
   res.json(result)
 })
 
 // Cash out
-app.post('/api/aviator/cashout', (req, res) => {
-  const result = cashoutBet(req.body.userId, req.body.betNum)
+app.post('/api/aviator/cashout', async (req, res) => {
+  const result = await cashoutBet(req.body.userId, req.body.betNum)
   res.json(result)
+})
+
+// Cancel bet
+app.post('/api/aviator/cancel-bet', async (req, res) => {
+  const { userId, betNum, betId } = req.body
+  const bet = currentBets.find(b => b.userId === userId && b.betNum === betNum && b.status === 'pending')
+  if (!bet) {
+    return res.json({ success: false, error: 'Bet not found' })
+  }
+
+  // Refund balance
+  if (supabaseAvailable) {
+    try {
+      const { data: user } = await supabase.from('users').select('balance').eq('id', userId).single()
+      if (user) {
+        await supabase.from('users').update({ balance: Number(user.balance) + bet.amount, updated_at: new Date().toISOString() }).eq('id', userId)
+      }
+      await supabase.from('aviator_bets').update({ status: 'cancelled', updated_at: new Date().toISOString() }).eq('id', betId)
+    } catch (e) {
+      console.error('[cancel-bet] DB error:', e.message)
+    }
+  }
+
+  currentBets = currentBets.filter(b => b.id !== betId)
+  broadcast({ type: 'bets_update', bets: currentBets })
+  res.json({ success: true })
+})
+
+// Get user bet history
+app.get('/api/aviator/bet-history', async (req, res) => {
+  const { userId } = req.query
+  if (!userId) return res.status(400).json({ error: 'userId required' })
+
+  try {
+    const { data: bets, error } = await supabase
+      .from('aviator_bets')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(100)
+
+    if (error) throw error
+
+    // Calculate stats
+    const totalBets = bets?.length || 0
+    const wonBets = bets?.filter(b => b.status === 'won').length || 0
+    const lostBets = bets?.filter(b => b.status === 'lost').length || 0
+    const totalWagered = bets?.reduce((sum, b) => sum + Number(b.amount), 0) || 0
+    const totalWon = bets?.filter(b => b.status === 'won').reduce((sum, b) => sum + Number(b.win_amount), 0) || 0
+
+    res.json({
+      success: true,
+      bets: bets || [],
+      stats: { totalBets, wonBets, lostBets, totalWagered, totalWon, profit: totalWon - totalWagered }
+    })
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message })
+  }
 })
 
 // Health check
