@@ -326,7 +326,8 @@ export default function AviatorGame() {
           .single()
         if (userData) {
           const dbBalance = Number(userData.balance) || 0
-          setBal(dbBalance)
+          // Only update if DB has a valid balance (don't override with 0)
+          if (dbBalance > 0) setBal(dbBalance)
         }
       } catch (e) {
         console.error('[Aviator] Failed to refresh balance:', e.message)
@@ -534,10 +535,12 @@ export default function AviatorGame() {
     const amount = num === 1 ? b1a : b2a
     if (amount < MIN_BET) { toast.error(`Min ₨${MIN_BET}`); return }
     if (amount > MAX_BET) { toast.error(`Max ₨${MAX_BET}`); return }
-    if (amount > bal) { toast.error('Low balance'); return }
+    if (amount > bal) { toast.error(`Low balance: ₨${bal}`); return }
     if (phaseRef.current !== 'betting') { toast.error('Wait for next round'); return }
 
     const autoCashout = (num === 1 ? b1o : b2o) ? parseFloat(num === 1 ? b1v : b2v) : null
+
+    console.log('[placeBet] Placing bet:', { userId: user?.id, amount, autoCashout, betNumber: num })
 
     try {
       const response = await fetch(`${API_URL}/api/aviator/bet`, {
@@ -546,6 +549,8 @@ export default function AviatorGame() {
         body: JSON.stringify({ userId: user?.id, username: user?.username || 'You', amount, autoCashout, betNumber: num }),
       })
       const result = await response.json()
+      console.log('[placeBet] Response:', result)
+
       if (result.success) {
         // Refresh balance from DB after server confirms
         const supabaseModule = await import('../../lib/supabase')
@@ -567,6 +572,7 @@ export default function AviatorGame() {
         toast.error(result.error || 'Failed to place bet')
       }
     } catch (err) {
+      console.error('[placeBet] Error:', err)
       toast.error('Failed to place bet')
     }
   }, [isLoggedIn, b1a, b1o, b1v, b2a, b2o, b2v, bal, user, navigate, toast])
