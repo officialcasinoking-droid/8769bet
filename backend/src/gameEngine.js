@@ -368,25 +368,25 @@ function startGameLoop() {
         // Check manual crash
         if (manualCrashRequested) {
           manualCrashRequested = false
-          crashRound(mult, 'manual')
+          await crashRound(mult, 'manual')
           return
         }
 
         // Check auto house edge
         if (settings.heMode !== 'off') {
           if (elapsed >= settings.heMinSecs && mult >= gameState.crashPoint) {
-            crashRound(mult, settings.heMode)
+            await crashRound(mult, settings.heMode)
             return
           }
           // Max flight safety
           if (elapsed >= settings.heMaxSecs) {
-            crashRound(mult, 'max_time')
+            await crashRound(mult, 'max_time')
             return
           }
         } else {
           // Normal mode - crash at predetermined point
           if (mult >= gameState.crashPoint) {
-            crashRound(gameState.crashPoint, 'natural')
+            await crashRound(gameState.crashPoint, 'natural')
             return
           }
         }
@@ -430,7 +430,7 @@ function startFlying() {
   }
 }
 
-function crashRound(crashPoint, reason = 'natural') {
+async function crashRound(crashPoint, reason = 'natural') {
   try {
     gameState.phase = 'crashed'
     gameState.crashPoint = parseFloat(crashPoint.toFixed(2))
@@ -466,19 +466,22 @@ function crashRound(crashPoint, reason = 'natural') {
 
       // Update bet record in DB (always attempt)
       if (!bet.is_bot) {
-        supabase
-          .from('aviator_bets')
-          .update({
-            cashed_out: bet.cashedOut,
-            cashout_multiplier: bet.cashoutMult,
-            win_amount: bet.winAmount,
-            status: bet.status,
-            updated_at: new Date().toISOString()
-          })
-          .eq('user_id', bet.userId)
-          .eq('round_id', gameState.roundId)
-          .eq('bet_number', bet.betNum)
-          .catch(e => console.error('[crashRound] Failed to update bet:', e.message))
+        try {
+          await supabase
+            .from('aviator_bets')
+            .update({
+              cashed_out: bet.cashedOut,
+              cashout_multiplier: bet.cashoutMult,
+              win_amount: bet.winAmount,
+              status: bet.status,
+              updated_at: new Date().toISOString()
+            })
+            .eq('user_id', bet.userId)
+            .eq('round_id', gameState.roundId)
+            .eq('bet_number', bet.betNum)
+        } catch (e) {
+          console.error('[crashRound] Failed to update bet:', e.message)
+        }
       }
     })
 
