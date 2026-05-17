@@ -729,7 +729,7 @@ function getCurrentState() {
 }
 
 // ── Initialize WebSocket Server ──────────────────────────────
-async async function initGameEngine(server) {
+async function initGameEngine(server) {
   // Load persisted house edge stats
   await loadHouseEdgeStats()
 
