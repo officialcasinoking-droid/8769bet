@@ -312,23 +312,21 @@ export default function AviatorGame() {
     if (user?.balance !== undefined) setBal(user.balance)
   }, [user])
 
-  // Refresh balance from DB on mount (backend now manages balance)
+  // Refresh balance from DB on mount and periodically
   useEffect(() => {
     if (!user?.id || showLoading) return
 
     const fetchBalance = async () => {
       try {
         const supabaseModule = await import('../../lib/supabase')
-        const { data: { session } } = await supabaseModule.supabase.auth.getSession()
-        if (session) {
-          const { data: userData } = await supabaseModule.supabase
-            .from('users')
-            .select('balance')
-            .eq('id', user.id)
-            .single()
-          if (userData) {
-            setBal(Number(userData.balance) || 0)
-          }
+        const { data: userData } = await supabaseModule.supabase
+          .from('users')
+          .select('balance')
+          .eq('id', user.id)
+          .single()
+        if (userData) {
+          const dbBalance = Number(userData.balance) || 0
+          setBal(dbBalance)
         }
       } catch (e) {
         console.error('[Aviator] Failed to refresh balance:', e.message)
@@ -336,7 +334,7 @@ export default function AviatorGame() {
     }
 
     fetchBalance()
-    const interval = setInterval(fetchBalance, 10000)
+    const interval = setInterval(fetchBalance, 5000)
     return () => clearInterval(interval)
   }, [user?.id, showLoading])
 
@@ -395,7 +393,7 @@ export default function AviatorGame() {
       }
     })
 
-    aviatorWS.on('bets_update', (data) => {
+    aviatorWS.on('bets_update', async (data) => {
       try {
         const betsArray = Array.isArray(data) ? data : (data?.bets && Array.isArray(data.bets) ? data.bets : [])
         setLive(betsArray)
@@ -405,7 +403,15 @@ export default function AviatorGame() {
         if (myBet1 && b1dRef.current && !b1dRef.current.cashed && !autoCashedRef.current.has(myBet1.id)) {
           autoCashedRef.current.add(myBet1.id)
           const won = myBet1.winAmount || 0
-          setBal(prev => prev + won)
+          // Refresh balance from DB
+          const supabaseModule = await import('../../lib/supabase')
+          const { data: userData } = await supabaseModule.supabase
+            .from('users')
+            .select('balance')
+            .eq('id', user.id)
+            .single()
+          if (userData) setBal(Number(userData.balance) || 0)
+
           setB1d(prev => prev ? { ...prev, cashed: { won } } : null)
           setMyHistory(prev => prev.map(entry => {
             if (entry.pending && entry.betId === myBet1.id) {
@@ -421,7 +427,15 @@ export default function AviatorGame() {
         if (myBet2 && b2dRef.current && !b2dRef.current.cashed && !autoCashedRef.current.has(myBet2.id)) {
           autoCashedRef.current.add(myBet2.id)
           const won = myBet2.winAmount || 0
-          setBal(prev => prev + won)
+          // Refresh balance from DB
+          const supabaseModule = await import('../../lib/supabase')
+          const { data: userData } = await supabaseModule.supabase
+            .from('users')
+            .select('balance')
+            .eq('id', user.id)
+            .single()
+          if (userData) setBal(Number(userData.balance) || 0)
+
           setB2d(prev => prev ? { ...prev, cashed: { won } } : null)
           setMyHistory(prev => prev.map(entry => {
             if (entry.pending && entry.betId === myBet2.id) {
@@ -455,9 +469,14 @@ export default function AviatorGame() {
       }))
       // Refresh balance from DB after round ends
       if (user?.id) {
-        fetch(`${API_URL}/api/aviator/bet-history?userId=${user.id}`)
-          .then(r => r.json())
-          .catch(() => {})
+        import('../../lib/supabase').then(async (m) => {
+          const { data: userData } = await m.supabase
+            .from('users')
+            .select('balance')
+            .eq('id', user.id)
+            .single()
+          if (userData) setBal(Number(userData.balance) || 0)
+        })
       }
     }
     if (phase === 'betting' && prev === 'crashed') {
@@ -528,8 +547,15 @@ export default function AviatorGame() {
       })
       const result = await response.json()
       if (result.success) {
-        // Deduct balance locally after server confirms
-        setBal(prev => prev - amount)
+        // Refresh balance from DB after server confirms
+        const supabaseModule = await import('../../lib/supabase')
+        const { data: userData } = await supabaseModule.supabase
+          .from('users')
+          .select('balance')
+          .eq('id', user.id)
+          .single()
+        if (userData) setBal(Number(userData.balance) || 0)
+
         const entry = { id: result.bet.id, amount, autoCashout, cashed: null }
         if (num === 1) setB1d(entry); else setB2d(entry)
         setMyHistory(prev => [{
@@ -559,18 +585,25 @@ export default function AviatorGame() {
       })
       const result = await response.json()
       if (result.success) {
-        const won = result.winAmount
-        setBal(prev => prev + won)
+        // Refresh balance from DB after server credits winnings
+        const supabaseModule = await import('../../lib/supabase')
+        const { data: userData } = await supabaseModule.supabase
+          .from('users')
+          .select('balance')
+          .eq('id', user.id)
+          .single()
+        if (userData) setBal(Number(userData.balance) || 0)
+
         const setter = num === 1 ? setB1d : setB2d
-        setter(prev => prev ? { ...prev, cashed: { won } } : null)
+        setter(prev => prev ? { ...prev, cashed: { won: result.winAmount } } : null)
         setMyHistory(prev => prev.map(entry => {
           if (entry.pending && entry.betId === betData.id) {
-            return { ...entry, mult: result.multiplier, won: true, profit: won, pending: false }
+            return { ...entry, mult: result.multiplier, won: true, profit: result.winAmount, pending: false }
           }
           return entry
         }))
-        addCashoutExit(user?.username || 'You', won)
-        toast.success(`Cashed ${result.multiplier.toFixed(2)}x — +₨${won.toLocaleString()}`)
+        addCashoutExit(user?.username || 'You', result.winAmount)
+        toast.success(`Cashed ${result.multiplier.toFixed(2)}x — +₨${result.winAmount.toLocaleString()}`)
       } else {
         toast.error(result.error || 'Failed to cash out')
       }
@@ -585,16 +618,22 @@ export default function AviatorGame() {
     if (!betData) return
     if (phaseRef.current !== 'betting') { toast.error('Can only cancel during betting phase'); return }
 
-    // Remove from backend
+    // Remove from backend and refresh balance
     try {
       await fetch(`${API_URL}/api/aviator/cancel-bet`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: user?.id, betNum: num, betId: betData.id })
       })
+      const supabaseModule = await import('../../lib/supabase')
+      const { data: userData } = await supabaseModule.supabase
+        .from('users')
+        .select('balance')
+        .eq('id', user.id)
+        .single()
+      if (userData) setBal(Number(userData.balance) || 0)
     } catch (e) {}
 
-    setBal(prev => prev + betData.amount)
     if (num === 1) setB1d(null); else setB2d(null)
     setMyHistory(prev => prev.filter(entry => entry.betId !== betData.id))
     toast.success('Bet cancelled')

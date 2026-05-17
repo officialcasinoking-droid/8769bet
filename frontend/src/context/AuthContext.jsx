@@ -148,15 +148,13 @@ export function AuthProvider({ children }) {
       const { data, error, status } = dbResult || {}
 
       if (data && !error && status === 200) {
-        // DB fetch successful - merge with DB data, preserve cached balance if higher
+        // DB is source of truth - always use DB balance
         appUser.username = data.username || appUser.username
         appUser.full_name = data.full_name || appUser.full_name
         appUser.role = data.role || appUser.role
-        const dbBalance = Number(data.balance) || 0
-        const cachedBalance = appUser.balance || 0
-        appUser.balance = Math.max(dbBalance, cachedBalance)
+        appUser.balance = Number(data.balance) || 0
         appUser.avatar_url = data.avatar_url || appUser.avatar_url
-        
+
         // Only use DB withdrawal data if it's explicitly set
         if (data.withdrawal_pin_set === true) {
           appUser.withdrawal_pin_set = true
@@ -167,8 +165,9 @@ export function AuthProvider({ children }) {
         if (data.withdrawal_accounts && Array.isArray(data.withdrawal_accounts)) {
           appUser.withdrawal_accounts = data.withdrawal_accounts
         }
-        
+
         console.log('Synced with DB:', {
+          balance: appUser.balance,
           withdrawal_pin_set: appUser.withdrawal_pin_set,
           withdrawal_accounts: appUser.withdrawal_accounts.length
         })
