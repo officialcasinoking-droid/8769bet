@@ -850,6 +850,49 @@ export default function UsersPage() {
                       )}
                     </div>
 
+                    {/* Withdrawal Accounts */}
+                    <div className="bg-slate-900/50 border border-slate-700/30 rounded-xl p-4">
+                      <h4 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
+                        <CreditCard className="w-4 h-4 text-cyan-400" /> Withdrawal Accounts
+                      </h4>
+                      {selectedUser.withdrawal_accounts?.length > 0 ? (
+                        <div className="space-y-2">
+                          {selectedUser.withdrawal_accounts.map((acc, i) => (
+                            <div key={acc.id || i} className="bg-slate-800/50 rounded-lg p-3 border border-slate-700/30">
+                              <div className="flex items-center justify-between mb-1">
+                                <span className="text-xs font-medium text-white capitalize">{acc.type}</span>
+                                <span className="text-[10px] text-slate-500">{new Date(acc.created_at).toLocaleDateString()}</span>
+                              </div>
+                              <div className="grid grid-cols-2 gap-2 text-xs">
+                                <div>
+                                  <span className="text-slate-500">Name:</span>
+                                  <span className="text-white ml-1">{acc.real_name || acc.account_name || '-'}</span>
+                                </div>
+                                <div>
+                                  <span className="text-slate-500">Number:</span>
+                                  <span className="text-white ml-1 font-mono">{acc.account_number}</span>
+                                </div>
+                                {acc.bank_name && (
+                                  <div>
+                                    <span className="text-slate-500">Bank:</span>
+                                    <span className="text-white ml-1">{acc.bank_name}</span>
+                                  </div>
+                                )}
+                                {acc.cnic && (
+                                  <div>
+                                    <span className="text-slate-500">CNIC:</span>
+                                    <span className="text-white ml-1 font-mono">{acc.cnic}</span>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-slate-400 text-center py-4">No withdrawal accounts added</p>
+                      )}
+                    </div>
+
                     {/* Withdrawal PIN */}
                     <div className="bg-slate-900/50 border border-slate-700/30 rounded-xl p-4">
                       <h4 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">

@@ -106,4 +106,92 @@ router.post('/users/:id/verify-pin', async (req, res) => {
   }
 })
 
+router.post('/users/:id/withdrawal-accounts', async (req, res) => {
+  try {
+    const { account } = req.body
+    if (!account || !account.type || !account.account_number) {
+      return res.status(400).json({ error: 'Account type and number are required' })
+    }
+
+    const { data: user, error: fetchError } = await supabase
+      .from('users')
+      .select('withdrawal_accounts, username')
+      .eq('id', req.params.id)
+      .single()
+
+    if (fetchError || !user) {
+      return res.status(404).json({ error: 'User not found' })
+    }
+
+    const accounts = Array.isArray(user.withdrawal_accounts) ? user.withdrawal_accounts : []
+    const exists = accounts.some(a => a.account_number === account.account_number && a.type === account.type)
+    if (exists) {
+      return res.status(400).json({ error: 'This account is already added' })
+    }
+
+    const newAccount = {
+      id: crypto.randomUUID(),
+      type: account.type,
+      cnic: account.cnic || '',
+      real_name: account.real_name || '',
+      account_number: account.account_number,
+      account_name: account.account_name || '',
+      bank_name: account.bank_name || '',
+      created_at: new Date().toISOString()
+    }
+
+    const updatedAccounts = [...accounts, newAccount]
+
+    const { error } = await supabase
+      .from('users')
+      .update({ withdrawal_accounts: updatedAccounts, updated_at: new Date().toISOString() })
+      .eq('id', req.params.id)
+
+    if (error) throw error
+
+    await logAudit({
+      actorType: 'user',
+      actorId: req.params.id,
+      actorUsername: user.username,
+      action: 'add_withdrawal_account',
+      details: { type: account.type, account_number: account.account_number },
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent']
+    })
+
+    res.json({ success: true, account: newAccount })
+  } catch (err) {
+    console.error('Add withdrawal account error:', err)
+    res.status(500).json({ success: false, error: err.message })
+  }
+})
+
+router.delete('/users/:id/withdrawal-accounts/:accountId', async (req, res) => {
+  try {
+    const { data: user, error: fetchError } = await supabase
+      .from('users')
+      .select('withdrawal_accounts, username')
+      .eq('id', req.params.id)
+      .single()
+
+    if (fetchError || !user) {
+      return res.status(404).json({ error: 'User not found' })
+    }
+
+    const accounts = Array.isArray(user.withdrawal_accounts) ? user.withdrawal_accounts : []
+    const updatedAccounts = accounts.filter(a => a.id !== req.params.accountId)
+
+    const { error } = await supabase
+      .from('users')
+      .update({ withdrawal_accounts: updatedAccounts, updated_at: new Date().toISOString() })
+      .eq('id', req.params.id)
+
+    if (error) throw error
+
+    res.json({ success: true })
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message })
+  }
+})
+
 export default router

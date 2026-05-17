@@ -256,76 +256,78 @@ export function AuthProvider({ children }) {
   const addWithdrawalAccount = useCallback(async (account) => {
     if (!user?.id) return { success: false, error: 'Not logged in' }
     if (!user?.withdrawal_pin_set) return { success: false, error: 'Please set withdrawal PIN first' }
-    
-    const accounts = user.withdrawal_accounts || []
-    const exists = accounts.some(a => 
-      a.type === account.type && a.account_number === account.account_number
-    )
-    if (exists) return { success: false, error: 'This account is already added' }
-    
-    const newAccount = {
-      id: Date.now().toString(),
-      type: account.type,
-      cnic: account.cnic,
-      real_name: account.real_name,
-      account_number: account.account_number,
-      account_name: account.account_name,
-      bank_name: account.bank_name || '',
-      created_at: new Date().toISOString()
-    }
-    
-    const updatedAccounts = [...accounts, newAccount]
-    
-    // Update DB
+
+    const API_URL = import.meta.env.VITE_API_URL || 'https://eight769bet-backend.onrender.com'
+
     try {
-      const { error } = await supabase
-        .from('users')
-        .update({ withdrawal_accounts: updatedAccounts, updated_at: new Date().toISOString() })
-        .eq('id', user.id)
-      
-      if (error) {
-        console.error('DB update error:', error)
+      const { data: { session } } = await supabase.auth.getSession()
+      const token = session?.access_token
+
+      if (!token) {
+        return { success: false, error: 'Not authenticated' }
+      }
+
+      const response = await fetch(`${API_URL}/api/auth/users/${user.id}/withdrawal-accounts`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ account })
+      })
+      const result = await response.json()
+
+      if (result.success) {
+        const accounts = user.withdrawal_accounts || []
+        const updatedAccounts = [...accounts, result.account]
+        const updatedUser = { ...user, withdrawal_accounts: updatedAccounts }
+        setUser(updatedUser)
+        localStorage.setItem('sb_user', JSON.stringify(updatedUser))
+        return { success: true }
       } else {
-        console.log('Account saved to DB successfully')
+        return { success: false, error: result.error || 'Failed to add account' }
       }
     } catch (e) {
-      console.error('DB update failed:', e)
+      console.error('Add withdrawal account failed:', e)
+      return { success: false, error: 'Network error' }
     }
-    
-    // Always update local state and cache
-    const updatedUser = { ...user, withdrawal_accounts: updatedAccounts }
-    setUser(updatedUser)
-    localStorage.setItem('sb_user', JSON.stringify(updatedUser))
-    
-    return { success: true }
   }, [user])
 
   const removeWithdrawalAccount = useCallback(async (accountId) => {
     if (!user?.id) return { success: false, error: 'Not logged in' }
-    
-    const accounts = user.withdrawal_accounts || []
-    const updatedAccounts = accounts.filter(a => a.id !== accountId)
-    
-    // Update DB
+
+    const API_URL = import.meta.env.VITE_API_URL || 'https://eight769bet-backend.onrender.com'
+
     try {
-      const { error } = await supabase
-        .from('users')
-        .update({ withdrawal_accounts: updatedAccounts, updated_at: new Date().toISOString() })
-        .eq('id', user.id)
-      
-      if (error) {
-        console.error('DB update error:', error)
+      const { data: { session } } = await supabase.auth.getSession()
+      const token = session?.access_token
+
+      if (!token) {
+        return { success: false, error: 'Not authenticated' }
+      }
+
+      const response = await fetch(`${API_URL}/api/auth/users/${user.id}/withdrawal-accounts/${accountId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      })
+      const result = await response.json()
+
+      if (result.success) {
+        const accounts = user.withdrawal_accounts || []
+        const updatedAccounts = accounts.filter(a => a.id !== accountId)
+        const updatedUser = { ...user, withdrawal_accounts: updatedAccounts }
+        setUser(updatedUser)
+        localStorage.setItem('sb_user', JSON.stringify(updatedUser))
+        return { success: true }
+      } else {
+        return { success: false, error: result.error || 'Failed to remove account' }
       }
     } catch (e) {
-      console.error('DB update failed:', e)
+      console.error('Remove withdrawal account failed:', e)
+      return { success: false, error: 'Network error' }
     }
-    
-    // Always update local state
-    const updatedUser = { ...user, withdrawal_accounts: updatedAccounts }
-    setUser(updatedUser)
-    localStorage.setItem('sb_user', JSON.stringify(updatedUser))
-    
-    return { success: true }
   }, [user])
 
   const signup = useCallback(async (userData) => {
