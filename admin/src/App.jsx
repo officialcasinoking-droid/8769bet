@@ -17,6 +17,7 @@ import ReferralsPage from './pages/ReferralsPage'
 import Settings from './pages/Settings'
 import SupportSection from './pages/SupportSection'
 import DepositWithdrawalSection from './components/admin/DepositWithdrawalSection'
+import AIWithdrawalAgent from './components/admin/AIWithdrawalAgent'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -54,6 +55,7 @@ function AppRoutes() {
         <Route path="audit" element={<AuditLogViewer />} />
         <Route path="support" element={<SupportSection />} />
         <Route path="ai-agent" element={<AiAgentSettings />} />
+        <Route path="ai-withdrawal" element={<AIWithdrawalAgent />} />
         <Route path="jackpot" element={<JackpotSettings />} />
         <Route path="announcements" element={<AnnouncementsPage />} />
         <Route path="referrals" element={<ReferralsPage />} />

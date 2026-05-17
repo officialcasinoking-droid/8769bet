@@ -23,6 +23,7 @@ const menuItems = [
   { id: 'audit', name: 'Audit Logs', icon: ShieldCheckIcon, path: '/audit' },
   { id: 'support', name: 'Support', icon: ChatBubbleLeftRightIcon, path: '/support' },
   { id: 'ai-agent', name: 'AI Agent', icon: SparklesIcon, path: '/ai-agent' },
+  { id: 'ai-withdrawal', name: 'AI Withdrawal', icon: SparklesIcon, path: '/ai-withdrawal' },
   { id: 'settings', name: 'Settings', icon: CogIcon, path: '/settings' },
 ]
 
@@ -39,6 +40,7 @@ const PAGE_TITLES = {
   '/support': 'Support Center',
   '/settings': 'Settings',
   '/ai-agent': 'AI Agent Settings',
+  '/ai-withdrawal': 'AI Withdrawal Assistant',
 }
 
 const IS_SECTION = {
@@ -54,6 +56,7 @@ const IS_SECTION = {
   '/support': true,
   '/settings': true,
   '/ai-agent': true,
+  '/ai-withdrawal': true,
 }
 
 export default function AdminLayout() {
