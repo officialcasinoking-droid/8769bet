@@ -272,7 +272,7 @@ function histClass(v) {
 // ── Main Component ────────────────────────────────────────────
 export default function AviatorGame() {
   const navigate = useNavigate()
-  const { user, isLoggedIn, updateBalance, refreshUser } = useAuth()
+  const { user, isLoggedIn } = useAuth()
   const toast = useToast()
 
   const [showLoading, setShowLoading] = useState(true)
@@ -297,12 +297,70 @@ export default function AviatorGame() {
   const [b2v, setB2v] = useState('2.00')
   const [b2d, setB2d] = useState(null)
 
+  // Refs for WS handler to avoid stale closures
+  const b1dRef = useRef(null)
+  const b2dRef = useRef(null)
+  const autoCashedRef = useRef(new Set())
+
+  useEffect(() => { b1dRef.current = b1d }, [b1d])
+  useEffect(() => { b2dRef.current = b2d }, [b2d])
+
   const phaseRef = useRef('betting')
   const canvasRef = useRef(null)
 
   useEffect(() => {
     if (user?.balance !== undefined) setBal(user.balance)
   }, [user])
+
+  // Refresh balance from DB on mount (backend now manages balance)
+  useEffect(() => {
+    if (!user?.id || showLoading) return
+
+    const fetchBalance = async () => {
+      try {
+        const supabaseModule = await import('../../lib/supabase')
+        const { data: { session } } = await supabaseModule.supabase.auth.getSession()
+        if (session) {
+          const { data: userData } = await supabaseModule.supabase
+            .from('users')
+            .select('balance')
+            .eq('id', user.id)
+            .single()
+          if (userData) {
+            setBal(Number(userData.balance) || 0)
+          }
+        }
+      } catch (e) {
+        console.error('[Aviator] Failed to refresh balance:', e.message)
+      }
+    }
+
+    fetchBalance()
+    const interval = setInterval(fetchBalance, 10000)
+    return () => clearInterval(interval)
+  }, [user?.id, showLoading])
+
+  // Load bet history from DB on mount
+  useEffect(() => {
+    if (!user?.id || showLoading) return
+    fetch(`${API_URL}/api/aviator/bet-history?userId=${user.id}`)
+      .then(r => r.json())
+      .then(data => {
+        if (data.success && data.bets) {
+          const history = data.bets.slice(0, 15).map(b => ({
+            amount: Number(b.amount),
+            mult: b.cashout_multiplier || null,
+            won: b.status === 'won',
+            profit: b.status === 'won' ? Number(b.win_amount) : -Number(b.amount),
+            pending: false,
+            betId: b.id,
+            time: new Date(b.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+          }))
+          setMyHistory(history)
+        }
+      })
+      .catch(() => {})
+  }, [user?.id, showLoading])
 
   useEffect(() => { phaseRef.current = phase }, [phase])
 
@@ -342,28 +400,29 @@ export default function AviatorGame() {
         const betsArray = Array.isArray(data) ? data : (data?.bets && Array.isArray(data.bets) ? data.bets : [])
         setLive(betsArray)
 
-        // Check if my bet was auto-cashed by the server
-        const myBet = betsArray.find(b => b.userId === user?.id && b.betNum === 1 && b.cashedOut && b.status === 'won')
-        if (myBet && b1d && !b1d.cashed) {
-          const won = myBet.winAmount || 0
+        // Check if my bet was auto-cashed by the server (use refs to avoid stale closures)
+        const myBet1 = betsArray.find(b => b.userId === user?.id && b.betNum === 1 && b.cashedOut && b.status === 'won')
+        if (myBet1 && b1dRef.current && !b1dRef.current.cashed && !autoCashedRef.current.has(myBet1.id)) {
+          autoCashedRef.current.add(myBet1.id)
+          const won = myBet1.winAmount || 0
           setBal(prev => prev + won)
-          setB1d({ ...b1d, cashed: { won } })
+          setB1d(prev => prev ? { ...prev, cashed: { won } } : null)
           setMyHistory(prev => prev.map(entry => {
-            if (entry.pending && entry.betId === myBet.id) {
-              return { ...entry, mult: myBet.cashoutMult, won: true, profit: won, pending: false }
+            if (entry.pending && entry.betId === myBet1.id) {
+              return { ...entry, mult: myBet1.cashoutMult, won: true, profit: won, pending: false }
             }
             return entry
           }))
           addCashoutExit(user?.username || 'You', won)
-          updateBalance(bal + won)
-          toast.success(`Auto cashed ${myBet.cashoutMult.toFixed(2)}x — +₨${won.toLocaleString()}`)
+          toast.success(`Auto cashed ${myBet1.cashoutMult.toFixed(2)}x — +₨${won.toLocaleString()}`)
         }
 
         const myBet2 = betsArray.find(b => b.userId === user?.id && b.betNum === 2 && b.cashedOut && b.status === 'won')
-        if (myBet2 && b2d && !b2d.cashed) {
+        if (myBet2 && b2dRef.current && !b2dRef.current.cashed && !autoCashedRef.current.has(myBet2.id)) {
+          autoCashedRef.current.add(myBet2.id)
           const won = myBet2.winAmount || 0
           setBal(prev => prev + won)
-          setB2d({ ...b2d, cashed: { won } })
+          setB2d(prev => prev ? { ...prev, cashed: { won } } : null)
           setMyHistory(prev => prev.map(entry => {
             if (entry.pending && entry.betId === myBet2.id) {
               return { ...entry, mult: myBet2.cashoutMult, won: true, profit: won, pending: false }
@@ -371,7 +430,6 @@ export default function AviatorGame() {
             return entry
           }))
           addCashoutExit(user?.username || 'You', won)
-          updateBalance(bal + won)
           toast.success(`Auto cashed ${myBet2.cashoutMult.toFixed(2)}x — +₨${won.toLocaleString()}`)
         }
       } catch (e) {
@@ -395,12 +453,19 @@ export default function AviatorGame() {
         }
         return entry
       }))
+      // Refresh balance from DB after round ends
+      if (user?.id) {
+        fetch(`${API_URL}/api/aviator/bet-history?userId=${user.id}`)
+          .then(r => r.json())
+          .catch(() => {})
+      }
     }
     if (phase === 'betting' && prev === 'crashed') {
       setB1d(null)
       setB2d(null)
+      autoCashedRef.current.clear()
     }
-  }, [phase])
+  }, [phase, user?.id])
 
   // ── Loading animation ──
   useEffect(() => {
@@ -454,7 +519,6 @@ export default function AviatorGame() {
     if (phaseRef.current !== 'betting') { toast.error('Wait for next round'); return }
 
     const autoCashout = (num === 1 ? b1o : b2o) ? parseFloat(num === 1 ? b1v : b2v) : null
-    setBal(prev => prev - amount)
 
     try {
       const response = await fetch(`${API_URL}/api/aviator/bet`, {
@@ -464,6 +528,8 @@ export default function AviatorGame() {
       })
       const result = await response.json()
       if (result.success) {
+        // Deduct balance locally after server confirms
+        setBal(prev => prev - amount)
         const entry = { id: result.bet.id, amount, autoCashout, cashed: null }
         if (num === 1) setB1d(entry); else setB2d(entry)
         setMyHistory(prev => [{
@@ -472,11 +538,9 @@ export default function AviatorGame() {
         }, ...prev].slice(0, 15))
         toast.success(`Bet ${num}: ₨${amount} placed`)
       } else {
-        setBal(prev => prev + amount)
         toast.error(result.error || 'Failed to place bet')
       }
     } catch (err) {
-      setBal(prev => prev + amount)
       toast.error('Failed to place bet')
     }
   }, [isLoggedIn, b1a, b1o, b1v, b2a, b2o, b2v, bal, user, navigate, toast])
@@ -484,7 +548,7 @@ export default function AviatorGame() {
   // ── Cashout ──
   const cashout = useCallback(async (num) => {
     if (phaseRef.current !== 'running') return
-    const betData = num === 1 ? b1d : b2d
+    const betData = num === 1 ? b1dRef.current : b2dRef.current
     if (!betData || betData.cashed) return
 
     try {
@@ -498,7 +562,7 @@ export default function AviatorGame() {
         const won = result.winAmount
         setBal(prev => prev + won)
         const setter = num === 1 ? setB1d : setB2d
-        setter({ ...betData, cashed: { won } })
+        setter(prev => prev ? { ...prev, cashed: { won } } : null)
         setMyHistory(prev => prev.map(entry => {
           if (entry.pending && entry.betId === betData.id) {
             return { ...entry, mult: result.multiplier, won: true, profit: won, pending: false }
@@ -513,11 +577,11 @@ export default function AviatorGame() {
     } catch (err) {
       toast.error('Failed to cash out')
     }
-  }, [b1d, b2d, user, toast, addCashoutExit])
+  }, [user, toast, addCashoutExit])
 
   // ── Cancel bet ──
   const cancelBet = useCallback(async (num) => {
-    const betData = num === 1 ? b1d : b2d
+    const betData = num === 1 ? b1dRef.current : b2dRef.current
     if (!betData) return
     if (phaseRef.current !== 'betting') { toast.error('Can only cancel during betting phase'); return }
 
@@ -530,12 +594,11 @@ export default function AviatorGame() {
       })
     } catch (e) {}
 
-    const newBal = bal + betData.amount
     setBal(prev => prev + betData.amount)
     if (num === 1) setB1d(null); else setB2d(null)
     setMyHistory(prev => prev.filter(entry => entry.betId !== betData.id))
     toast.success('Bet cancelled')
-  }, [b1d, b2d, bal, user, toast])
+  }, [user, toast])
 
   // ── Canvas animation ──
   useEffect(() => {
