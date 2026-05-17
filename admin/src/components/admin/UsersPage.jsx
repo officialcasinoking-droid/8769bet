@@ -196,8 +196,8 @@ export default function UsersPage() {
   }
 
   const handleResetPin = async () => {
-    if (!selectedUser || newPin.length !== 4 || newPin !== confirmPin) {
-      setPinError(newPin.length !== 4 ? 'PIN must be 4 digits' : 'PINs do not match')
+    if (!selectedUser || newPin.length !== 6 || newPin !== confirmPin) {
+      setPinError(newPin.length !== 6 ? 'PIN must be 6 digits' : 'PINs do not match')
       return
     }
     setActionLoading(true)
@@ -877,7 +877,7 @@ export default function UsersPage() {
                           <div className="grid grid-cols-2 gap-3">
                             <FormField label="New 4-Digit PIN">
                               <div className="relative">
-                                <Input type={showNewPin ? 'text' : 'password'} value={newPin} onChange={e => setNewPin(e.target.value.replace(/\D/g, '').slice(0, 4))} placeholder="0000" maxLength={4} className="text-center text-lg tracking-widest" />
+                                <Input type={showNewPin ? 'text' : 'password'} value={newPin} onChange={e => setNewPin(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="000000" maxLength={6} className="text-center text-lg tracking-widest" />
                                 <button type="button" onClick={() => setShowNewPin(!showNewPin)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white">
                                   {showNewPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                                 </button>
@@ -885,7 +885,7 @@ export default function UsersPage() {
                             </FormField>
                             <FormField label="Confirm PIN">
                               <div className="relative">
-                                <Input type={showConfirmPin ? 'text' : 'password'} value={confirmPin} onChange={e => setConfirmPin(e.target.value.replace(/\D/g, '').slice(0, 4))} placeholder="0000" maxLength={4} className="text-center text-lg tracking-widest" />
+                                <Input type={showConfirmPin ? 'text' : 'password'} value={confirmPin} onChange={e => setConfirmPin(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="000000" maxLength={6} className="text-center text-lg tracking-widest" />
                                 <button type="button" onClick={() => setShowConfirmPin(!showConfirmPin)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white">
                                   {showConfirmPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                                 </button>
@@ -893,7 +893,7 @@ export default function UsersPage() {
                             </FormField>
                           </div>
                           <div className="flex gap-2">
-                            <Button onClick={handleResetPin} disabled={actionLoading || newPin.length !== 4 || confirmPin.length !== 4}>
+                            <Button onClick={handleResetPin} disabled={actionLoading || newPin.length !== 6 || confirmPin.length !== 6}>
                               {actionLoading ? 'Saving...' : 'Save PIN'}
                             </Button>
                             <Button variant="ghost" onClick={() => { setShowPinForm(false); setPinError(''); setNewPin(''); setConfirmPin('') }}>Cancel</Button>

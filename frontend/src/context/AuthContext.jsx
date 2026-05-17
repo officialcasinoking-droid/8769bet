@@ -188,13 +188,19 @@ export function AuthProvider({ children }) {
 
   const setWithdrawalPIN = useCallback(async (pin) => {
     if (!user?.id) return { success: false, error: 'Not logged in' }
-    if (!pin || pin.length !== 4) return { success: false, error: 'PIN must be 4 digits' }
+    if (!pin || pin.length !== 6) return { success: false, error: 'PIN must be 6 digits' }
 
     const API_URL = import.meta.env.VITE_API_URL || 'https://eight769bet-backend.onrender.com'
-    const token = user?.access_token || localStorage.getItem('sb-auth-token')
 
     try {
-      const response = await fetch(`${API_URL}/api/users/${user.id}/set-pin`, {
+      const { data: { session } } = await supabase.auth.getSession()
+      const token = session?.access_token
+
+      if (!token) {
+        return { success: false, error: 'Not authenticated' }
+      }
+
+      const response = await fetch(`${API_URL}/api/auth/users/${user.id}/set-pin`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -210,6 +216,7 @@ export function AuthProvider({ children }) {
         localStorage.setItem('sb_user', JSON.stringify(updatedUser))
         return { success: true }
       } else {
+        console.error('Set PIN error:', result.error)
         return { success: false, error: result.error || 'Failed to set PIN' }
       }
     } catch (e) {
@@ -223,10 +230,14 @@ export function AuthProvider({ children }) {
     if (!user?.withdrawal_pin_set) return false
 
     const API_URL = import.meta.env.VITE_API_URL || 'https://eight769bet-backend.onrender.com'
-    const token = user?.access_token || localStorage.getItem('sb-auth-token')
 
     try {
-      const response = await fetch(`${API_URL}/api/users/${user.id}/verify-pin`, {
+      const { data: { session } } = await supabase.auth.getSession()
+      const token = session?.access_token
+
+      if (!token) return false
+
+      const response = await fetch(`${API_URL}/api/auth/users/${user.id}/verify-pin`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

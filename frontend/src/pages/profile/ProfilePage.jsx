@@ -90,12 +90,12 @@ function SetPINModal({ open, onClose, onSuccess }) {
   }, [open])
 
   useEffect(() => {
-    if (pin.length === 4 && confirmPin.length === 0) {
+    if (pin.length === 6 && confirmPin.length === 0) {
       setConfirmAutoFocus(true)
     }
   }, [pin, confirmPin])
 
-  const pinsMatch = pin.length === 4 && confirmPin.length === 4 && pin === confirmPin
+  const pinsMatch = pin.length === 6 && confirmPin.length === 6 && pin === confirmPin
   const canSubmit = pinsMatch
 
   const handleSubmit = async () => {
@@ -131,14 +131,14 @@ function SetPINModal({ open, onClose, onSuccess }) {
             <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-emerald-500/20 flex items-center justify-center">
               <LockClosedIcon className="w-8 h-8 text-emerald-400" />
             </div>
-            <p className="text-sm text-gray-400">Create a 4-digit PIN to secure your withdrawals.</p>
+            <p className="text-sm text-gray-400">Create a 6-digit PIN to secure your withdrawals.</p>
           </div>
 
           <div className="bg-dark-200 rounded-xl p-4">
             <PINInput
               value={pin}
               onChange={setPin}
-              length={4}
+              length={6}
               label="Enter PIN"
               autoFocus={true}
             />
@@ -148,14 +148,14 @@ function SetPINModal({ open, onClose, onSuccess }) {
             <PINInput
               value={confirmPin}
               onChange={setConfirmPin}
-              length={4}
+              length={6}
               label="Confirm PIN"
               autoFocus={confirmAutoFocus}
             />
           </div>
 
           <div className="h-6">
-            {confirmPin.length === 4 && pin.length === 4 && !pinsMatch && (
+            {confirmPin.length === 6 && pin.length === 6 && !pinsMatch && (
               <p className="text-sm text-red-400 text-center animate-pulse">PINs do not match</p>
             )}
             {pinsMatch && (

@@ -555,8 +555,8 @@ router.post('/:id/reset-pin', async (req, res) => {
   try {
     const { pin } = req.body
 
-    if (!pin || pin.length !== 4 || !/^\d{4}$/.test(pin)) {
-      return res.status(400).json({ success: false, error: 'PIN must be 4 digits' })
+    if (!pin || pin.length !== 6 || !/^\d{6}$/.test(pin)) {
+      return res.status(400).json({ success: false, error: 'PIN must be 6 digits' })
     }
 
     const pinHash = await bcrypt.hash(pin, 12)

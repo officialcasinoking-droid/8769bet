@@ -46,8 +46,8 @@ router.get('/me', getMe)
 router.post('/users/:id/set-pin', async (req, res) => {
   try {
     const { pin } = req.body
-    if (!pin || pin.length !== 4 || !/^\d{4}$/.test(pin)) {
-      return res.status(400).json({ error: 'PIN must be 4 digits' })
+    if (!pin || pin.length !== 6 || !/^\d{6}$/.test(pin)) {
+      return res.status(400).json({ error: 'PIN must be 6 digits' })
     }
 
     const pinHash = await bcrypt.hash(pin, 12)
@@ -80,6 +80,7 @@ router.post('/users/:id/set-pin', async (req, res) => {
 
     res.json({ success: true, message: 'PIN set successfully' })
   } catch (err) {
+    console.error('Set PIN error:', err)
     res.status(500).json({ success: false, error: err.message })
   }
 })
