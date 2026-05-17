@@ -1,5 +1,5 @@
 ﻿/**
- * AviatorGame.jsx ΓÇö Full-featured Aviator Crash Game
+ * AviatorGame.jsx — Full-featured Aviator Crash Game
  * Backend WebSocket for real-time state, REST API for bets/cashouts.
  * Canvas-based rendering with plane image, trail, explosions.
  */
@@ -198,32 +198,32 @@ function BetPanel({ num, amt, setAmt, autoOn, setAutoOn, autoVal, setAutoVal, be
     const canPlace = isBetting && amt >= MIN_BET && amt <= MAX_BET && amt <= bal
     actionBtn = (
       <button className={`av-betbtn ${g ? 'g' : 'r'}`} disabled={!canPlace} onClick={onPlace}>
-        {!isBetting ? 'Wait...' : amt < MIN_BET ? `Min Γé¿${MIN_BET}` : amt > MAX_BET ? `Max Γé¿${MAX_BET}` : amt > bal ? 'Low Balance' : `Bet Γé¿${amt}`}
+        {!isBetting ? 'Wait...' : amt < MIN_BET ? `Min ₨${MIN_BET}` : amt > MAX_BET ? `Max ₨${MAX_BET}` : amt > bal ? 'Low Balance' : `Bet ₨${amt}`}
       </button>
     )
   } else if (cashed) {
     actionBtn = (
       <div className="av-result won">
         <div className="av-result-label w">Cashed Out</div>
-        <div className="av-result-amt w">+Γé¿{won.toLocaleString()}</div>
+        <div className="av-result-amt w">+₨{won.toLocaleString()}</div>
       </div>
     )
   } else if (isRunning) {
-    actionBtn = <button className="av-cashbtn" onClick={onCash}>Cash Γé¿{cashAmt}</button>
+    actionBtn = <button className="av-cashbtn" onClick={onCash}>Cash ₨{cashAmt}</button>
   } else if (isCrashed) {
     actionBtn = (
       <div className="av-result lost">
         <div className="av-result-label l">Lost</div>
-        <div className="av-result-amt l">-Γé¿{betData.amount}</div>
+        <div className="av-result-amt l">-₨{betData.amount}</div>
       </div>
     )
   } else if (isBetting) {
-    actionBtn = <button className="av-betbtn av-cancelbtn-orange" onClick={onCancel}>Cancel Γé¿{betData.amount}</button>
+    actionBtn = <button className="av-betbtn av-cancelbtn-orange" onClick={onCancel}>Cancel ₨{betData.amount}</button>
   } else {
     actionBtn = (
       <div className="av-wait">
         <div className="av-wait-label">Bet Placed</div>
-        <div className="av-wait-amt">Γé¿{betData.amount}</div>
+        <div className="av-wait-amt">₨{betData.amount}</div>
       </div>
     )
   }
@@ -232,7 +232,7 @@ function BetPanel({ num, amt, setAmt, autoOn, setAutoOn, autoVal, setAutoVal, be
     <div className={`av-card ${g ? 'green' : 'red'}`}>
       <div className="av-card-head">
         <span className={`av-card-label ${g ? 'g' : 'r'}`}>BET {num}</span>
-        {won != null && <span className="av-card-won">+Γé¿{won.toLocaleString()}</span>}
+        {won != null && <span className="av-card-won">+₨{won.toLocaleString()}</span>}
       </div>
       <div className="av-quick">
         {QUICK_BET.map(a => (
@@ -242,7 +242,7 @@ function BetPanel({ num, amt, setAmt, autoOn, setAutoOn, autoVal, setAutoVal, be
         ))}
       </div>
       <div className="av-amt-row">
-        <span className="av-amt-sym">Γé¿</span>
+        <span className="av-amt-sym">₨</span>
         <input type="number" className="av-amt-input" value={amt} onChange={e => setAmt(Math.max(MIN_BET, Math.min(MAX_BET, parseInt(e.target.value) || MIN_BET)))} disabled={hasBet} min={MIN_BET} max={MAX_BET} />
         <button className="av-amt-inc" onClick={() => setAmt(Math.min(MAX_BET, Math.min(bal, amt + 100)))} disabled={hasBet}>+</button>
       </div>
@@ -272,7 +272,7 @@ function histClass(v) {
 // ΓöÇΓöÇ Main Component ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 export default function AviatorGame() {
   const navigate = useNavigate()
-  const { user, isLoggedIn } = useAuth()
+  const { user, isLoggedIn, updateBalance } = useAuth()
   const toast = useToast()
 
   const [showLoading, setShowLoading] = useState(true)
@@ -405,7 +405,11 @@ export default function AviatorGame() {
         if (myBet1 && b1dRef.current && !b1dRef.current.cashed && !autoCashedRef.current.has(myBet1.id)) {
           autoCashedRef.current.add(myBet1.id)
           const won = myBet1.winAmount || 0
-          setBal(prev => prev + won)
+          setBal(prev => {
+            const newBal = prev + won
+            updateBalance(newBal)
+            return newBal
+          })
           setB1d(prev => prev ? { ...prev, cashed: { won } } : null)
           setMyHistory(prev => prev.map(entry => {
             if (entry.pending && entry.betId === myBet1.id) {
@@ -414,14 +418,18 @@ export default function AviatorGame() {
             return entry
           }))
           addCashoutExit(user?.username || 'You', won)
-          toast.success(`Auto cashed ${myBet1.cashoutMult.toFixed(2)}x ΓÇö +Γé¿${won.toLocaleString()}`)
+          toast.success(`Auto cashed ${myBet1.cashoutMult.toFixed(2)}x — +₨${won.toLocaleString()}`)
         }
 
         const myBet2 = betsArray.find(b => b.userId === user?.id && b.betNum === 2 && b.cashedOut && b.status === 'won')
         if (myBet2 && b2dRef.current && !b2dRef.current.cashed && !autoCashedRef.current.has(myBet2.id)) {
           autoCashedRef.current.add(myBet2.id)
           const won = myBet2.winAmount || 0
-          setBal(prev => prev + won)
+          setBal(prev => {
+            const newBal = prev + won
+            updateBalance(newBal)
+            return newBal
+          })
           setB2d(prev => prev ? { ...prev, cashed: { won } } : null)
           setMyHistory(prev => prev.map(entry => {
             if (entry.pending && entry.betId === myBet2.id) {
@@ -430,7 +438,7 @@ export default function AviatorGame() {
             return entry
           }))
           addCashoutExit(user?.username || 'You', won)
-          toast.success(`Auto cashed ${myBet2.cashoutMult.toFixed(2)}x ΓÇö +Γé¿${won.toLocaleString()}`)
+          toast.success(`Auto cashed ${myBet2.cashoutMult.toFixed(2)}x — +₨${won.toLocaleString()}`)
         }
       } catch (e) {
         setLive([])
@@ -513,8 +521,8 @@ export default function AviatorGame() {
   const place = useCallback(async (num) => {
     if (!isLoggedIn) { navigate('/login', { state: { from: '/play/aviator' } }); return }
     const amount = num === 1 ? b1a : b2a
-    if (amount < MIN_BET) { toast.error(`Min Γé¿${MIN_BET}`); return }
-    if (amount > MAX_BET) { toast.error(`Max Γé¿${MAX_BET}`); return }
+    if (amount < MIN_BET) { toast.error(`Min ₨${MIN_BET}`); return }
+    if (amount > MAX_BET) { toast.error(`Max ₨${MAX_BET}`); return }
     if (amount > bal) { toast.error('Low balance'); return }
     if (phaseRef.current !== 'betting') { toast.error('Wait for next round'); return }
 
@@ -528,15 +536,17 @@ export default function AviatorGame() {
       })
       const result = await response.json()
       if (result.success) {
-        // Deduct balance locally after server confirms
-        setBal(prev => prev - amount)
+        // Deduct balance locally and sync to AuthContext
+        const newBal = bal - amount
+        setBal(newBal)
+        updateBalance(newBal)
         const entry = { id: result.bet.id, amount, autoCashout, cashed: null }
         if (num === 1) setB1d(entry); else setB2d(entry)
         setMyHistory(prev => [{
           amount, mult: null, won: false, profit: 0, pending: true, betId: result.bet.id,
           time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
         }, ...prev].slice(0, 15))
-        toast.success(`Bet ${num}: Γé¿${amount} placed`)
+        toast.success(`Bet ${num}: ₨${amount} placed`)
       } else {
         toast.error(result.error || 'Failed to place bet')
       }
@@ -560,7 +570,9 @@ export default function AviatorGame() {
       const result = await response.json()
       if (result.success) {
         const won = result.winAmount
-        setBal(prev => prev + won)
+        const newBal = bal + won
+        setBal(newBal)
+        updateBalance(newBal)
         const setter = num === 1 ? setB1d : setB2d
         setter(prev => prev ? { ...prev, cashed: { won } } : null)
         setMyHistory(prev => prev.map(entry => {
@@ -570,7 +582,7 @@ export default function AviatorGame() {
           return entry
         }))
         addCashoutExit(user?.username || 'You', won)
-        toast.success(`Cashed ${result.multiplier.toFixed(2)}x ΓÇö +Γé¿${won.toLocaleString()}`)
+        toast.success(`Cashed ${result.multiplier.toFixed(2)}x — +₨${won.toLocaleString()}`)
       } else {
         toast.error(result.error || 'Failed to cash out')
       }
@@ -595,6 +607,7 @@ export default function AviatorGame() {
     } catch (e) {}
 
     setBal(prev => prev + betData.amount)
+    updateBalance(bal + betData.amount)
     if (num === 1) setB1d(null); else setB2d(null)
     setMyHistory(prev => prev.filter(entry => entry.betId !== betData.id))
     toast.success('Bet cancelled')
@@ -735,7 +748,7 @@ export default function AviatorGame() {
               </div>
               <div className="av-bal">
                 <span className="av-bal-label">Balance</span>
-                <span className="av-bal-amt">Γé¿{bal.toLocaleString()}</span>
+                <span className="av-bal-amt">₨{bal.toLocaleString()}</span>
               </div>
             </div>
 
@@ -762,7 +775,7 @@ export default function AviatorGame() {
                       <div key={e.id} className="av-exit-item" style={{ left: `${e.left}%`, top: `${e.top}%` }}>
                         <div className="av-exit-avatar">{(e.name || '?')[0].toUpperCase()}</div>
                         <span className="av-exit-name">{e.name}</span>
-                        <span className="av-exit-amt">+Γé¿{e.profit.toLocaleString()}</span>
+                        <span className="av-exit-amt">+₨{e.profit.toLocaleString()}</span>
                       </div>
                     ))}
                   </div>
@@ -794,10 +807,10 @@ export default function AviatorGame() {
                     ) : live.map(b => (
                       <div key={b.id} className={`av-live-item ${!b.is_bot ? 'isu' : ''} ${b.status === 'won' ? 'won' : b.status === 'lost' ? 'lost' : 'pending'}`}>
                         <span className={`av-live-user ${!b.is_bot ? 'isu' : ''}`}>{b.username}</span>
-                        <span className="av-live-amt">Γé¿{Number(b.amount || 0).toLocaleString()}</span>
+                        <span className="av-live-amt">₨{Number(b.amount || 0).toLocaleString()}</span>
                         <span className="av-live-mult" style={{ color: b.status === 'won' ? 'var(--yellow)' : b.autoCashout ? 'rgba(255,214,0,.45)' : 'rgba(255,255,255,.2)' }}>
                           {b.status === 'won' ? `${Number(b.cashoutMult || 0).toFixed(2)}x`
-                            : b.autoCashout ? `A:${Number(b.autoCashout).toFixed(1)}` : 'ΓÇö'}
+                            : b.autoCashout ? `A:${Number(b.autoCashout).toFixed(1)}` : '—'}
                         </span>
                       </div>
                     ))}
@@ -823,16 +836,16 @@ export default function AviatorGame() {
                 ) : myHistory.map((h, i) => (
                   <div key={`${h.amount}-${h.pending ? 'p' : 'r'}-${i}`} className={`av-my-h-item ${h.pending ? 'pending' : h.won ? 'won' : 'lost'}`}>
                     <span className="av-my-h-time">{h.time || ''}</span>
-                    <span className="av-my-h-amt">Γé¿{Number(h.amount).toLocaleString()}</span>
+                    <span className="av-my-h-amt">₨{Number(h.amount).toLocaleString()}</span>
                     {h.pending ? (
                       <span className="av-my-h-mult" style={{ color: 'rgba(255,214,0,0.6)' }}>playing</span>
                     ) : h.won ? (
                       <>
                         <span className="av-my-h-mult" style={{ color: 'var(--green)' }}>{(h.mult || 0).toFixed(2)}x</span>
-                        <span className="av-my-h-profit" style={{ color: 'var(--green)' }}>+Γé¿{Number(h.profit).toLocaleString()}</span>
+                        <span className="av-my-h-profit" style={{ color: 'var(--green)' }}>+₨{Number(h.profit).toLocaleString()}</span>
                       </>
                     ) : (
-                      <span className="av-my-h-profit" style={{ color: 'var(--red)' }}>-Γé¿{Number(h.amount).toLocaleString()}</span>
+                      <span className="av-my-h-profit" style={{ color: 'var(--red)' }}>-₨{Number(h.amount).toLocaleString()}</span>
                     )}
                   </div>
                 ))}
