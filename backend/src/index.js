@@ -168,6 +168,69 @@ app.get('/api/aviator/bet-history', async (req, res) => {
   }
 })
 
+// Create withdrawal request
+app.post('/api/withdrawals', async (req, res) => {
+  const { userId, amount, method, details } = req.body
+  
+  if (!userId || !amount) {
+    return res.status(400).json({ error: 'userId and amount required' })
+  }
+
+  try {
+    // Get user balance
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('balance, username')
+      .eq('id', userId)
+      .single()
+
+    if (userError || !user) {
+      return res.status(404).json({ error: 'User not found' })
+    }
+
+    if (Number(user.balance) < amount) {
+      return res.status(400).json({ error: 'Insufficient balance' })
+    }
+
+    const fee = Math.round(amount * 0.01 * 100) / 100
+    const netAmount = Math.round(amount * 0.99 * 100) / 100
+    const newBalance = Number(user.balance) - amount
+
+    // Create withdrawal record
+    const { data: withdrawal, error: wdError } = await supabase
+      .from('withdrawals')
+      .insert({
+        user_id: userId,
+        amount: amount,
+        fee: fee,
+        net_amount: netAmount,
+        method: method || 'bank',
+        details: details || {},
+        status: 'pending',
+        created_at: new Date().toISOString()
+      })
+      .select()
+      .single()
+
+    if (wdError) {
+      console.error('[withdrawal] Create error:', wdError.message)
+      return res.status(500).json({ error: 'Failed to create withdrawal' })
+    }
+
+    // Deduct balance
+    await supabase
+      .from('users')
+      .update({ balance: newBalance, updated_at: new Date().toISOString() })
+      .eq('id', userId)
+
+    console.log(`[withdrawal] Created: ${user.username} requested ₨${amount}`)
+    res.json({ success: true, withdrawal })
+  } catch (err) {
+    console.error('[withdrawal] Exception:', err.message)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({ 

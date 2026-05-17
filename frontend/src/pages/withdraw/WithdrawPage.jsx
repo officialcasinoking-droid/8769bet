@@ -10,6 +10,8 @@ import { Dialog, DialogHeader, DialogTitle, DialogContent, DialogFooter } from '
 import { supabase } from '../../lib/supabase'
 import { getHouseEdgePool } from '../../api/aviator'
 
+const API_URL = import.meta.env.VITE_API_URL || 'https://eight769bet-backend.onrender.com'
+
 const MIN_WITHDRAWAL = 100
 const MAX_WITHDRAWAL = 50000
 const PROCESSING_TIME = '24-48 hours'
@@ -209,15 +211,13 @@ export default function WithdrawPage() {
     try {
       const selectedAccountData = withdrawalAccounts.find(a => a.id === selectedAccount?.id)
       const withdrawAmount = Number(amount)
-      const newBalance = availableBalance - withdrawAmount
       
-      const { error: requestError } = await supabase
-        .from('withdrawals')
-        .insert({
-          user_id: user.id,
+      const response = await fetch(`${API_URL}/api/withdrawals`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
           amount: withdrawAmount,
-          fee: Math.round(withdrawAmount * 0.01 * 100) / 100,
-          net_amount: Math.round(withdrawAmount * 0.99 * 100) / 100,
           method: selectedAccountData?.type || 'bank',
           details: {
             account_type: selectedAccountData?.type || 'bank',
@@ -225,27 +225,24 @@ export default function WithdrawPage() {
             account_name: selectedAccountData?.account_name || '',
             cnic: selectedAccountData?.cnic || '',
             real_name: selectedAccountData?.real_name || '',
-          },
-          status: 'pending',
-          created_at: new Date().toISOString()
+          }
         })
+      })
 
-      if (requestError) {
-        toast.error('Failed to create withdrawal request')
+      const result = await response.json()
+
+      if (!result.success) {
+        toast.error(result.error || 'Failed to create withdrawal request')
         setWithdrawing(false)
         return
       }
 
-      await supabase
-        .from('users')
-        .update({ balance: newBalance })
-        .eq('id', user.id)
-
-      toast.success(`Withdrawal of ${formatBalance(withdrawAmount)} submitted!`, 4000)
+      toast.success(`Withdrawal of ₨${withdrawAmount.toLocaleString()} submitted!`, 4000)
       setAmount('')
       fetchTransactions()
       refreshUser()
     } catch (err) {
+      console.error('[withdraw] Error:', err)
       toast.error('Withdrawal failed. Please try again.')
     } finally {
       setWithdrawing(false)

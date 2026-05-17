@@ -4,65 +4,89 @@ import jwt from 'jsonwebtoken'
 import multer from 'multer'
 import path from 'path'
 import fs from 'fs'
-import { landingContent, wallet, withdrawals, transactions, withdrawalSettings } from '../store.js'
-import { requestManualCrash, startNewRound, updateSettings, getCurrentState, settings, houseEdgePool } from '../gameEngine.js'
 import { supabase } from '../lib/supabase.js'
-import { logAudit } from '../middleware/auditLogger.js'
 
 const router = express.Router()
-const JWT_SECRET = process.env.JWT_SECRET || 'fallback-secret-change-in-production'
 
-// Admin login endpoint
-router.post('/login', async (req, res) => {
+// Get all pending withdrawals
+router.get('/withdrawals', async (req, res) => {
+  const { status } = req.query
+  
   try {
-    const { username, password } = req.body
-
-    if (!username || !password) {
-      return res.status(400).json({ error: 'Username and password are required' })
+    let query = supabase
+      .from('withdrawals')
+      .select('*, users(username)')
+      .order('created_at', { ascending: false })
+    
+    if (status) {
+      query = query.eq('status', status)
     }
 
-    // First try the new admin_accounts table
-    const { data: admin, error } = await supabase
-      .from('admin_accounts')
+    const { data, error } = await query
+
+    if (error) {
+      console.error('[admin/withdrawals] Error:', error.message)
+      return res.status(500).json({ error: 'Failed to fetch withdrawals' })
+    }
+
+    res.json(data || [])
+  } catch (err) {
+    console.error('[admin/withdrawals] Exception:', err.message)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+// Approve/reject withdrawal
+router.post('/withdrawals/:id', async (req, res) => {
+  const { id } = req.params
+  const { action } = req.body // 'approve' or 'reject'
+  
+  try {
+    const { data: withdrawal, error: fetchError } = await supabase
+      .from('withdrawals')
       .select('*')
-      .eq('username', username)
-      .eq('is_active', true)
+      .eq('id', id)
       .single()
 
-    if (!error && admin) {
-      if (admin.locked_until && new Date(admin.locked_until) > new Date()) {
-        return res.status(403).json({ error: 'Account is locked' })
-      }
+    if (fetchError || !withdrawal) {
+      return res.status(404).json({ error: 'Withdrawal not found' })
+    }
 
-      const isValid = await bcrypt.compare(password, admin.password_hash)
-      if (!isValid) {
+    const newStatus = action === 'approve' ? 'approved' : 'rejected'
+    
+    const { error: updateError } = await supabase
+      .from('withdrawals')
+      .update({ status: newStatus, updated_at: new Date().toISOString() })
+      .eq('id', id)
+
+    if (updateError) {
+      console.error('[admin/withdrawals/update] Error:', updateError.message)
+      return res.status(500).json({ error: 'Failed to update withdrawal' })
+    }
+
+    // If rejected, refund balance
+    if (action === 'reject') {
+      const { data: user } = await supabase
+        .from('users')
+        .select('balance')
+        .eq('id', withdrawal.user_id)
+        .single()
+
+      if (user) {
         await supabase
-          .from('admin_accounts')
-          .update({ failed_login_count: (admin.failed_login_count || 0) + 1 })
-          .eq('id', admin.id)
-        return res.status(401).json({ error: 'Invalid credentials' })
+          .from('users')
+          .update({ balance: Number(user.balance) + withdrawal.amount, updated_at: new Date().toISOString() })
+          .eq('id', withdrawal.user_id)
       }
+    }
 
-      // Clear failed attempts
-      await supabase
-        .from('admin_accounts')
-        .update({ failed_login_count: 0, last_login: new Date().toISOString() })
-        .eq('id', admin.id)
-
-      const token = jwt.sign(
-        { adminId: admin.id, username: admin.username, role: admin.role },
-        JWT_SECRET,
-        { expiresIn: '24h' }
-      )
-
-      // Create session
-      await supabase.from('admin_sessions').insert({
-        admin_id: admin.id,
-        admin_username: admin.username,
-        token_hash: token,
-        ip_address: req.ip,
-        user_agent: req.headers['user-agent']
-      })
+    console.log(`[admin/withdrawals] ${action}: ID ${id}`)
+    res.json({ success: true })
+  } catch (err) {
+    console.error('[admin/withdrawals] Exception:', err.message)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
 
       await logAudit({
         actorType: 'admin',
