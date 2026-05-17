@@ -18,6 +18,12 @@ const MIN_BET = 6
 const MAX_BET = 1000
 const AUTO_PRESETS = ['2.00', '3.00', '4.00', '5.00', '8.00', '10.00', '20.00']
 
+// Preload plane image once
+const PLANE_IMG = new Image()
+PLANE_IMG.src = '/img/aviator_jogo.png'
+let PLANE_IMG_READY = false
+PLANE_IMG.onload = () => { PLANE_IMG_READY = true }
+
 // ΓöÇΓöÇ Inline CSS ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 const CSS = `
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Exo+2:wght@400;500;600;700;800;900&display=swap');
@@ -724,17 +730,13 @@ export default function AviatorGame() {
     toast.success('Bet cancelled')
   }, [user, toast])
 
-  // ΓöÇΓöÇ Canvas animation ΓöÇΓöÇ
+  // ── Canvas animation ──
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
     const ctx = canvas.getContext('2d')
 
     let W = 0, H = 0, planeX = 0, planeY = 0, frameCount = 0
-    const planeImg = new Image()
-    planeImg.src = '/img/aviator_jogo.png'
-    let planeImgReady = false
-    planeImg.onload = () => { planeImgReady = true }
 
     const buildBg = (w, h) => {
       const off = document.createElement('canvas')
@@ -799,11 +801,11 @@ export default function AviatorGame() {
         planeX = nx; planeY = ny
 
         // Draw plane image
-        if (planeImgReady) {
+        if (PLANE_IMG_READY) {
           ctx.save()
           ctx.translate(nx, ny)
           ctx.rotate(-0.3)
-          ctx.drawImage(planeImg, -40, -20, 80, 40)
+          ctx.drawImage(PLANE_IMG, -40, -20, 80, 40)
           ctx.restore()
         }
 
