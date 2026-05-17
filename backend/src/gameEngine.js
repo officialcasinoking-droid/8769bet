@@ -430,7 +430,7 @@ function startFlying() {
   }
 }
 
-async function crashRound(crashPoint, reason = 'natural') {
+function crashRound(crashPoint, reason = 'natural') {
   try {
     gameState.phase = 'crashed'
     gameState.crashPoint = parseFloat(crashPoint.toFixed(2))
@@ -466,22 +466,22 @@ async function crashRound(crashPoint, reason = 'natural') {
 
       // Update bet record in DB (always attempt)
       if (!bet.is_bot) {
-        try {
-          await supabase
-            .from('aviator_bets')
-            .update({
-              cashed_out: bet.cashedOut,
-              cashout_multiplier: bet.cashoutMult,
-              win_amount: bet.winAmount,
-              status: bet.status,
-              updated_at: new Date().toISOString()
-            })
-            .eq('user_id', bet.userId)
-            .eq('round_id', gameState.roundId)
-            .eq('bet_number', bet.betNum)
-        } catch (e) {
-          console.error('[crashRound] Failed to update bet:', e.message)
-        }
+        supabase
+          .from('aviator_bets')
+          .update({
+            cashed_out: bet.cashedOut,
+            cashout_multiplier: bet.cashoutMult,
+            win_amount: bet.winAmount,
+            status: bet.status,
+            updated_at: new Date().toISOString()
+          })
+          .eq('user_id', bet.userId)
+          .eq('round_id', gameState.roundId)
+          .eq('bet_number', bet.betNum)
+          .then(({ error }) => {
+            if (error) console.error('[crashRound] Failed to update bet:', error.message)
+          })
+          .catch(e => console.error('[crashRound] Failed to update bet:', e.message))
       }
     })
 
