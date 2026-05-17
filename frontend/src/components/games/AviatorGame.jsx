@@ -458,9 +458,9 @@ export default function AviatorGame() {
             updateBalance(newBal)
             return newBal
           })
-          setB1d(prev => prev ? { ...prev, cashed: { won } } : null)
+          setB1d(prev => prev ? { ...prev, cashed: { won }, id: myBet1.id } : null)
           setMyHistory(prev => prev.map(entry => {
-            if (entry.pending && entry.betId === myBet1.id) {
+            if (entry.pending && (entry.betId === myBet1.id || entry.betId.startsWith('temp_'))) {
               return { ...entry, mult: myBet1.cashoutMult, won: true, profit: won, pending: false }
             }
             return entry
@@ -478,9 +478,9 @@ export default function AviatorGame() {
             updateBalance(newBal)
             return newBal
           })
-          setB2d(prev => prev ? { ...prev, cashed: { won } } : null)
+          setB2d(prev => prev ? { ...prev, cashed: { won }, id: myBet2.id } : null)
           setMyHistory(prev => prev.map(entry => {
-            if (entry.pending && entry.betId === myBet2.id) {
+            if (entry.pending && (entry.betId === myBet2.id || entry.betId.startsWith('temp_'))) {
               return { ...entry, mult: myBet2.cashoutMult, won: true, profit: won, pending: false }
             }
             return entry
@@ -506,7 +506,7 @@ export default function AviatorGame() {
         setter(prev => prev ? { ...prev, cashed: { won } } : null)
         if (betData) {
           setMyHistory(prev => prev.map(entry => {
-            if (entry.pending && entry.betId === betData.id) {
+            if (entry.pending && (entry.betId === betData.id || entry.betId.startsWith('temp_'))) {
               return { ...entry, mult: result.multiplier, won: true, profit: won, pending: false }
             }
             return entry
