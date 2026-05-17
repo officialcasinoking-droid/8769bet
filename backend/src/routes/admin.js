@@ -39,12 +39,12 @@ router.get('/withdrawals', async (req, res) => {
 // Approve/reject withdrawal
 router.post('/withdrawals/:id', async (req, res) => {
   const { id } = req.params
-  const { action } = req.body // 'approve' or 'reject'
+  const { action, adminId, adminUsername, rejectionReason } = req.body
   
   try {
     const { data: withdrawal, error: fetchError } = await supabase
       .from('withdrawals')
-      .select('*')
+      .select('*, users(username)')
       .eq('id', id)
       .single()
 
@@ -52,11 +52,22 @@ router.post('/withdrawals/:id', async (req, res) => {
       return res.status(404).json({ error: 'Withdrawal not found' })
     }
 
+    const now = new Date().toISOString()
     const newStatus = action === 'approve' ? 'approved' : 'rejected'
+    
+    const updateData = {
+      status: newStatus,
+      processed_at: now,
+      updated_at: now
+    }
+
+    if (action === 'reject' && rejectionReason) {
+      updateData.rejection_reason = rejectionReason
+    }
     
     const { error: updateError } = await supabase
       .from('withdrawals')
-      .update({ status: newStatus, updated_at: new Date().toISOString() })
+      .update(updateData)
       .eq('id', id)
 
     if (updateError) {
@@ -75,12 +86,36 @@ router.post('/withdrawals/:id', async (req, res) => {
       if (user) {
         await supabase
           .from('users')
-          .update({ balance: Number(user.balance) + withdrawal.amount, updated_at: new Date().toISOString() })
+          .update({ balance: Number(user.balance) + withdrawal.amount, updated_at: now })
           .eq('id', withdrawal.user_id)
       }
     }
 
-    console.log(`[admin/withdrawals] ${action}: ID ${id}`)
+    // Log to audit_logs
+    await supabase
+      .from('audit_logs')
+      .insert({
+        actor_type: 'admin',
+        actor_id: adminId || 'system',
+        actor_username: adminUsername || 'admin',
+        action: action === 'approve' ? 'approve_withdrawal' : 'reject_withdrawal',
+        target_type: 'withdrawal',
+        target_id: id,
+        target_username: withdrawal.users?.username || 'unknown',
+        details: { 
+          amount: withdrawal.amount, 
+          method: withdrawal.method,
+          rejection_reason: rejectionReason || null
+        },
+        ip_address: req.ip,
+        user_agent: req.headers['user-agent'],
+        severity: action === 'approve' ? 'info' : 'warning',
+        success: true,
+        timestamp: now
+      })
+      .catch(err => console.error('[admin/withdrawals] Audit log error:', err.message))
+
+    console.log(`[admin/withdrawals] ${action}: ID ${id} by ${adminUsername || 'admin'}`)
     res.json({ success: true })
   } catch (err) {
     console.error('[admin/withdrawals] Exception:', err.message)

@@ -195,6 +195,7 @@ app.post('/api/withdrawals', async (req, res) => {
     const fee = Math.round(amount * 0.01 * 100) / 100
     const netAmount = Math.round(amount * 0.99 * 100) / 100
     const newBalance = Number(user.balance) - amount
+    const now = new Date().toISOString()
 
     // Create withdrawal record
     const { data: withdrawal, error: wdError } = await supabase
@@ -207,7 +208,9 @@ app.post('/api/withdrawals', async (req, res) => {
         method: method || 'bank',
         details: details || {},
         status: 'pending',
-        created_at: new Date().toISOString()
+        created_at: now,
+        processed_at: null,
+        rejection_reason: null
       })
       .select()
       .single()
@@ -220,8 +223,27 @@ app.post('/api/withdrawals', async (req, res) => {
     // Deduct balance
     await supabase
       .from('users')
-      .update({ balance: newBalance, updated_at: new Date().toISOString() })
+      .update({ balance: newBalance, updated_at: now })
       .eq('id', userId)
+
+    // Log to audit_logs
+    await supabase
+      .from('audit_logs')
+      .insert({
+        actor_type: 'user',
+        actor_id: userId,
+        actor_username: user.username,
+        action: 'request_withdrawal',
+        target_type: 'withdrawal',
+        target_id: withdrawal.id,
+        details: { amount, method, fee, netAmount },
+        ip_address: req.ip,
+        user_agent: req.headers['user-agent'],
+        severity: 'info',
+        success: true,
+        timestamp: now
+      })
+      .catch(err => console.error('[withdrawal] Audit log error:', err.message))
 
     console.log(`[withdrawal] Created: ${user.username} requested ₨${amount}`)
     res.json({ success: true, withdrawal })
