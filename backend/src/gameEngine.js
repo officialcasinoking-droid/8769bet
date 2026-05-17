@@ -176,7 +176,6 @@ let wss = null
 const clients = new Set()
 let gameLoop = null
 let saveInterval = null
-const SAVE_INTERVAL_MS = 5000 // Save state every 5 seconds
 let manualCrashRequested = false
 let lastStateBroadcast = 0
 
