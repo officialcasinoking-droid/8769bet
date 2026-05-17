@@ -200,8 +200,13 @@ function generateCrashPoint(houseEdge = 0.05) {
 function broadcast(data) {
   const msg = JSON.stringify(data)
   clients.forEach(client => {
-    if (client.readyState === 1) { // WebSocket.OPEN
-      client.send(msg)
+    try {
+      if (client.readyState === 1) { // WebSocket.OPEN
+        client.send(msg)
+      }
+    } catch (err) {
+      console.error('[Broadcast] Error sending to client:', err.message)
+      clients.delete(client)
     }
   })
 }
@@ -312,207 +317,224 @@ function startGameLoop() {
   }, SAVE_INTERVAL_MS)
 
   gameLoop = setInterval(() => {
-    const now = Date.now()
+    try {
+      const now = Date.now()
 
-    if (gameState.phase === 'betting') {
-      const elapsed = (now - gameState.startTime) / 1000
-      const remaining = Math.max(0, WAIT_TIME_SECONDS - elapsed)
-      gameState.countdown = parseFloat(remaining.toFixed(1))
+      if (gameState.phase === 'betting') {
+        const elapsed = (now - gameState.startTime) / 1000
+        const remaining = Math.max(0, WAIT_TIME_SECONDS - elapsed)
+        gameState.countdown = parseFloat(remaining.toFixed(1))
 
-      if (now - lastStateBroadcast >= STATE_BROADCAST_MS) {
-        lastStateBroadcast = now
-        broadcast({
-          type: 'game_state',
-          phase: 'betting',
-          countdown: gameState.countdown,
-          roundId: gameState.roundId,
-          houseEdge: houseEdgePool,
-        })
-      }
+        if (now - lastStateBroadcast >= STATE_BROADCAST_MS) {
+          lastStateBroadcast = now
+          broadcast({
+            type: 'game_state',
+            phase: 'betting',
+            countdown: gameState.countdown,
+            roundId: gameState.roundId,
+            houseEdge: houseEdgePool,
+          })
+        }
 
-      if (remaining <= 0) {
-        startFlying()
-      }
-    } else if (gameState.phase === 'flying') {
-      const elapsed = (now - gameState.startTime) / 1000
-      const mult = parseFloat(Math.pow(Math.E, 0.06 * elapsed).toFixed(2))
+        if (remaining <= 0) {
+          startFlying()
+        }
+      } else if (gameState.phase === 'flying') {
+        const elapsed = (now - gameState.startTime) / 1000
+        const mult = parseFloat(Math.pow(Math.E, 0.06 * elapsed).toFixed(2))
 
-      // Check auto-cashouts and track if any changed
-      let betsChanged = false
-      for (const bet of currentBets) {
-        if (!bet.cashedOut && bet.autoCashout && mult >= bet.autoCashout) {
-          bet.cashedOut = true
-          bet.cashoutMult = parseFloat(bet.autoCashout.toFixed(2))
-          bet.winAmount = Math.floor(bet.amount * bet.autoCashout)
-          bet.status = 'won'
-          betsChanged = true
+        // Check auto-cashouts and track if any changed
+        let betsChanged = false
+        for (const bet of currentBets) {
+          if (!bet.cashedOut && bet.autoCashout && mult >= bet.autoCashout) {
+            bet.cashedOut = true
+            bet.cashoutMult = parseFloat(bet.autoCashout.toFixed(2))
+            bet.winAmount = Math.floor(bet.amount * bet.autoCashout)
+            bet.status = 'won'
+            betsChanged = true
 
-          // Credit winnings to user balance in DB (always attempt)
-          if (!bet.is_bot) {
-            creditUserBalance(bet.userId, bet.winAmount, bet)
+            // Credit winnings to user balance in DB (always attempt)
+            if (!bet.is_bot) {
+              creditUserBalance(bet.userId, bet.winAmount, bet)
+            }
           }
         }
-      }
 
-      // Only broadcast bets when something actually changed
-      if (betsChanged) {
-        broadcast({ type: 'bets_update', bets: currentBets })
-      }
+        // Only broadcast bets when something actually changed
+        if (betsChanged) {
+          broadcast({ type: 'bets_update', bets: currentBets })
+        }
 
-      // Check manual crash
-      if (manualCrashRequested) {
-        manualCrashRequested = false
-        crashRound(mult, 'manual')
-        return
-      }
-
-      // Check auto house edge
-      if (settings.heMode !== 'off') {
-        if (elapsed >= settings.heMinSecs && mult >= gameState.crashPoint) {
-          crashRound(mult, settings.heMode)
+        // Check manual crash
+        if (manualCrashRequested) {
+          manualCrashRequested = false
+          crashRound(mult, 'manual')
           return
         }
-        // Max flight safety
-        if (elapsed >= settings.heMaxSecs) {
-          crashRound(mult, 'max_time')
-          return
+
+        // Check auto house edge
+        if (settings.heMode !== 'off') {
+          if (elapsed >= settings.heMinSecs && mult >= gameState.crashPoint) {
+            crashRound(mult, settings.heMode)
+            return
+          }
+          // Max flight safety
+          if (elapsed >= settings.heMaxSecs) {
+            crashRound(mult, 'max_time')
+            return
+          }
+        } else {
+          // Normal mode - crash at predetermined point
+          if (mult >= gameState.crashPoint) {
+            crashRound(gameState.crashPoint, 'natural')
+            return
+          }
         }
-      } else {
-        // Normal mode - crash at predetermined point
-        if (mult >= gameState.crashPoint) {
-          crashRound(gameState.crashPoint, 'natural')
-          return
+
+        gameState.mult = parseFloat(mult.toFixed(2))
+
+        // Throttle state broadcast to reduce network load
+        if (now - lastStateBroadcast >= STATE_BROADCAST_MS) {
+          lastStateBroadcast = now
+          broadcast({
+            type: 'game_state',
+            phase: 'flying',
+            mult: gameState.mult,
+            roundId: gameState.roundId,
+            houseEdge: houseEdgePool,
+          })
         }
       }
-
-      gameState.mult = parseFloat(mult.toFixed(2))
-
-      // Throttle state broadcast to reduce network load
-      if (now - lastStateBroadcast >= STATE_BROADCAST_MS) {
-        lastStateBroadcast = now
-        broadcast({
-          type: 'game_state',
-          phase: 'flying',
-          mult: gameState.mult,
-          roundId: gameState.roundId,
-          houseEdge: houseEdgePool,
-        })
-      }
+    } catch (err) {
+      console.error('[GameLoop] Unhandled error:', err.message, err.stack)
     }
   }, TICK_INTERVAL_MS)
 }
 
 function startFlying() {
-  gameState.phase = 'flying'
-  gameState.mult = 1.00
-  gameState.startTime = Date.now()
+  try {
+    gameState.phase = 'flying'
+    gameState.mult = 1.00
+    gameState.startTime = Date.now()
 
-  broadcast({
-    type: 'game_state',
-    phase: 'flying',
-    mult: 1.00,
-    crashPoint: gameState.crashPoint,
-    roundId: gameState.roundId,
-    houseEdge: houseEdgePool,
-  })
+    broadcast({
+      type: 'game_state',
+      phase: 'flying',
+      mult: 1.00,
+      crashPoint: gameState.crashPoint,
+      roundId: gameState.roundId,
+      houseEdge: houseEdgePool,
+    })
+  } catch (err) {
+    console.error('[startFlying] Error:', err.message)
+  }
 }
 
 function crashRound(crashPoint, reason = 'natural') {
-  gameState.phase = 'crashed'
-  gameState.crashPoint = parseFloat(crashPoint.toFixed(2))
-  gameState.crashedAt = Date.now()
+  try {
+    gameState.phase = 'crashed'
+    gameState.crashPoint = parseFloat(crashPoint.toFixed(2))
+    gameState.crashedAt = Date.now()
 
-  // Save final state
-  saveGameState()
+    // Save final state
+    saveGameState().catch(err => console.error('[crashRound] Save state error:', err.message))
 
-  // Clear bot bet timeouts
-  botBetTimeouts.forEach(clearTimeout)
-  botBetTimeouts = []
+    // Clear bot bet timeouts
+    botBetTimeouts.forEach(clearTimeout)
+    botBetTimeouts = []
 
-  // Process auto-cashouts for bots that reached their target
-  const now = Date.now()
-  const elapsed = (now - gameState.startTime) / 1000
-  const currentMult = parseFloat(Math.pow(Math.E, 0.06 * elapsed).toFixed(2))
+    // Process auto-cashouts for bots that reached their target
+    const now = Date.now()
+    const elapsed = (now - gameState.startTime) / 1000
+    const currentMult = parseFloat(Math.pow(Math.E, 0.06 * elapsed).toFixed(2))
 
-  currentBets.forEach(bet => {
-    if (!bet.cashedOut) {
-      if (bet.autoCashout && currentMult >= bet.autoCashout) {
-        bet.cashedOut = true
-        bet.cashoutMult = currentMult
-        bet.winAmount = Math.floor(bet.amount * currentMult)
-        bet.status = 'won'
-        // Credit winnings (always attempt)
-        if (!bet.is_bot) {
-          creditUserBalance(bet.userId, bet.winAmount, bet)
+    currentBets.forEach(bet => {
+      if (!bet.cashedOut) {
+        if (bet.autoCashout && currentMult >= bet.autoCashout) {
+          bet.cashedOut = true
+          bet.cashoutMult = currentMult
+          bet.winAmount = Math.floor(bet.amount * currentMult)
+          bet.status = 'won'
+          // Credit winnings (always attempt)
+          if (!bet.is_bot) {
+            creditUserBalance(bet.userId, bet.winAmount, bet)
+          }
+        } else {
+          bet.status = 'lost'
         }
-      } else {
-        bet.status = 'lost'
       }
-    }
 
-    // Update bet record in DB (always attempt)
-    if (!bet.is_bot) {
-      supabase
-        .from('aviator_bets')
-        .update({
-          cashed_out: bet.cashedOut,
-          cashout_multiplier: bet.cashoutMult,
-          win_amount: bet.winAmount,
-          status: bet.status,
-          updated_at: new Date().toISOString()
-        })
-        .eq('user_id', bet.userId)
-        .eq('round_id', gameState.roundId)
-        .eq('bet_number', bet.betNum)
-        .catch(e => console.error('[crashRound] Failed to update bet:', e.message))
-    }
-  })
+      // Update bet record in DB (always attempt)
+      if (!bet.is_bot) {
+        supabase
+          .from('aviator_bets')
+          .update({
+            cashed_out: bet.cashedOut,
+            cashout_multiplier: bet.cashoutMult,
+            win_amount: bet.winAmount,
+            status: bet.status,
+            updated_at: new Date().toISOString()
+          })
+          .eq('user_id', bet.userId)
+          .eq('round_id', gameState.roundId)
+          .eq('bet_number', bet.betNum)
+          .catch(e => console.error('[crashRound] Failed to update bet:', e.message))
+      }
+    })
 
-  // Add to history
-  crashHistory.unshift(gameState.crashPoint)
-  if (crashHistory.length > 30) crashHistory = crashHistory.slice(0, 30)
+    // Add to history
+    crashHistory.unshift(gameState.crashPoint)
+    if (crashHistory.length > 30) crashHistory = crashHistory.slice(0, 30)
 
-  broadcast({
-    type: 'game_state',
-    phase: 'crashed',
-    crash_point: gameState.crashPoint,
-    crashPoint: gameState.crashPoint,
-    reason,
-    roundId: gameState.roundId,
-    bets: currentBets,
-    houseEdge: houseEdgePool,
-  })
+    broadcast({
+      type: 'game_state',
+      phase: 'crashed',
+      crash_point: gameState.crashPoint,
+      crashPoint: gameState.crashPoint,
+      reason,
+      roundId: gameState.roundId,
+      bets: currentBets,
+      houseEdge: houseEdgePool,
+    })
 
-  // Update house edge stats
-  updateHouseEdgeStats()
+    // Update house edge stats
+    updateHouseEdgeStats()
 
-  // Start new round after delay
-  setTimeout(() => {
-    startNewRound()
-  }, 3000)
+    // Start new round after delay
+    setTimeout(() => {
+      try {
+        startNewRound()
+      } catch (err) {
+        console.error('[crashRound] startNewRound error:', err.message)
+      }
+    }, 3000)
+  } catch (err) {
+    console.error('[crashRound] Unhandled error:', err.message, err.stack)
+  }
 }
 
 function startNewRound() {
-  currentBets = []
-  gameState.roundId = `r_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
-  gameState.phase = 'betting'
-  gameState.countdown = WAIT_TIME_SECONDS
-  gameState.startTime = Date.now()
-  gameState.crashPoint = generateCrashPoint(settings.houseEdge)
+  try {
+    currentBets = []
+    gameState.roundId = `r_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
+    gameState.phase = 'betting'
+    gameState.countdown = WAIT_TIME_SECONDS
+    gameState.startTime = Date.now()
+    gameState.crashPoint = generateCrashPoint(settings.houseEdge)
 
-  broadcast({
-    type: 'game_state',
-    phase: 'betting',
-    countdown: WAIT_TIME_SECONDS,
-    roundId: gameState.roundId,
-    houseEdge: houseEdgePool,
-  })
+    broadcast({
+      type: 'game_state',
+      phase: 'betting',
+      countdown: WAIT_TIME_SECONDS,
+      roundId: gameState.roundId,
+      houseEdge: houseEdgePool,
+    })
 
-  // Schedule bot bets during betting phase
-  scheduleBotBets()
-
-  // Restart the game loop
-  startGameLoop()
+    // Schedule bot bets during betting phase
+    scheduleBotBets()
+  } catch (err) {
+    console.error('[startNewRound] Error:', err.message, err.stack)
+  }
 }
 
 let botBetTimeouts = []
@@ -815,10 +837,12 @@ async function initGameEngine(server) {
   // Try to restore game state from database
   const stateRestored = await loadGameState()
 
+  // Always start the game loop
+  startGameLoop()
+
   if (stateRestored) {
-    // Restored state - start game loop and broadcast current state
+    // Restored state - broadcast current state
     console.log('[GameEngine] Starting with restored state')
-    startGameLoop()
     broadcast({
       type: 'game_state',
       phase: gameState.phase,
