@@ -5,15 +5,17 @@ import { toast } from 'react-hot-toast'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Dialog, DialogHeader, DialogTitle, DialogDescription, DialogContent, DialogFooter } from '../ui/Dialog'
 import { FormField, Input, Select, Toggle, Button, Badge } from '../ui/FormElements'
+import AIWithdrawalAgent from './AIWithdrawalAgent'
 import {
   CreditCard, Plus, Edit2, Trash2, Search, Download,
   RefreshCw, Check, X, Upload, Globe, Smartphone, Building2, Coins,
   ArrowUpRight, ArrowDownRight, Clock, CheckCircle, XCircle, Filter,
   ChevronLeft, ChevronRight, ArrowLeftRight, TrendingUp, Wallet, FileText,
-  Loader2
+  Loader2, Sparkles
 } from 'lucide-react'
 
 const BUCKET = 'landing-images'
+const API_URL = import.meta.env.VITE_API_URL || 'https://eight769bet-backend.onrender.com'
 
 // ── Tabs Config ──────────────────────────────────────────────
 const TABS = [
@@ -21,6 +23,7 @@ const TABS = [
   { id: 'pending', label: 'Pending', icon: Clock },
   { id: 'completed', label: 'Completed', icon: CheckCircle },
   { id: 'payment-methods', label: 'Payment Methods', icon: CreditCard },
+  { id: 'ai-assistant', label: 'AI Assistant', icon: Sparkles },
 ]
 
 // ── Status Config ────────────────────────────────────────────
@@ -59,25 +62,33 @@ async function getAllTransactions() {
 }
 
 async function getPendingTransactions() {
-  const { data, error } = await supabase
-    .from('withdrawals')
-    .select('*')
-    .eq('status', 'pending')
-    .order('created_at', { ascending: false })
-    .limit(100)
-  if (error) return []
-  return data || []
+  try {
+    const adminUser = JSON.parse(localStorage.getItem('admin_user') || '{}')
+    const response = await fetch(`${API_URL}/api/admin/withdrawals?status=pending`, {
+      headers: { 'Authorization': `Bearer ${adminUser.token}` }
+    })
+    if (!response.ok) return []
+    const data = await response.json()
+    return data || []
+  } catch (err) {
+    console.error('Failed to fetch pending withdrawals:', err)
+    return []
+  }
 }
 
 async function getCompletedTransactions() {
-  const { data, error } = await supabase
-    .from('withdrawals')
-    .select('*')
-    .in('status', ['approved', 'paid'])
-    .order('processed_at', { ascending: false })
-    .limit(100)
-  if (error) return []
-  return data || []
+  try {
+    const adminUser = JSON.parse(localStorage.getItem('admin_user') || '{}')
+    const response = await fetch(`${API_URL}/api/admin/withdrawals?status=approved`, {
+      headers: { 'Authorization': `Bearer ${adminUser.token}` }
+    })
+    if (!response.ok) return []
+    const data = await response.json()
+    return data || []
+  } catch (err) {
+    console.error('Failed to fetch completed withdrawals:', err)
+    return []
+  }
 }
 
 async function getPaymentMethods() {
@@ -90,24 +101,41 @@ async function getPaymentMethods() {
 }
 
 async function approveWithdrawal(id) {
-  const { data, error } = await supabase
-    .from('withdrawals')
-    .update({ status: 'approved', processed_at: new Date().toISOString() })
-    .eq('id', id)
-    .select()
-    .single()
-  if (error) throw error
+  const adminUser = JSON.parse(localStorage.getItem('admin_user') || '{}')
+  const response = await fetch(`${API_URL}/api/admin/withdrawals/${id}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${adminUser.token}`
+    },
+    body: JSON.stringify({
+      action: 'approve',
+      adminId: adminUser.admin?.id,
+      adminUsername: adminUser.admin?.username
+    })
+  })
+  const data = await response.json()
+  if (!response.ok) throw new Error(data.error || 'Failed to approve')
   return data
 }
 
 async function rejectWithdrawal(id, reason) {
-  const { data, error } = await supabase
-    .from('withdrawals')
-    .update({ status: 'rejected', rejection_reason: reason, processed_at: new Date().toISOString() })
-    .eq('id', id)
-    .select()
-    .single()
-  if (error) throw error
+  const adminUser = JSON.parse(localStorage.getItem('admin_user') || '{}')
+  const response = await fetch(`${API_URL}/api/admin/withdrawals/${id}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${adminUser.token}`
+    },
+    body: JSON.stringify({
+      action: 'reject',
+      adminId: adminUser.admin?.id,
+      adminUsername: adminUser.admin?.username,
+      rejectionReason: reason
+    })
+  })
+  const data = await response.json()
+  if (!response.ok) throw new Error(data.error || 'Failed to reject')
   return data
 }
 
@@ -736,7 +764,11 @@ export default function DepositWithdrawalSection() {
           exit={{ opacity: 0, y: -10 }}
           transition={{ duration: 0.2 }}
         >
-          {isLoading ? (
+          {activeTab === 'ai-assistant' ? (
+            <div className="h-[calc(100vh-280px)] min-h-[600px]">
+              <AIWithdrawalAgent />
+            </div>
+          ) : isLoading ? (
             <div className="space-y-3">
               {[...Array(5)].map((_, i) => (
                 <div key={i} className="h-16 bg-slate-800/50 rounded-xl animate-pulse" />
