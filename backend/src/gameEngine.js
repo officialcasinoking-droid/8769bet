@@ -11,9 +11,10 @@ let supabaseAvailable = true
 
 // ── Game Configuration ───────────────────────────────────────
 const WAIT_TIME_SECONDS = 8
-const TICK_INTERVAL_MS = 33
+const TICK_INTERVAL_MS = 50
 const CRASH_DELAY_MS = 3000
-const STATE_BROADCAST_MS = 100
+const STATE_BROADCAST_MS = 150
+const SAVE_INTERVAL_MS = 5000
 
 // ── Game State ───────────────────────────────────────────────
 let gameState = {
@@ -767,6 +768,19 @@ async function initGameEngine(server) {
           updateSettings(msg.settings)
           broadcast({ type: 'settings_updated', settings: { ...settings } })
         }
+
+        if (msg.type === 'get_state') {
+          ws.send(JSON.stringify({
+            type: 'game_state',
+            phase: gameState.phase,
+            countdown: gameState.countdown,
+            mult: gameState.mult,
+            crash_point: gameState.crashPoint,
+            roundId: gameState.roundId,
+            crashHistory: [...crashHistory],
+            bets: [...currentBets],
+          }))
+        }
       } catch (e) {
         console.warn('[WS] Invalid message:', e.message)
       }
@@ -780,6 +794,21 @@ async function initGameEngine(server) {
     ws.on('error', (err) => {
       console.error('[WS] Error:', err.message)
       clients.delete(ws)
+    })
+
+    // Send ping every 30 seconds to keep connection alive
+    const pingInterval = setInterval(() => {
+      if (ws.readyState === 1) {
+        ws.send(JSON.stringify({ type: 'ping' }))
+      } else {
+        clearInterval(pingInterval)
+      }
+    }, 30000)
+
+    ws.on('close', () => {
+      clearInterval(pingInterval)
+      clients.delete(ws)
+      console.log(`[GameEngine] Client disconnected. Total clients: ${clients.size}`)
     })
    })
 

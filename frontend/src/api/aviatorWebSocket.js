@@ -48,6 +48,12 @@ class AviatorWebSocketClient {
       return
     }
 
+    // Close existing connection if any
+    if (this.ws) {
+      try { this.ws.close() } catch {}
+      this.ws = null
+    }
+
     try {
       this.ws = new WebSocket(this.backendUrl)
 
@@ -58,12 +64,13 @@ class AviatorWebSocketClient {
           clearTimeout(this.reconnectTimer)
           this.reconnectTimer = null
         }
+        // Notify listeners of reconnection
+        this.handleMessage({ type: 'ws_connected' })
       }
 
       this.ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data)
-          console.log('[WS] Received:', data.type, data)
           this.handleMessage(data)
         } catch (error) {
           console.error('[WS] Failed to parse message:', error)
@@ -77,7 +84,7 @@ class AviatorWebSocketClient {
       }
 
       this.ws.onerror = (error) => {
-        console.error('[WS] Connection error:', error)
+        console.error('[WS] Connection error')
         this.isConnected = false
       }
     } catch (error) {

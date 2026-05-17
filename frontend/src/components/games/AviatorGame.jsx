@@ -385,6 +385,18 @@ export default function AviatorGame() {
       setWsConnected(aviatorWS.isConnected)
     }, 1000)
 
+    // Handle WS reconnection - sync game state
+    aviatorWS.on('ws_connected', () => {
+      setWsConnected(true)
+      // Request full state from server
+      if (aviatorWS.ws) {
+        aviatorWS.ws.send(JSON.stringify({ type: 'get_state' }))
+      }
+    })
+
+    // Ignore ping messages
+    aviatorWS.on('ping', () => {})
+
     aviatorWS.on('game_state', (state) => {
       if (state.phase === 'betting') {
         phaseRef.current = 'betting'
@@ -408,6 +420,10 @@ export default function AviatorGame() {
       }
       if (state.crashHistory && Array.isArray(state.crashHistory)) {
         setHist(state.crashHistory.slice(0, 30))
+      }
+      // Sync live bets on state update
+      if (state.bets && Array.isArray(state.bets)) {
+        setLive(state.bets)
       }
     })
 

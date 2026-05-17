@@ -144,7 +144,10 @@ app.get('/api/aviator/bet-history', async (req, res) => {
       .order('created_at', { ascending: false })
       .limit(100)
 
-    if (error) throw error
+    if (error) {
+      console.error('[bet-history] Supabase error:', error.message)
+      return res.json({ success: true, bets: [], stats: { totalBets: 0, wonBets: 0, lostBets: 0, totalWagered: 0, totalWon: 0, profit: 0 } })
+    }
 
     // Calculate stats
     const totalBets = bets?.length || 0
@@ -159,7 +162,8 @@ app.get('/api/aviator/bet-history', async (req, res) => {
       stats: { totalBets, wonBets, lostBets, totalWagered, totalWon, profit: totalWon - totalWagered }
     })
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message })
+    console.error('[bet-history] Exception:', err.message)
+    res.json({ success: true, bets: [], stats: { totalBets: 0, wonBets: 0, lostBets: 0, totalWagered: 0, totalWon: 0, profit: 0 } })
   }
 })
 
