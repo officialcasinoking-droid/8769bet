@@ -1,6 +1,7 @@
-/**
- * AviatorGame.jsx — Full-featured Aviator Crash Game
- * Backend manages all balance. Frontend reads from DB after every action.
+﻿/**
+ * AviatorGame.jsx ΓÇö Full-featured Aviator Crash Game
+ * Backend WebSocket for real-time state, REST API for bets/cashouts.
+ * Canvas-based rendering with plane image, trail, explosions.
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react'
@@ -9,7 +10,6 @@ import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../components/ui/Toast'
 import { ChevronLeft } from 'lucide-react'
 import { aviatorWS } from '../../api/aviatorWebSocket'
-import { supabase } from '../../lib/supabase'
 
 const API_URL = import.meta.env.VITE_API_URL || 'https://eight769bet-backend.onrender.com'
 
@@ -18,7 +18,7 @@ const MIN_BET = 6
 const MAX_BET = 1000
 const AUTO_PRESETS = ['2.00', '3.00', '4.00', '5.00', '8.00', '10.00', '20.00']
 
-// ── Inline CSS ────────────────────────────────────────────────
+// ΓöÇΓöÇ Inline CSS ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 const CSS = `
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Exo+2:wght@400;500;600;700;800;900&display=swap');
   * { box-sizing: border-box; }
@@ -31,7 +31,7 @@ const CSS = `
   }
   .av-root { font-family: 'Inter','Exo 2',-apple-system,sans-serif; }
   .av-loading { position:fixed;inset:0;z-index:200; background:var(--bg-primary); display:flex;flex-direction:column;align-items:center;justify-content:center; }
-  .av-loading-icon { width:72px;height:72px;border-radius:18px; background:linear-gradient(135deg,#ff4d4d,#ff8c00); display:flex;align-items:center;justify-content:center;font-size:36px; box-shadow:0 0 50px rgba(255,77,77,0.4); margin-bottom:28px; }
+  .av-loading-icon { width:72px;height:72px;border-radius:18px; background:linear-gradient(135deg,#ff4d4d,#ff8c00); display:flex;align-items:center;justify-content:center; box-shadow:0 0 50px rgba(255,77,77,0.4); margin-bottom:28px; font-size:36px; }
   .av-loading-title { font-family:'Exo 2',sans-serif;font-size:38px;font-weight:900; color:var(--text);letter-spacing:.15em;text-transform:uppercase;margin:0 0 6px; }
   .av-loading-sub { font-size:11px;color:rgba(255,255,255,.28);letter-spacing:.3em; text-transform:uppercase;margin:0 0 36px; }
   .av-bar-wrap {width:260px;margin-bottom:28px;}
@@ -58,21 +58,45 @@ const CSS = `
   .av-main{display:flex;flex-direction:column;flex:1;overflow:hidden;min-height:0}
   .av-top-row{display:flex;flex:1;overflow:hidden;min-height:0}
   .av-bets-row{display:flex;overflow:hidden;flex-shrink:0}
-  .av-panel{flex:1;max-width:320px;min-width:160px;overflow-y:auto;padding:8px;background:var(--bg-secondary);border-right:1px solid var(--border);}
-  .av-card{background:var(--bg-panel);border:1px solid var(--border);border-radius:10px;padding:8px;margin-bottom:8px;}
-  .av-card-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;}
-  .av-card-title{font-size:11px;font-weight:700;color:var(--text-sec);text-transform:uppercase;letter-spacing:.1em;}
-  .av-card-amount{font-family:'Exo 2',sans-serif;font-size:12px;font-weight:700;color:var(--text);}
-  .av-input-row{display:flex;gap:4px;margin-bottom:6px;}
-  .av-input { flex:1;padding:6px 8px;border-radius:6px;background:rgba(255,255,255,.04);border:1px solid var(--border);color:var(--text);font-family:'Exo 2',sans-serif;font-size:13px;font-weight:700;outline:none; }
-  .av-input:focus{border-color:var(--green-border);}
-  .av-quick{display:flex;gap:3px;flex-wrap:wrap;margin-bottom:6px;}
-  .av-quick-btn { padding:3px 7px;border-radius:4px;background:rgba(255,255,255,.04);border:1px solid var(--border);color:var(--text-sec);font-size:10px;font-weight:600;cursor:pointer;transition:all .12s; }
-  .av-quick-btn:hover{background:var(--green-dim);border-color:var(--green-border);color:var(--green);}
-  .av-auto-row{display:flex;align-items:center;gap:4px;margin-bottom:6px;}
-  .av-auto-toggle { padding:4px 8px;border-radius:5px;font-size:10px;font-weight:700;cursor:pointer;border:1px solid var(--border);background:rgba(255,255,255,.04);color:var(--text-sec);transition:all .12s; }
-  .av-auto-toggle.on{background:var(--green-dim);border-color:var(--green-border);color:var(--green);}
-  .av-betbtn { width:100%;padding:14px;border-radius:10px; font-family:'Exo 2',sans-serif;font-size:14px;font-weight:800;border:none;cursor:pointer;transition:all .12s; }
+  .av-my-history { flex-shrink:0;display:flex;align-items:center;gap:0; padding:0; background:var(--bg-secondary); border-top:1px solid var(--border); overflow-x:auto;white-space:nowrap;max-height:48px; scrollbar-width:none; }
+  .av-my-history::-webkit-scrollbar{display:none}
+  .av-my-history-title { font-size:8px;font-weight:700;color:rgba(255,255,255,.25); text-transform:uppercase;letter-spacing:.1em;flex-shrink:0; padding:0 10px;display:flex;align-items:center;height:100%; border-right:1px solid var(--border); }
+  .av-my-h-item { flex-shrink:0;display:inline-flex;align-items:center;gap:5px; padding:5px 10px; font-size:9px;font-weight:600; border-right:1px solid rgba(255,255,255,.03); transition:background .1s; }
+  .av-my-h-item.won{color:var(--green);background:var(--green-dim)}
+  .av-my-h-item.lost{color:var(--red);background:var(--red-dim)}
+  .av-my-h-item.pending{color:var(--yellow);background:rgba(255,214,0,.06)}
+  .av-my-h-time{font-size:7px;color:rgba(255,255,255,.25);font-weight:500}
+  .av-my-h-amt{font-weight:800;font-size:10px}
+  .av-my-h-mult{font-weight:800;font-size:9px}
+  .av-my-h-profit{font-weight:800;font-size:9px}
+  .av-panel { flex:1;display:flex;flex-direction:column;gap:7px; padding:8px 6px;overflow-y:auto; max-width:210px; scrollbar-width:none; }
+  .av-panel::-webkit-scrollbar{display:none}
+  .av-card { background:var(--bg-panel);border:1px solid var(--border); border-radius:11px;padding:11px; backdrop-filter:blur(12px); transition:border-color .15s; }
+  .av-card:hover{border-color:var(--border-active)}
+  .av-card.green{border-color:rgba(0,232,135,.18)}
+  .av-card.red{border-color:rgba(255,77,77,.18)}
+  .av-card-head { display:flex;align-items:center;justify-content:space-between;margin-bottom:7px; }
+  .av-card-label{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.1em}
+  .av-card-label.g{color:var(--green)}
+  .av-card-label.r{color:var(--red)}
+  .av-card-won{font-size:9px;font-weight:700;color:var(--yellow)}
+  .av-quick{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin-bottom:7px;}
+  .av-qbtn { padding:8px 0;border-radius:6px; font-size:11px;font-weight:700; background:rgba(255,255,255,.04);color:rgba(255,255,255,.55); border:1px solid rgba(255,255,255,.07);cursor:pointer; transition:all .12s; }
+  .av-qbtn:hover{background:rgba(255,255,255,.09);color:#fff}
+  .av-qbtn.on{background:var(--green);color:#0c1220;border-color:var(--green)}
+  .av-amt-row { display:flex;align-items:center;gap:3px; background:rgba(0,0,0,.28); border:1px solid rgba(255,255,255,.07); border-radius:7px;padding:5px 9px;margin-bottom:7px; }
+  .av-amt-sym{font-size:12px;color:rgba(255,255,255,.28);font-weight:600}
+  .av-amt-input { flex:1;background:transparent;border:none;outline:none; font-family:'Exo 2',sans-serif;font-size:15px;font-weight:800; color:var(--text);text-align:center;width:100%; }
+  .av-amt-input:disabled{opacity:.28}
+  .av-amt-inc { width:32px;height:32px;border-radius:6px; background:rgba(255,255,255,.04);border:none; color:rgba(255,255,255,.45);cursor:pointer; font-size:16px;display:flex;align-items:center;justify-content:center; transition:background .12s; }
+  .av-amt-inc:hover{background:rgba(255,255,255,.09);color:#fff}
+  .av-auto-row{display:flex;align-items:center;gap:5px;margin-bottom:9px;}
+  .av-auto-btn { padding:6px 12px;border-radius:6px;border:none;cursor:pointer; font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.04em; background:rgba(255,255,255,.04);color:rgba(255,255,255,.45); border:1px solid rgba(255,255,255,.09);transition:all .12s; }
+  .av-auto-btn.on{background:var(--green);color:#0c1220;border-color:var(--green)}
+  .av-auto-presets{display:flex;gap:3px;flex:1;}
+  .av-auto-p { flex:1;padding:6px 2px;border-radius:5px;border:none;cursor:pointer; font-size:9px;font-weight:700; background:rgba(255,255,255,.04);color:rgba(255,255,255,.35); transition:all .12s; }
+  .av-auto-p.on{background:var(--green);color:#0c1220}
+  .av-betbtn { width:100%;padding:14px;border-radius:10px; font-family:'Exo 2',sans-serif;font-size:14px;font-weight:800; letter-spacing:.04em;text-transform:uppercase;border:none;cursor:pointer; transition:all .12s; }
   .av-betbtn.g{background:linear-gradient(135deg,var(--green),#00d4aa);color:#0c1220;box-shadow:0 3px 18px rgba(0,232,135,.28)}
   .av-betbtn.r{background:linear-gradient(135deg,var(--red),#ff8c00);color:#fff;box-shadow:0 3px 18px rgba(255,77,77,.28)}
   .av-betbtn.g:hover{box-shadow:0 3px 28px rgba(0,232,135,.48);transform:translateY(-1px)}
@@ -140,20 +164,13 @@ const CSS = `
   .av-live-amt{font-size:11px;font-weight:700;color:var(--text)}
   .av-live-mult{font-size:10px;font-weight:800}
   .av-live-empty{display:flex;align-items:center;justify-content:center;height:80px;font-size:10px;color:rgba(255,255,255,.13)}
-  .av-my-history { margin-top:8px; }
-  .av-my-history-title { font-size:10px;font-weight:700;color:var(--text-sec);text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px; }
-  .av-my-history-list { display:flex;flex-direction:column;gap:2px;max-height:80px;overflow-y:auto; }
-  .av-my-history-item { display:flex;justify-content:space-between;align-items:center;padding:3px 6px;border-radius:4px;font-size:10px; }
-  .av-my-history-item.won { background:rgba(0,232,135,.08); }
-  .av-my-history-item.lost { background:rgba(255,77,77,.08); }
-  .av-my-history-item.pending { background:rgba(255,214,0,.08); }
 `
 
-// ── Loading Screen ────────────────────────────────────────────
+// ΓöÇΓöÇ Loading Screen ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 function LoadingScreen({ progress }) {
   return (
     <div className="av-loading">
-      <div className="av-loading-icon">✈</div>
+      <div className="av-loading-icon">Γ£ê</div>
       <h1 className="av-loading-title">AVIATOR</h1>
       <p className="av-loading-sub">Loading...</p>
       <div className="av-bar-wrap">
@@ -165,7 +182,7 @@ function LoadingScreen({ progress }) {
   )
 }
 
-// ── Bet Panel ─────────────────────────────────────────────────
+// ΓöÇΓöÇ Bet Panel ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 function BetPanel({ num, amt, setAmt, autoOn, setAutoOn, autoVal, setAutoVal, betData, phase, mult, bal, onPlace, onCash, onCancel }) {
   const hasBet = !!betData
   const isBetting = phase === 'betting'
@@ -181,58 +198,62 @@ function BetPanel({ num, amt, setAmt, autoOn, setAutoOn, autoVal, setAutoVal, be
     const canPlace = isBetting && amt >= MIN_BET && amt <= MAX_BET && amt <= bal
     actionBtn = (
       <button className={`av-betbtn ${g ? 'g' : 'r'}`} disabled={!canPlace} onClick={onPlace}>
-        {!isBetting ? 'Wait...' : amt < MIN_BET ? `Min ₨${MIN_BET}` : amt > MAX_BET ? `Max ₨${MAX_BET}` : amt > bal ? 'Low Balance' : `Bet ₨${amt}`}
+        {!isBetting ? 'Wait...' : amt < MIN_BET ? `Min Γé¿${MIN_BET}` : amt > MAX_BET ? `Max Γé¿${MAX_BET}` : amt > bal ? 'Low Balance' : `Bet Γé¿${amt}`}
       </button>
     )
   } else if (cashed) {
     actionBtn = (
       <div className="av-result won">
         <div className="av-result-label w">Cashed Out</div>
-        <div className="av-result-amt w">+₨{won.toLocaleString()}</div>
+        <div className="av-result-amt w">+Γé¿{won.toLocaleString()}</div>
       </div>
     )
   } else if (isRunning) {
-    actionBtn = <button className="av-cashbtn" onClick={onCash}>Cash ₨{cashAmt}</button>
+    actionBtn = <button className="av-cashbtn" onClick={onCash}>Cash Γé¿{cashAmt}</button>
   } else if (isCrashed) {
     actionBtn = (
       <div className="av-result lost">
         <div className="av-result-label l">Lost</div>
-        <div className="av-result-amt l">-₨{betData.amount}</div>
+        <div className="av-result-amt l">-Γé¿{betData.amount}</div>
       </div>
     )
   } else if (isBetting) {
-    actionBtn = <button className="av-betbtn av-cancelbtn-orange" onClick={onCancel}>Cancel ₨{betData.amount}</button>
+    actionBtn = <button className="av-betbtn av-cancelbtn-orange" onClick={onCancel}>Cancel Γé¿{betData.amount}</button>
   } else {
     actionBtn = (
       <div className="av-wait">
-        <div className="av-wait-label">Waiting</div>
-        <div className="av-wait-amt">₨{betData.amount}</div>
+        <div className="av-wait-label">Bet Placed</div>
+        <div className="av-wait-amt">Γé¿{betData.amount}</div>
       </div>
     )
   }
 
   return (
-    <div className="av-card">
+    <div className={`av-card ${g ? 'green' : 'red'}`}>
       <div className="av-card-head">
-        <span className="av-card-title">Bet {num}</span>
-        <span className="av-card-amount">₨{amt}</span>
-      </div>
-      <div className="av-input-row">
-        <input className="av-input" type="number" value={amt} onChange={e => setAmt(Math.max(0, parseInt(e.target.value) || 0))} min={MIN_BET} max={MAX_BET} />
-        <button className="av-quick-btn" onClick={() => setAmt(prev => Math.max(MIN_BET, prev / 2))}>½</button>
-        <button className="av-quick-btn" onClick={() => setAmt(prev => Math.min(MAX_BET, prev * 2))}>2×</button>
+        <span className={`av-card-label ${g ? 'g' : 'r'}`}>BET {num}</span>
+        {won != null && <span className="av-card-won">+Γé¿{won.toLocaleString()}</span>}
       </div>
       <div className="av-quick">
-        {QUICK_BET.map(v => (
-          <button key={v} className={`av-quick-btn ${amt === v ? 'on' : ''}`} onClick={() => setAmt(v)}>₨{v}</button>
+        {QUICK_BET.map(a => (
+          <button key={a} className={`av-qbtn ${amt === a && !hasBet ? 'on' : ''}`} onClick={() => setAmt(a)} disabled={hasBet}>
+            {a >= 1000 ? `${a / 1000}k` : a}
+          </button>
         ))}
       </div>
+      <div className="av-amt-row">
+        <span className="av-amt-sym">Γé¿</span>
+        <input type="number" className="av-amt-input" value={amt} onChange={e => setAmt(Math.max(MIN_BET, Math.min(MAX_BET, parseInt(e.target.value) || MIN_BET)))} disabled={hasBet} min={MIN_BET} max={MAX_BET} />
+        <button className="av-amt-inc" onClick={() => setAmt(Math.min(MAX_BET, Math.min(bal, amt + 100)))} disabled={hasBet}>+</button>
+      </div>
       <div className="av-auto-row">
-        <button className={`av-auto-toggle ${autoOn ? 'on' : ''}`} onClick={() => setAutoOn(!autoOn)}>Auto</button>
+        <button className={`av-auto-btn ${autoOn ? 'on' : ''}`} onClick={() => setAutoOn(o => !o)} disabled={hasBet}>Auto</button>
         {autoOn && (
-          <select className="av-input" value={autoVal} onChange={e => setAutoVal(e.target.value)} style={{ flex: 1 }}>
-            {AUTO_PRESETS.map(v => <option key={v} value={v}>{v}×</option>)}
-          </select>
+          <div className="av-auto-presets">
+            {AUTO_PRESETS.map(p => (
+              <button key={p} className={`av-auto-p ${autoVal === p ? 'on' : ''}`} onClick={() => setAutoVal(p)} disabled={hasBet}>{p}x</button>
+            ))}
+          </div>
         )}
       </div>
       {actionBtn}
@@ -240,7 +261,15 @@ function BetPanel({ num, amt, setAmt, autoOn, setAutoOn, autoVal, setAutoVal, be
   )
 }
 
-// ── Main Game ─────────────────────────────────────────────────
+// ΓöÇΓöÇ Helpers ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+function histClass(v) {
+  const n = typeof v === 'number' ? v : parseFloat(v)
+  if (n >= 10) return 'av-pill-high'
+  if (n >= 2) return 'av-pill-mid'
+  return 'av-pill-low'
+}
+
+// ΓöÇΓöÇ Main Component ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 export default function AviatorGame() {
   const navigate = useNavigate()
   const { user, isLoggedIn } = useAuth()
@@ -252,12 +281,11 @@ export default function AviatorGame() {
   const [mult, setMult] = useState(1.00)
   const [cd, setCd] = useState(8)
   const [crashedAt, setCrashedAt] = useState(null)
-  const [bal, setBal] = useState(0)
+  const [bal, setBal] = useState(10000)
   const [live, setLive] = useState([])
   const [hist, setHist] = useState([])
   const [myHistory, setMyHistory] = useState([])
   const [cashoutExits, setCashoutExits] = useState([])
-  const [flightStartTime, setFlightStartTime] = useState(0)
   const exitCountRef = useRef(0)
 
   const [b1a, setB1a] = useState(10)
@@ -269,120 +297,140 @@ export default function AviatorGame() {
   const [b2v, setB2v] = useState('2.00')
   const [b2d, setB2d] = useState(null)
 
-  // Refs for WS handler
+  // Refs for WS handler to avoid stale closures
   const b1dRef = useRef(null)
   const b2dRef = useRef(null)
   const autoCashedRef = useRef(new Set())
-  const phaseRef = useRef('betting')
-  const canvasRef = useRef(null)
 
   useEffect(() => { b1dRef.current = b1d }, [b1d])
   useEffect(() => { b2dRef.current = b2d }, [b2d])
-  useEffect(() => { phaseRef.current = phase }, [phase])
 
-  // ── Load balance and bet history from DB ──
-  const fetchBalance = useCallback(async () => {
-    if (!user?.id) return
-    try {
-      const { data } = await supabase.from('users').select('balance').eq('id', user.id).single()
-      if (data) setBal(Number(data.balance) || 0)
-    } catch (e) {
-      console.error('[Aviator] Balance fetch error:', e.message)
-    }
-  }, [user?.id])
-
-  const fetchBetHistory = useCallback(async () => {
-    if (!user?.id) return
-    try {
-      const res = await fetch(`${API_URL}/api/aviator/bet-history?userId=${user.id}`)
-      const data = await res.json()
-      if (data.success && data.bets) {
-        const history = data.bets.slice(0, 20).map(b => ({
-          amount: Number(b.amount),
-          mult: b.cashout_multiplier || null,
-          won: b.status === 'won',
-          profit: b.status === 'won' ? Number(b.win_amount) - Number(b.amount) : -Number(b.amount),
-          pending: false,
-          betId: b.id,
-          time: new Date(b.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-        }))
-        setMyHistory(history)
-      }
-    } catch (e) {
-      console.error('[Aviator] History fetch error:', e.message)
-    }
-  }, [user?.id])
+  const phaseRef = useRef('betting')
+  const canvasRef = useRef(null)
 
   useEffect(() => {
-    if (!user?.id || showLoading) return
-    fetchBalance()
-    fetchBetHistory()
-    const interval = setInterval(fetchBalance, 5000)
-    return () => clearInterval(interval)
-  }, [user?.id, showLoading, fetchBalance, fetchBetHistory])
+    if (user?.balance !== undefined) setBal(user.balance)
+  }, [user])
 
-  // ── WebSocket connection ──
+  // Refresh balance from DB on mount (backend now manages balance)
+  useEffect(() => {
+    if (!user?.id || showLoading) return
+
+    const fetchBalance = async () => {
+      try {
+        const supabaseModule = await import('../../lib/supabase')
+        const { data: { session } } = await supabaseModule.supabase.auth.getSession()
+        if (session) {
+          const { data: userData } = await supabaseModule.supabase
+            .from('users')
+            .select('balance')
+            .eq('id', user.id)
+            .single()
+          if (userData) {
+            setBal(Number(userData.balance) || 0)
+          }
+        }
+      } catch (e) {
+        console.error('[Aviator] Failed to refresh balance:', e.message)
+      }
+    }
+
+    fetchBalance()
+    const interval = setInterval(fetchBalance, 10000)
+    return () => clearInterval(interval)
+  }, [user?.id, showLoading])
+
+  // Load bet history from DB on mount
+  useEffect(() => {
+    if (!user?.id || showLoading) return
+    fetch(`${API_URL}/api/aviator/bet-history?userId=${user.id}`)
+      .then(r => r.json())
+      .then(data => {
+        if (data.success && data.bets) {
+          const history = data.bets.slice(0, 15).map(b => ({
+            amount: Number(b.amount),
+            mult: b.cashout_multiplier || null,
+            won: b.status === 'won',
+            profit: b.status === 'won' ? Number(b.win_amount) : -Number(b.amount),
+            pending: false,
+            betId: b.id,
+            time: new Date(b.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+          }))
+          setMyHistory(history)
+        }
+      })
+      .catch(() => {})
+  }, [user?.id, showLoading])
+
+  useEffect(() => { phaseRef.current = phase }, [phase])
+
+  // ΓöÇΓöÇ WebSocket connection ΓöÇΓöÇ
   useEffect(() => {
     if (showLoading) return
     aviatorWS.connect()
 
     aviatorWS.on('game_state', (state) => {
       if (state.phase === 'betting') {
+        phaseRef.current = 'betting'
         setPhase('betting')
         setCd(parseFloat(state.countdown) || 8)
         setCrashedAt(null)
       } else if (state.phase === 'flying') {
+        phaseRef.current = 'running'
         setPhase('running')
         setMult(parseFloat(state.mult) || 1.00)
-        if (!flightStartTime) setFlightStartTime(Date.now())
       } else if (state.phase === 'crashed') {
+        phaseRef.current = 'crashed'
         setPhase('crashed')
-        setFlightStartTime(0)
         const cp = parseFloat(state.crash_point) || 1.00
         setCrashedAt(cp)
         setMult(cp)
-        setHist(prev => prev.includes(cp) ? prev : [cp, ...prev].slice(0, 30))
+        setHist(prev => {
+          if (prev.includes(cp)) return prev
+          return [cp, ...prev].slice(0, 30)
+        })
       }
       if (state.crashHistory && Array.isArray(state.crashHistory)) {
         setHist(state.crashHistory.slice(0, 30))
       }
     })
 
-    aviatorWS.on('bets_update', async (data) => {
+    aviatorWS.on('bets_update', (data) => {
       try {
         const betsArray = Array.isArray(data) ? data : (data?.bets && Array.isArray(data.bets) ? data.bets : [])
         setLive(betsArray)
 
-        // Auto-cashout detection for bet 1
+        // Check if my bet was auto-cashed by the server (use refs to avoid stale closures)
         const myBet1 = betsArray.find(b => b.userId === user?.id && b.betNum === 1 && b.cashedOut && b.status === 'won')
         if (myBet1 && b1dRef.current && !b1dRef.current.cashed && !autoCashedRef.current.has(myBet1.id)) {
           autoCashedRef.current.add(myBet1.id)
           const won = myBet1.winAmount || 0
+          setBal(prev => prev + won)
           setB1d(prev => prev ? { ...prev, cashed: { won } } : null)
-          setMyHistory(prev => prev.map(entry =>
-            entry.pending && entry.betId === myBet1.id
-              ? { ...entry, mult: myBet1.cashoutMult, won: true, profit: won, pending: false }
-              : entry
-          ))
+          setMyHistory(prev => prev.map(entry => {
+            if (entry.pending && entry.betId === myBet1.id) {
+              return { ...entry, mult: myBet1.cashoutMult, won: true, profit: won, pending: false }
+            }
+            return entry
+          }))
           addCashoutExit(user?.username || 'You', won)
-          toast.success(`Auto cashed ${myBet1.cashoutMult.toFixed(2)}x — +₨${won.toLocaleString()}`)
-          fetchBalance()
+          toast.success(`Auto cashed ${myBet1.cashoutMult.toFixed(2)}x ΓÇö +Γé¿${won.toLocaleString()}`)
         }
 
-        // Auto-cashout detection for bet 2
         const myBet2 = betsArray.find(b => b.userId === user?.id && b.betNum === 2 && b.cashedOut && b.status === 'won')
         if (myBet2 && b2dRef.current && !b2dRef.current.cashed && !autoCashedRef.current.has(myBet2.id)) {
           autoCashedRef.current.add(myBet2.id)
           const won = myBet2.winAmount || 0
+          setBal(prev => prev + won)
           setB2d(prev => prev ? { ...prev, cashed: { won } } : null)
-          setMyHistory(prev => prev.map(entry =>
-            entry.pending && entry.betId === myBet2.id
-              ? { ...entry, mult: myBet2.cashoutMult, won: true, profit: won, pending: false }
-              : entry
-          ))
+          setMyHistory(prev => prev.map(entry => {
+            if (entry.pending && entry.betId === myBet2.id) {
+              return { ...entry, mult: myBet2.cashoutMult, won: true, profit: won, pending: false }
+            }
+            return entry
+          }))
           addCashoutExit(user?.username || 'You', won)
-          toast.success(`Auto cashed ${myBet2.cashoutMult.toFixed(2)}x — +₨${won.toLocaleString()}`)
-          fetchBalance()
+          toast.success(`Auto cashed ${myBet2.cashoutMult.toFixed(2)}x ΓÇö +Γé¿${won.toLocaleString()}`)
         }
       } catch (e) {
         setLive([])
@@ -390,30 +438,36 @@ export default function AviatorGame() {
     })
 
     return () => {}
-  }, [showLoading, user, toast, fetchBalance])
+  }, [showLoading])
 
-  // ── Round transitions ──
+  // ΓöÇΓöÇ Round transitions ΓöÇΓöÇ
   const prevPhaseRef = useRef('betting')
   useEffect(() => {
     const prev = prevPhaseRef.current
     prevPhaseRef.current = phase
 
     if (phase === 'crashed' && prev !== 'crashed') {
-      setMyHistory(h => h.map(entry =>
-        entry.pending && !entry.won
-          ? { ...entry, won: false, pending: false, mult: null, profit: -entry.amount }
-          : entry
-      ))
-      fetchBalance()
+      setMyHistory(h => h.map(entry => {
+        if (entry.pending && !entry.won) {
+          return { ...entry, won: false, pending: false, mult: null, profit: -entry.amount }
+        }
+        return entry
+      }))
+      // Refresh balance from DB after round ends
+      if (user?.id) {
+        fetch(`${API_URL}/api/aviator/bet-history?userId=${user.id}`)
+          .then(r => r.json())
+          .catch(() => {})
+      }
     }
     if (phase === 'betting' && prev === 'crashed') {
       setB1d(null)
       setB2d(null)
       autoCashedRef.current.clear()
     }
-  }, [phase, fetchBalance])
+  }, [phase, user?.id])
 
-  // ── Loading animation ──
+  // ΓöÇΓöÇ Loading animation ΓöÇΓöÇ
   useEffect(() => {
     let prog = 0
     const tick = setInterval(() => {
@@ -430,7 +484,7 @@ export default function AviatorGame() {
     return () => clearInterval(tick)
   }, [])
 
-  // ── Exit popups ──
+  // ΓöÇΓöÇ Exit popups ΓöÇΓöÇ
   const addCashoutExit = useCallback((name, profit) => {
     exitCountRef.current++
     const id = `ex_${exitCountRef.current}_${Date.now()}`
@@ -440,13 +494,28 @@ export default function AviatorGame() {
     setTimeout(() => setCashoutExits(prev => prev.filter(e => e.id !== id)), 2500)
   }, [])
 
-  // ── Bet placement ──
+  const prevLiveRef = useRef([])
+  useEffect(() => {
+    if (prevLiveRef.current.length > 0) {
+      const prevMap = new Map(prevLiveRef.current.map(b => [b.id, b]))
+      live.forEach(b => {
+        const prev = prevMap.get(b.id)
+        if (prev && prev.status === 'pending' && b.status === 'won' && b.username !== user?.username) {
+          const won = Number(b.winAmount || b.win_amount || 0)
+          addCashoutExit(b.username, won)
+        }
+      })
+    }
+    prevLiveRef.current = [...live]
+  }, [live, addCashoutExit, user])
+
+  // ΓöÇΓöÇ Bet placement ΓöÇΓöÇ
   const place = useCallback(async (num) => {
     if (!isLoggedIn) { navigate('/login', { state: { from: '/play/aviator' } }); return }
     const amount = num === 1 ? b1a : b2a
-    if (amount < MIN_BET) { toast.error(`Min ₨${MIN_BET}`); return }
-    if (amount > MAX_BET) { toast.error(`Max ₨${MAX_BET}`); return }
-    if (amount > bal) { toast.error(`Low balance: ₨${bal}`); return }
+    if (amount < MIN_BET) { toast.error(`Min Γé¿${MIN_BET}`); return }
+    if (amount > MAX_BET) { toast.error(`Max Γé¿${MAX_BET}`); return }
+    if (amount > bal) { toast.error('Low balance'); return }
     if (phaseRef.current !== 'betting') { toast.error('Wait for next round'); return }
 
     const autoCashout = (num === 1 ? b1o : b2o) ? parseFloat(num === 1 ? b1v : b2v) : null
@@ -459,23 +528,24 @@ export default function AviatorGame() {
       })
       const result = await response.json()
       if (result.success) {
+        // Deduct balance locally after server confirms
+        setBal(prev => prev - amount)
         const entry = { id: result.bet.id, amount, autoCashout, cashed: null }
         if (num === 1) setB1d(entry); else setB2d(entry)
         setMyHistory(prev => [{
           amount, mult: null, won: false, profit: 0, pending: true, betId: result.bet.id,
           time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-        }, ...prev].slice(0, 20))
-        fetchBalance()
-        toast.success(`Bet ${num}: ₨${amount} placed`)
+        }, ...prev].slice(0, 15))
+        toast.success(`Bet ${num}: Γé¿${amount} placed`)
       } else {
         toast.error(result.error || 'Failed to place bet')
       }
     } catch (err) {
       toast.error('Failed to place bet')
     }
-  }, [isLoggedIn, b1a, b1o, b1v, b2a, b2o, b2v, bal, user, navigate, toast, fetchBalance])
+  }, [isLoggedIn, b1a, b1o, b1v, b2a, b2o, b2v, bal, user, navigate, toast])
 
-  // ── Cashout ──
+  // ΓöÇΓöÇ Cashout ΓöÇΓöÇ
   const cashout = useCallback(async (num) => {
     if (phaseRef.current !== 'running') return
     const betData = num === 1 ? b1dRef.current : b2dRef.current
@@ -489,30 +559,33 @@ export default function AviatorGame() {
       })
       const result = await response.json()
       if (result.success) {
+        const won = result.winAmount
+        setBal(prev => prev + won)
         const setter = num === 1 ? setB1d : setB2d
-        setter(prev => prev ? { ...prev, cashed: { won: result.winAmount } } : null)
-        setMyHistory(prev => prev.map(entry =>
-          entry.pending && entry.betId === betData.id
-            ? { ...entry, mult: result.multiplier, won: true, profit: result.winAmount, pending: false }
-            : entry
-        ))
-        addCashoutExit(user?.username || 'You', result.winAmount)
-        fetchBalance()
-        toast.success(`Cashed ${result.multiplier.toFixed(2)}x — +₨${result.winAmount.toLocaleString()}`)
+        setter(prev => prev ? { ...prev, cashed: { won } } : null)
+        setMyHistory(prev => prev.map(entry => {
+          if (entry.pending && entry.betId === betData.id) {
+            return { ...entry, mult: result.multiplier, won: true, profit: won, pending: false }
+          }
+          return entry
+        }))
+        addCashoutExit(user?.username || 'You', won)
+        toast.success(`Cashed ${result.multiplier.toFixed(2)}x ΓÇö +Γé¿${won.toLocaleString()}`)
       } else {
         toast.error(result.error || 'Failed to cash out')
       }
     } catch (err) {
       toast.error('Failed to cash out')
     }
-  }, [user, toast, addCashoutExit, fetchBalance])
+  }, [user, toast, addCashoutExit])
 
-  // ── Cancel bet ──
+  // ΓöÇΓöÇ Cancel bet ΓöÇΓöÇ
   const cancelBet = useCallback(async (num) => {
     const betData = num === 1 ? b1dRef.current : b2dRef.current
     if (!betData) return
     if (phaseRef.current !== 'betting') { toast.error('Can only cancel during betting phase'); return }
 
+    // Remove from backend
     try {
       await fetch(`${API_URL}/api/aviator/cancel-bet`, {
         method: 'POST',
@@ -521,13 +594,13 @@ export default function AviatorGame() {
       })
     } catch (e) {}
 
+    setBal(prev => prev + betData.amount)
     if (num === 1) setB1d(null); else setB2d(null)
     setMyHistory(prev => prev.filter(entry => entry.betId !== betData.id))
-    fetchBalance()
     toast.success('Bet cancelled')
-  }, [user, toast, fetchBalance])
+  }, [user, toast])
 
-  // ── Canvas animation ──
+  // ΓöÇΓöÇ Canvas animation ΓöÇΓöÇ
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
@@ -542,222 +615,232 @@ export default function AviatorGame() {
     const buildBg = (w, h) => {
       const off = document.createElement('canvas')
       off.width = w; off.height = h
-      const octx = off.getContext('2d')
-      const grad = octx.createLinearGradient(0, 0, 0, h)
-      grad.addColorStop(0, '#0c1220'); grad.addColorStop(1, '#0f1929')
-      octx.fillStyle = grad; octx.fillRect(0, 0, w, h)
-      octx.strokeStyle = 'rgba(255,255,255,0.03)'; octx.lineWidth = 1
-      for (let i = 0; i < 8; i++) {
-        const y = (h / 8) * i
-        octx.beginPath(); octx.moveTo(0, y); octx.lineTo(w, y); octx.stroke()
-      }
-      for (let i = 0; i < 10; i++) {
-        const x = (w / 10) * i
-        octx.beginPath(); octx.moveTo(x, 0); octx.lineTo(x, h); octx.stroke()
+      const c = off.getContext('2d')
+      const bg = c.createLinearGradient(0, 0, 0, h)
+      bg.addColorStop(0, '#0c1220'); bg.addColorStop(1, '#060e1a')
+      c.fillStyle = bg; c.fillRect(0, 0, w, h)
+      c.strokeStyle = 'rgba(255,255,255,0.022)'; c.lineWidth = 1
+      for (let i = 0; i < w; i += 28) { c.beginPath(); c.moveTo(i, 0); c.lineTo(i, h); c.stroke() }
+      for (let i = 0; i < h; i += 28) { c.beginPath(); c.moveTo(0, i); c.lineTo(w, i); c.stroke() }
+      c.fillStyle = 'rgba(255,255,255,0.12)'; c.font = 'bold 10px monospace'
+      for (let i = 1; i <= 10; i++) {
+        const y = h - (i / 10) * h * 0.84 - h * 0.07
+        c.fillText(`${i}x`, 3, y + 3)
+        c.strokeStyle = 'rgba(0,232,135,0.06)'
+        c.beginPath(); c.moveTo(20, y); c.lineTo(w, y); c.stroke()
       }
       return off
     }
 
-    let bgCanvas = null
+    let bgCanvas = buildBg(canvas.offsetWidth, canvas.offsetHeight)
 
     const resize = () => {
-      const rect = canvas.parentElement.getBoundingClientRect()
-      canvas.width = rect.width * window.devicePixelRatio
-      canvas.height = rect.height * window.devicePixelRatio
-      canvas.style.width = rect.width + 'px'
-      canvas.style.height = rect.height + 'px'
-      ctx.scale(window.devicePixelRatio, window.devicePixelRatio)
-      W = rect.width; H = rect.height
+      W = canvas.offsetWidth; H = canvas.offsetHeight
+      canvas.width = W; canvas.height = H
       bgCanvas = buildBg(W, H)
     }
-
     resize()
     window.addEventListener('resize', resize)
 
     const draw = () => {
       frameCount++
-      ctx.clearRect(0, 0, W, H)
-      if (bgCanvas) ctx.drawImage(bgCanvas, 0, 0)
+      const currentPhase = phaseRef.current
+      const currentMult = mult
 
-      if (phase === 'betting') {
-        ctx.fillStyle = 'rgba(255,255,255,0.06)'
-        ctx.font = 'bold 14px Inter, sans-serif'
-        ctx.textAlign = 'center'
-        ctx.fillText('PLACE YOUR BETS', W / 2, H / 2 - 10)
-        ctx.fillStyle = 'rgba(0,232,135,0.8)'
-        ctx.font = 'bold 48px Exo 2, sans-serif'
-        ctx.fillText(Math.ceil(cd).toString(), W / 2, H / 2 + 40)
-      } else       if (phase === 'running') {
-        const curvePoints = []
-        const maxTime = 10
-        const elapsed = flightStartTime ? (Date.now() - flightStartTime) / 1000 : 0
-        const t = Math.min(elapsed / maxTime, 1)
-
-        for (let i = 0; i <= 100; i++) {
-          const tt = (i / 100) * t
-          const x = tt * W * 0.85
-          const y = H - 40 - (Math.pow(tt, 1.5) * (H - 80))
-          curvePoints.push({ x, y })
-        }
-
-        // Draw curve
-        ctx.beginPath()
-        ctx.strokeStyle = '#00e887'
-        ctx.lineWidth = 3
-        ctx.shadowColor = '#00e887'
-        ctx.shadowBlur = 15
-        curvePoints.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y))
-        ctx.stroke()
-        ctx.shadowBlur = 0
-
-        // Fill under curve
-        ctx.beginPath()
-        ctx.fillStyle = 'rgba(0,232,135,0.08)'
-        curvePoints.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y))
-        ctx.lineTo(curvePoints[curvePoints.length - 1].x, H)
-        ctx.lineTo(0, H)
-        ctx.closePath()
-        ctx.fill()
-
-        // Draw plane
-        if (planeImgReady && curvePoints.length > 0) {
-          const last = curvePoints[curvePoints.length - 1]
-          planeX = last.x; planeY = last.y
-          ctx.drawImage(planeImg, planeX - 20, planeY - 20, 40, 40)
-        }
-
-        // Draw multiplier
-        ctx.fillStyle = '#ffffff'
-        ctx.font = 'bold 56px Exo 2, sans-serif'
-        ctx.textAlign = 'center'
-        ctx.shadowColor = 'rgba(0,232,135,0.5)'
-        ctx.shadowBlur = 20
-        ctx.fillText(`${mult.toFixed(2)}x`, W / 2, H / 2)
-        ctx.shadowBlur = 0
-      } else if (phase === 'crashed') {
-        ctx.fillStyle = '#ff4d4d'
-        ctx.font = 'bold 56px Exo 2, sans-serif'
-        ctx.textAlign = 'center'
-        ctx.shadowColor = 'rgba(255,77,77,0.5)'
-        ctx.shadowBlur = 20
-        ctx.fillText(`${crashedAt.toFixed(2)}x`, W / 2, H / 2)
-        ctx.shadowBlur = 0
-        ctx.fillStyle = 'rgba(255,77,77,0.6)'
-        ctx.font = 'bold 18px Inter, sans-serif'
-        ctx.fillText('FLEW AWAY!', W / 2, H / 2 + 40)
+      if (!bgCanvas || W === 0 || H === 0) {
+        raf = requestAnimationFrame(draw)
+        return
       }
 
-      requestAnimationFrame(draw)
+      ctx.clearRect(0, 0, W, H)
+      ctx.drawImage(bgCanvas, 0, 0)
+
+      if (currentPhase === 'running' && currentMult > 1) {
+        const originX = 5, originY = H * 0.90
+        const maxTravelX = Math.max(W - 220, W * 0.65), maxTravelY = H * 0.78
+        const progress = Math.min(1, Math.log(currentMult) / Math.log(50))
+        const eased = Math.pow(progress, 0.6)
+        const nx = originX + eased * maxTravelX
+        const ny = originY - eased * maxTravelY
+        const endX = nx - 15, endY = ny + 5
+        const cpx = (originX + endX) * 0.5, cpy = originY - (originY - endY) * 0.08
+
+        // Trail glow
+        ctx.strokeStyle = 'rgba(0,255,157,0.18)'; ctx.lineWidth = 10; ctx.lineCap = 'round'
+        ctx.beginPath(); ctx.moveTo(originX, originY); ctx.quadraticCurveTo(cpx, cpy, endX, endY); ctx.stroke()
+        // Trail line
+        ctx.strokeStyle = '#00ff9d'; ctx.lineWidth = 3
+        ctx.beginPath(); ctx.moveTo(originX, originY); ctx.quadraticCurveTo(cpx, cpy, endX, endY); ctx.stroke()
+
+        planeX = nx; planeY = ny
+
+        // Draw plane image
+        if (planeImgReady) {
+          ctx.save()
+          ctx.translate(nx, ny)
+          ctx.rotate(-0.3)
+          ctx.drawImage(planeImg, -40, -20, 80, 40)
+          ctx.restore()
+        }
+
+        // Multiplier text
+        const mc = currentMult >= 10 ? '#ff4d4d' : currentMult >= 5 ? '#ffd600' : '#00e887'
+        ctx.fillStyle = mc; ctx.font = 'bold 24px sans-serif'
+        ctx.fillText(`${currentMult.toFixed(2)}x`, nx + 10, ny + 8)
+      }
+
+      // Explosion on crash
+      if (currentPhase === 'crashed' && planeX > 0) {
+        for (let i = 0; i < 15; i++) {
+          const ag = (i / 15) * Math.PI * 2
+          const di = 14 + Math.sin(frameCount * 0.4 + i) * 12
+          ctx.fillStyle = ['#dc2626', '#f97316', '#fde047'][i % 3]
+          ctx.globalAlpha = 0.35 + Math.sin(frameCount * 0.4 + i) * 0.2
+          ctx.beginPath(); ctx.arc(planeX + Math.cos(ag) * di, planeY + Math.sin(ag) * di, 2, 0, Math.PI * 2); ctx.fill()
+        }
+        ctx.globalAlpha = 1
+      }
+
+      // Reset plane when not running
+      if (currentPhase !== 'running') {
+        if (planeX !== 0) { planeX = 0; planeY = 0; frameCount = 0 }
+        bgCanvas = buildBg(W, H)
+      }
+
+      raf = requestAnimationFrame(draw)
     }
 
-    draw()
-    return () => window.removeEventListener('resize', resize)
-  }, [phase, mult, cd, crashedAt, flightStartTime])
+    let raf = requestAnimationFrame(draw)
+    return () => { window.removeEventListener('resize', resize); cancelAnimationFrame(raf) }
+  }, [showLoading, phase, mult])
 
-  if (showLoading) return <LoadingScreen progress={loadingProgress} />
-
+  // ΓöÇΓöÇ Render ΓöÇΓöÇ
   return (
-    <div className="av-root" style={{ position: 'fixed', inset: 0, zIndex: 100, display: 'flex', flexDirection: 'column', background: 'var(--bg-primary)' }}>
+    <>
       <style>{CSS}</style>
+      <div className="av-root" style={{ width: '100%', height: '100dvh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        {showLoading && <LoadingScreen progress={loadingProgress} />}
 
-      {/* Header */}
-      <div className="av-header">
-        <div className="av-header-left">
-          <button className="av-back" onClick={() => navigate(-1)}><ChevronLeft size={18} /></button>
-          <div className="av-logo">
-            <div className="av-logo-icon">✈</div>
-            <span className="av-logo-text">AVIATOR</span>
-          </div>
-          <div className="av-live-dot" />
-        </div>
-        <div className="av-bal">
-          <span className="av-bal-label">Balance</span>
-          <span className="av-bal-amt">₨{bal.toLocaleString()}</span>
-        </div>
-      </div>
+        {!showLoading && (
+          <>
+            {/* Header */}
+            <div className="av-header">
+              <div className="av-header-left">
+                <button className="av-back" onClick={() => navigate(-1)}><ChevronLeft size={15} /></button>
+                <div className="av-logo">
+                  <div className="av-logo-icon">Γ£ê</div>
+                  <span className="av-logo-text">Aviator</span>
+                  <div className="av-live-dot" />
+                </div>
+              </div>
+              <div className="av-bal">
+                <span className="av-bal-label">Balance</span>
+                <span className="av-bal-amt">Γé¿{bal.toLocaleString()}</span>
+              </div>
+            </div>
 
-      {/* Crash history */}
-      <div className="av-history">
-        {hist.map((v, i) => (
-          <span key={i} className={`av-pill ${v < 2 ? 'av-pill-low' : v < 10 ? 'av-pill-mid' : 'av-pill-high'}`}>
-            {v.toFixed(2)}x
-          </span>
-        ))}
-      </div>
+            {/* Crash History */}
+            <div className="av-history">
+              {hist.length === 0 && <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.18)', paddingRight: 6 }}>Waiting...</span>}
+              {hist.map((h, i) => (
+                <div key={`${h}-${i}`} className={`av-pill ${histClass(h)}`}>
+                  {typeof h === 'number' ? h.toFixed(2) : h}x
+                </div>
+              ))}
+            </div>
 
-      {/* Main content */}
-      <div className="av-main">
-        <div className="av-top-row">
-          {/* Bet panels */}
-          <div className="av-bets-row">
-            <div className="av-panel">
-              <BetPanel num={1} amt={b1a} setAmt={setB1a} autoOn={b1o} setAutoOn={setB1o} autoVal={b1v} setAutoVal={setB1v} betData={b1d} phase={phase} mult={mult} bal={bal} onPlace={() => place(1)} onCash={() => cashout(1)} onCancel={() => cancelBet(1)} />
-              <BetPanel num={2} amt={b2a} setAmt={setB2a} autoOn={b2o} setAutoOn={setB2o} autoVal={b2v} setAutoVal={setB2v} betData={b2d} phase={phase} mult={mult} bal={bal} onPlace={() => place(2)} onCash={() => cashout(2)} onCancel={() => cancelBet(2)} />
+            {/* Main Content */}
+            <div className="av-main">
+              <div className="av-top-row">
+                {/* Canvas */}
+                <div className="av-canvas">
+                  <canvas ref={canvasRef} className="av-canvas-el" />
 
-              {/* My history */}
-              {myHistory.length > 0 && (
-                <div className="av-my-history">
-                  <div className="av-my-history-title">My Bets</div>
-                  <div className="av-my-history-list">
-                    {myHistory.slice(0, 10).map((entry, i) => (
-                      <div key={i} className={`av-my-history-item ${entry.won ? 'won' : entry.pending ? 'pending' : 'lost'}`}>
-                        <span>₨{entry.amount}</span>
-                        <span>{entry.mult ? `${entry.mult.toFixed(2)}x` : entry.pending ? '...' : '-'}</span>
-                        <span style={{ color: entry.won ? 'var(--green)' : 'var(--red)' }}>
-                          {entry.won ? `+₨${entry.profit}` : `-₨${Math.abs(entry.profit)}`}
+                  {/* Exit popups */}
+                  <div className="av-exit-layer">
+                    {cashoutExits.map(e => (
+                      <div key={e.id} className="av-exit-item" style={{ left: `${e.left}%`, top: `${e.top}%` }}>
+                        <div className="av-exit-avatar">{(e.name || '?')[0].toUpperCase()}</div>
+                        <span className="av-exit-name">{e.name}</span>
+                        <span className="av-exit-amt">+Γé¿{e.profit.toLocaleString()}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Overlay: countdown / crash */}
+                  <div className="av-overlay">
+                    {phase === 'betting' && (
+                      <div className="av-cd-box">
+                        <div className="av-cd-num">{cd.toFixed(1)}</div>
+                        <div className="av-cd-label">Place your bets</div>
+                      </div>
+                    )}
+                    {phase === 'crashed' && crashedAt && (
+                      <div className="av-crash-val">{crashedAt.toFixed(2)}x</div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Live Bets */}
+                <div className="av-live">
+                  <div className="av-live-head">
+                    <div className="av-live-dot" />
+                    <span className="av-live-title">Live</span>
+                    <span className="av-live-cnt">{live.length}</span>
+                  </div>
+                  <div className="av-live-list">
+                    {live.length === 0 ? (
+                      <div className="av-live-empty">Waiting for bets...</div>
+                    ) : live.map(b => (
+                      <div key={b.id} className={`av-live-item ${!b.is_bot ? 'isu' : ''} ${b.status === 'won' ? 'won' : b.status === 'lost' ? 'lost' : 'pending'}`}>
+                        <span className={`av-live-user ${!b.is_bot ? 'isu' : ''}`}>{b.username}</span>
+                        <span className="av-live-amt">Γé¿{Number(b.amount || 0).toLocaleString()}</span>
+                        <span className="av-live-mult" style={{ color: b.status === 'won' ? 'var(--yellow)' : b.autoCashout ? 'rgba(255,214,0,.45)' : 'rgba(255,255,255,.2)' }}>
+                          {b.status === 'won' ? `${Number(b.cashoutMult || 0).toFixed(2)}x`
+                            : b.autoCashout ? `A:${Number(b.autoCashout).toFixed(1)}` : 'ΓÇö'}
                         </span>
                       </div>
                     ))}
                   </div>
                 </div>
-              )}
-            </div>
-          </div>
+              </div>
 
-          {/* Canvas */}
-          <div className="av-canvas">
-            <canvas ref={canvasRef} className="av-canvas-el" />
-            <div className="av-exit-layer">
-              {cashoutExits.map(exit => (
-                <div key={exit.id} className="av-exit-item" style={{ left: `${exit.left}%`, top: `${exit.top}%` }}>
-                  <div className="av-exit-avatar">{exit.name[0]}</div>
-                  <span className="av-exit-name">{exit.name}</span>
-                  <span className="av-exit-amt">+₨{exit.profit.toLocaleString()}</span>
+              {/* Bet Panels */}
+              <div className="av-bets-row">
+                <div className="av-panel">
+                  <BetPanel num={1} amt={b1a} setAmt={setB1a} autoOn={b1o} setAutoOn={setB1o} autoVal={b1v} setAutoVal={setB1v} betData={b1d} phase={phase} mult={mult} bal={bal} onPlace={() => place(1)} onCash={() => cashout(1)} onCancel={() => cancelBet(1)} />
                 </div>
-              ))}
-            </div>
-          </div>
+                <div className="av-panel">
+                  <BetPanel num={2} amt={b2a} setAmt={setB2a} autoOn={b2o} setAutoOn={setB2o} autoVal={b2v} setAutoVal={setB2v} betData={b2d} phase={phase} mult={mult} bal={bal} onPlace={() => place(2)} onCash={() => cashout(2)} onCancel={() => cancelBet(2)} />
+                </div>
+              </div>
 
-          {/* Live bets */}
-          <div className="av-live">
-            <div className="av-live-head">
-              <span className="av-live-title">All Bets</span>
-              <span className="av-live-cnt">{live.length}</span>
+              {/* My Betting History */}
+              <div className="av-my-history">
+                <span className="av-my-history-title">My Bets</span>
+                {myHistory.length === 0 ? (
+                  <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.15)', padding: '0 10px', flexShrink: 0, height: '100%', display: 'flex', alignItems: 'center' }}>Place a bet to start</span>
+                ) : myHistory.map((h, i) => (
+                  <div key={`${h.amount}-${h.pending ? 'p' : 'r'}-${i}`} className={`av-my-h-item ${h.pending ? 'pending' : h.won ? 'won' : 'lost'}`}>
+                    <span className="av-my-h-time">{h.time || ''}</span>
+                    <span className="av-my-h-amt">Γé¿{Number(h.amount).toLocaleString()}</span>
+                    {h.pending ? (
+                      <span className="av-my-h-mult" style={{ color: 'rgba(255,214,0,0.6)' }}>playing</span>
+                    ) : h.won ? (
+                      <>
+                        <span className="av-my-h-mult" style={{ color: 'var(--green)' }}>{(h.mult || 0).toFixed(2)}x</span>
+                        <span className="av-my-h-profit" style={{ color: 'var(--green)' }}>+Γé¿{Number(h.profit).toLocaleString()}</span>
+                      </>
+                    ) : (
+                      <span className="av-my-h-profit" style={{ color: 'var(--red)' }}>-Γé¿{Number(h.amount).toLocaleString()}</span>
+                    )}
+                  </div>
+                ))}
+              </div>
             </div>
-            <div className="av-live-list">
-              {live.length === 0 ? (
-                <div className="av-live-empty">No bets yet</div>
-              ) : (
-                live.map(bet => {
-                  const isMe = bet.userId === user?.id
-                  const statusClass = bet.cashedOut ? 'won' : bet.status === 'lost' ? 'lost' : isMe ? 'isu' : ''
-                  return (
-                    <div key={bet.id} className={`av-live-item ${statusClass}`}>
-                      <span className={`av-live-user ${isMe ? 'isu' : ''}`}>{bet.username}</span>
-                      <span className="av-live-amt">₨{bet.amount}</span>
-                      {bet.cashedOut ? (
-                        <span className="av-live-mult" style={{ color: 'var(--green)' }}>{bet.cashoutMult?.toFixed(2)}x</span>
-                      ) : (
-                        <span className="av-live-mult" style={{ color: 'var(--yellow)' }}>{bet.autoCashout ? `${bet.autoCashout}x` : '-'}</span>
-                      )}
-                    </div>
-                  )
-                })
-              )}
-            </div>
-          </div>
-        </div>
+          </>
+        )}
       </div>
-    </div>
+    </>
   )
 }
