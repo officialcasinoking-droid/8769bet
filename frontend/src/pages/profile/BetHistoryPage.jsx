@@ -20,7 +20,25 @@ export default function BetHistoryPage() {
     setLoading(true)
     const allBets = []
 
-    // 1. Fetch from game_bets
+    // 1. Fetch from aviator_bets (new table)
+    try {
+      const res = await Promise.race([
+        supabaseAnon.from('aviator_bets').select('*').eq('user_id', user.id).order('created_at', { ascending: false }).limit(500),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000))
+      ])
+      if (res?.data) {
+        res.data.forEach(b => {
+          allBets.push({
+            source: 'Aviator', amount: Number(b.amount), multiplier: b.cashout_multiplier,
+            payout: b.status === 'won' ? Number(b.win_amount) : 0,
+            profit: b.status === 'won' ? (Number(b.win_amount) - Number(b.amount)) : -Number(b.amount),
+            status: b.status, created_at: b.created_at,
+          })
+        })
+      }
+    } catch (e) { console.warn('[BetHistory] aviator_bets:', e?.message) }
+
+    // 2. Fetch from game_bets
     try {
       const res = await Promise.race([
         supabaseAnon.from('game_bets').select('*').eq('user_id', user.id).order('created_at', { ascending: false }).limit(500),
@@ -38,7 +56,7 @@ export default function BetHistoryPage() {
       }
     } catch (e) { console.warn('[BetHistory] game_bets:', e?.message) }
 
-    // 2. Fetch from transactions
+    // 3. Fetch from transactions
     try {
       const res = await Promise.race([
         supabaseAnon.from('transactions').select('*').eq('user_id', user.id).eq('type', 'bet').order('created_at', { ascending: false }).limit(500),
@@ -58,7 +76,7 @@ export default function BetHistoryPage() {
       }
     } catch (e) { console.warn('[BetHistory] transactions:', e?.message) }
 
-    // 3. LocalStorage bets
+    // 4. LocalStorage bets
     try {
       const stored = JSON.parse(localStorage.getItem('aviator_my_bets') || '[]')
       stored.filter(b => !b.pending).forEach(b => {
