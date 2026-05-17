@@ -260,37 +260,38 @@ async function loadGameState() {
 
     const now = Date.now()
     const isBetting = data.phase === 'betting'
-    const isFlying = data.phase === 'flying'
-    const isValidPhase = isBetting || isFlying
+    
+    // Only restore betting phase - flying/crashed states should start fresh
+    if (!isBetting) {
+      console.log('[GameEngine] Saved state is not betting, starting fresh')
+      return false
+    }
     
     const startTime = data.start_time ? new Date(data.start_time).getTime() : data.timestamp || now
     const ageMs = now - startTime
     const isNotExpired = ageMs < 120000
 
-    if (isValidPhase && isNotExpired) {
-      gameState.phase = data.phase
-      gameState.mult = data.mult || 1.00
+    if (isNotExpired) {
+      gameState.phase = 'betting'
+      gameState.mult = 1.00
       gameState.crashPoint = data.crash_point || 0
       gameState.roundId = data.round_id || ''
+      gameState.startTime = Date.now()
+      gameState.countdown = WAIT_TIME_SECONDS
       
-      if (data.phase === 'betting') {
-        gameState.startTime = Date.now()
-        gameState.countdown = WAIT_TIME_SECONDS
-      } else {
-        gameState.startTime = startTime
-        gameState.countdown = data.countdown || 8
-      }
-      
-      if (data.bets) currentBets = data.bets
+      // Keep settings and crash history from saved state
       if (data.settings) Object.assign(settings, data.settings)
       if (data.crash_history) crashHistory = data.crash_history
       if (data.house_edge_pool) Object.assign(houseEdgePool, data.house_edge_pool)
+      
+      // Clear bets for new round
+      currentBets = []
 
-      console.log(`[GameEngine] Restored valid state: phase=${gameState.phase}, round=${gameState.roundId}, age=${Math.round(ageMs/1000)}s`)
+      console.log(`[GameEngine] Restored betting state: round=${gameState.roundId}, age=${Math.round(ageMs/1000)}s`)
       return true
     }
 
-    console.log('[GameEngine] Saved state expired or invalid, starting fresh')
+    console.log('[GameEngine] Saved state expired, starting fresh')
     return false
   } catch (err) {
     console.error('[GameEngine] Load state exception:', err.message)
@@ -746,34 +747,136 @@ function getCurrentState() {
 
 // ── Initialize WebSocket Server ──────────────────────────────
 async function initGameEngine(server) {
-  // Load persisted house edge stats
-  await loadHouseEdgeStats()
+  try {
+    // Load persisted house edge stats
+    await loadHouseEdgeStats()
 
-  wss = new WebSocketServer({ server, path: '/ws/aviator' })
+    wss = new WebSocketServer({ server, path: '/ws/aviator' })
 
-  wss.on('connection', (ws) => {
-    clients.add(ws)
-    console.log(`[GameEngine] Client connected. Total clients: ${clients.size}`)
+    wss.on('error', (err) => {
+      console.error('[GameEngine] WebSocket server error:', err.message)
+    })
 
-    // Send current state immediately
-    ws.send(JSON.stringify({
-      type: 'game_state',
-      ...gameState,
-      settings: { ...settings },
-      crashHistory: [...crashHistory],
-      bets: [...currentBets],
-      houseEdge: houseEdgePool,
-    }))
+    wss.on('connection', (ws) => {
+      clients.add(ws)
+      console.log(`[GameEngine] Client connected. Total clients: ${clients.size}`)
 
-    // Handle client messages
-    ws.on('message', async (data) => {
+      // Send current state immediately
       try {
-        const msg = JSON.parse(data)
+        ws.send(JSON.stringify({
+          type: 'game_state',
+          phase: gameState.phase,
+          mult: gameState.mult,
+          countdown: gameState.countdown,
+          crash_point: gameState.crashPoint,
+          roundId: gameState.roundId,
+          settings: { ...settings },
+          crashHistory: [...crashHistory],
+          bets: [...currentBets],
+          houseEdge: houseEdgePool,
+        }))
+      } catch (err) {
+        console.error('[GameEngine] Failed to send initial state:', err.message)
+      }
 
-        if (msg.type === 'place_bet') {
-          const result = await placeBet(msg)
-          ws.send(JSON.stringify({ type: 'bet_result', ...result }))
+      // Handle client messages
+      ws.on('message', async (data) => {
+        try {
+          const msg = JSON.parse(data)
+
+          if (msg.type === 'place_bet') {
+            const result = await placeBet(msg)
+            ws.send(JSON.stringify({ type: 'bet_result', ...result }))
+          }
+
+          if (msg.type === 'cashout') {
+            const result = await cashoutBet(msg.userId, msg.betNum)
+            ws.send(JSON.stringify({ type: 'cashout_result', ...result, betNum: msg.betNum }))
+          }
+
+          if (msg.type === 'manual_crash') {
+            requestManualCrash()
+            ws.send(JSON.stringify({ type: 'crash_signal_sent' }))
+          }
+
+          if (msg.type === 'update_settings') {
+            updateSettings(msg.settings)
+            broadcast({ type: 'settings_updated', settings: { ...settings } })
+          }
+
+          if (msg.type === 'get_state') {
+            ws.send(JSON.stringify({
+              type: 'game_state',
+              phase: gameState.phase,
+              mult: gameState.mult,
+              countdown: gameState.countdown,
+              crash_point: gameState.crashPoint,
+              roundId: gameState.roundId,
+              settings: { ...settings },
+              crashHistory: [...crashHistory],
+              bets: [...currentBets],
+              houseEdge: houseEdgePool,
+            }))
+          }
+        } catch (e) {
+          console.warn('[WS] Invalid message:', e.message)
         }
+      })
+
+      // Send ping every 30 seconds to keep connection alive
+      const pingInterval = setInterval(() => {
+        try {
+          if (ws.readyState === 1) {
+            ws.send(JSON.stringify({ type: 'ping' }))
+          } else {
+            clearInterval(pingInterval)
+          }
+        } catch (err) {
+          clearInterval(pingInterval)
+        }
+      }, 30000)
+
+      ws.on('close', () => {
+        clearInterval(pingInterval)
+        clients.delete(ws)
+        console.log(`[GameEngine] Client disconnected. Total clients: ${clients.size}`)
+      })
+
+      ws.on('error', (err) => {
+        console.error('[WS] Error:', err.message)
+        clearInterval(pingInterval)
+        clients.delete(ws)
+      })
+    })
+
+    // Try to restore game state from database
+    const stateRestored = await loadGameState()
+
+    // Always start the game loop
+    startGameLoop()
+
+    if (stateRestored) {
+      // Restored valid betting state - broadcast it
+      console.log('[GameEngine] Starting with restored betting state')
+      broadcast({
+        type: 'game_state',
+        phase: 'betting',
+        countdown: gameState.countdown,
+        roundId: gameState.roundId,
+        houseEdge: houseEdgePool,
+      })
+    } else {
+      // No saved state or invalid - start fresh round
+      console.log('[GameEngine] Starting fresh game')
+      startNewRound()
+    }
+
+    console.log('[GameEngine] WebSocket server started on /ws/aviator')
+    console.log(`[GameEngine] Connected clients: 0`)
+  } catch (err) {
+    console.error('[GameEngine] Failed to initialize:', err.message, err.stack)
+  }
+}
 
         if (msg.type === 'cashout') {
           const result = await cashoutBet(msg.userId, msg.betNum)
@@ -840,21 +943,17 @@ async function initGameEngine(server) {
   startGameLoop()
 
   if (stateRestored) {
-    // Restored state - broadcast current state
-    console.log('[GameEngine] Starting with restored state')
+    // Restored valid betting state - broadcast it
+    console.log('[GameEngine] Starting with restored betting state')
     broadcast({
       type: 'game_state',
-      phase: gameState.phase,
-      mult: gameState.mult,
+      phase: 'betting',
       countdown: gameState.countdown,
-      crash_point: gameState.crashPoint,
       roundId: gameState.roundId,
-      settings: { ...settings },
-      bets: [...currentBets],
       houseEdge: houseEdgePool,
     })
   } else {
-    // No saved state - start fresh
+    // No saved state or invalid - start fresh round
     console.log('[GameEngine] Starting fresh game')
     startNewRound()
   }
