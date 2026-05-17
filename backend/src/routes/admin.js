@@ -195,30 +195,38 @@ router.post('/landing/upload', upload.single('image'), (req, res) => {
 })
 
 // Wallet and transactions
-router.get('/wallet', (req, res) => {
-  res.json(wallet)
+router.get('/wallet', async (req, res) => {
+  try {
+    const { data } = await supabase.from('platform_settings').select('*').eq('id', 'wallet').single()
+    res.json(data || {})
+  } catch (err) {
+    res.json({})
+  }
 })
 
-router.get('/transactions', (req, res) => {
-  res.json(transactions)
+router.get('/transactions', async (req, res) => {
+  try {
+    const { data } = await supabase.from('transactions').select('*').order('created_at', { ascending: false }).limit(50)
+    res.json(data || [])
+  } catch (err) {
+    res.json([])
+  }
 })
 
-router.get('/withdrawals', (req, res) => {
-  const { status } = req.query
-  const data = withdrawals.filter(w => !status || w.status === status)
-  res.json(data)
-})
-
-router.post('/withdrawals/:id', (req, res) => {
-  const { id } = req.params
-  const { action } = req.body
-  withdrawals = withdrawals.map(w => w.id === id ? { ...w, status: action === 'approve' ? 'approved' : 'rejected' } : w)
-  res.json({ ok: true, id, action })
-})
-
-router.post('/withdrawal/settings', (req, res) => {
-  Object.assign(withdrawalSettings, req.body)
-  res.json({ ok: true, settings: withdrawalSettings })
+router.post('/withdrawal/settings', async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('platform_settings')
+      .upsert({ id: 'withdrawal', ...req.body, updated_at: new Date().toISOString() })
+      .select()
+      .single()
+    
+    if (error) throw error
+    res.json({ ok: true, settings: data })
+  } catch (err) {
+    console.error('[withdrawal/settings] Error:', err.message)
+    res.status(500).json({ error: err.message })
+  }
 })
 
 // ── Game Control Endpoints ────────────────────────
