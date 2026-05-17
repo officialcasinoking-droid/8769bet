@@ -272,7 +272,7 @@ function histClass(v) {
 // ── Main Component ────────────────────────────────────────────
 export default function AviatorGame() {
   const navigate = useNavigate()
-  const { user, isLoggedIn } = useAuth()
+  const { user, isLoggedIn, updateBalance, refreshUser } = useAuth()
   const toast = useToast()
 
   const [showLoading, setShowLoading] = useState(true)
@@ -437,6 +437,7 @@ export default function AviatorGame() {
           amount, mult: null, won: false, profit: 0, pending: true, betId: result.bet.id,
           time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
         }, ...prev].slice(0, 15))
+        await updateBalance(bal - amount)
         toast.success(`Bet ${num}: ₨${amount} placed`)
       } else {
         setBal(prev => prev + amount)
@@ -446,7 +447,7 @@ export default function AviatorGame() {
       setBal(prev => prev + amount)
       toast.error('Failed to place bet')
     }
-  }, [isLoggedIn, b1a, b1o, b1v, b2a, b2o, b2v, bal, user, navigate, toast])
+  }, [isLoggedIn, b1a, b1o, b1v, b2a, b2o, b2v, bal, user, navigate, toast, updateBalance])
 
   // ── Cashout ──
   const cashout = useCallback(async (num) => {
@@ -463,6 +464,7 @@ export default function AviatorGame() {
       const result = await response.json()
       if (result.success) {
         const won = result.winAmount
+        const newBal = bal + won
         setBal(prev => prev + won)
         const setter = num === 1 ? setB1d : setB2d
         setter({ ...betData, cashed: { won } })
@@ -472,6 +474,7 @@ export default function AviatorGame() {
           }
           return entry
         }))
+        await updateBalance(newBal)
         addCashoutExit(user?.username || 'You', won)
         toast.success(`Cashed ${result.multiplier.toFixed(2)}x — +₨${won.toLocaleString()}`)
       } else {
@@ -480,18 +483,20 @@ export default function AviatorGame() {
     } catch (err) {
       toast.error('Failed to cash out')
     }
-  }, [b1d, b2d, user, toast, addCashoutExit])
+  }, [b1d, b2d, bal, user, toast, addCashoutExit, updateBalance])
 
   // ── Cancel bet ──
   const cancelBet = useCallback((num) => {
     const betData = num === 1 ? b1d : b2d
     if (!betData) return
     if (phaseRef.current !== 'betting') { toast.error('Can only cancel during betting phase'); return }
+    const newBal = bal + betData.amount
     setBal(prev => prev + betData.amount)
     if (num === 1) setB1d(null); else setB2d(null)
     setMyHistory(prev => prev.filter(entry => entry.betId !== betData.id))
+    updateBalance(newBal)
     toast.success('Bet cancelled')
-  }, [b1d, b2d, toast])
+  }, [b1d, b2d, bal, toast, updateBalance])
 
   // ── Canvas animation ──
   useEffect(() => {

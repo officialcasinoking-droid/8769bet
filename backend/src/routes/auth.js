@@ -1,6 +1,9 @@
 import express from 'express'
 import { body } from 'express-validator'
 import { login, signup, forgotPassword, changePassword, getMe, resetPassword } from '../controllers/authController.js'
+import { supabase } from '../lib/supabase.js'
+import bcrypt from 'bcryptjs'
+import { logAudit } from '../middleware/auditLogger.js'
 
 const router = express.Router()
 
@@ -38,5 +41,68 @@ router.post('/forgot-password', [body('email').isEmail().withMessage('Valid emai
 router.post('/reset-password', resetPasswordValidation, resetPassword)
 router.post('/change-password', changePassword)
 router.get('/me', getMe)
+
+// User withdrawal PIN routes
+router.post('/users/:id/set-pin', async (req, res) => {
+  try {
+    const { pin } = req.body
+    if (!pin || pin.length !== 4 || !/^\d{4}$/.test(pin)) {
+      return res.status(400).json({ error: 'PIN must be 4 digits' })
+    }
+
+    const pinHash = await bcrypt.hash(pin, 12)
+
+    const { data: user, error: fetchError } = await supabase
+      .from('users')
+      .select('username')
+      .eq('id', req.params.id)
+      .single()
+
+    if (fetchError || !user) {
+      return res.status(404).json({ error: 'User not found' })
+    }
+
+    const { error } = await supabase
+      .from('users')
+      .update({ withdrawal_pin_hash: pinHash, withdrawal_pin_set: true, updated_at: new Date().toISOString() })
+      .eq('id', req.params.id)
+
+    if (error) throw error
+
+    await logAudit({
+      actorType: 'user',
+      actorId: req.params.id,
+      actorUsername: user.username,
+      action: 'set_withdrawal_pin',
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent']
+    })
+
+    res.json({ success: true, message: 'PIN set successfully' })
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message })
+  }
+})
+
+router.post('/users/:id/verify-pin', async (req, res) => {
+  try {
+    const { pin } = req.body
+
+    const { data: user, error } = await supabase
+      .from('users')
+      .select('withdrawal_pin_hash, withdrawal_pin_set')
+      .eq('id', req.params.id)
+      .single()
+
+    if (error || !user || !user.withdrawal_pin_set) {
+      return res.json({ success: false, error: 'PIN not set' })
+    }
+
+    const isValid = await bcrypt.compare(pin, user.withdrawal_pin_hash)
+    res.json({ success: isValid })
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message })
+  }
+})
 
 export default router

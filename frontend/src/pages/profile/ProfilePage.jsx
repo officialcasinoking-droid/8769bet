@@ -14,9 +14,9 @@ const WITHDRAWAL_METHODS = [
   { id: 'bank', name: 'Bank Account', icon: '🏦', fields: ['account_number', 'account_name', 'bank_name'] },
 ]
 
-function PINInput({ value, onChange, length = 6, label }) {
+function PINInput({ value, onChange, length = 4, label, autoFocus = true }) {
   const inputRef = useRef(null)
-  
+
   const handleChange = (index, val) => {
     if (!/^\d*$/.test(val)) return
     if (val.length > 1) {
@@ -37,13 +37,13 @@ function PINInput({ value, onChange, length = 6, label }) {
       inputRef.current?.querySelectorAll('input')[index + 1]?.focus()
     }
   }
-  
+
   const handleKeyDown = (index, e) => {
     if (e.key === 'Backspace' && !value[index] && index > 0) {
       inputRef.current?.querySelectorAll('input')[index - 1]?.focus()
     }
   }
-  
+
   const handlePaste = (e) => {
     e.preventDefault()
     const pasted = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, length)
@@ -59,12 +59,13 @@ function PINInput({ value, onChange, length = 6, label }) {
             key={i}
             type="password"
             inputMode="numeric"
+            pattern="[0-9]*"
             maxLength={1}
             value={value[i] || ''}
             onChange={(e) => handleChange(i, e.target.value)}
             onKeyDown={(e) => handleKeyDown(i, e)}
             className="w-11 h-12 sm:w-12 sm:h-14 rounded-lg bg-dark-300 border-2 border-dark-100 text-center text-xl sm:text-2xl font-bold text-white focus:border-primary-500 focus:outline-none transition-colors"
-            autoFocus={i === 0}
+            autoFocus={autoFocus && i === 0}
           />
         ))}
       </div>
@@ -76,18 +77,26 @@ function SetPINModal({ open, onClose, onSuccess }) {
   const [pin, setPin] = useState('')
   const [confirmPin, setConfirmPin] = useState('')
   const [loading, setLoading] = useState(false)
-  const { setWithdrawalPIN } = useAuth()
+  const [confirmAutoFocus, setConfirmAutoFocus] = useState(false)
+  const { setWithdrawalPIN, refreshUser } = useAuth()
   const toast = useToast()
 
   useEffect(() => {
     if (open) {
       setPin('')
       setConfirmPin('')
+      setConfirmAutoFocus(false)
     }
   }, [open])
 
-  const pinsMatch = pin.length === 6 && confirmPin.length === 6 && pin === confirmPin
-  const canSubmit = pin.length === 6 && confirmPin.length === 6 && pinsMatch
+  useEffect(() => {
+    if (pin.length === 4 && confirmPin.length === 0) {
+      setConfirmAutoFocus(true)
+    }
+  }, [pin, confirmPin])
+
+  const pinsMatch = pin.length === 4 && confirmPin.length === 4 && pin === confirmPin
+  const canSubmit = pinsMatch
 
   const handleSubmit = async () => {
     if (!canSubmit) {
@@ -101,6 +110,7 @@ function SetPINModal({ open, onClose, onSuccess }) {
     setLoading(false)
     if (result.success) {
       toast.success('Withdrawal PIN set successfully!')
+      refreshUser()
       onSuccess()
       onClose()
     } else {
@@ -121,29 +131,31 @@ function SetPINModal({ open, onClose, onSuccess }) {
             <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-emerald-500/20 flex items-center justify-center">
               <LockClosedIcon className="w-8 h-8 text-emerald-400" />
             </div>
-            <p className="text-sm text-gray-400">Enter and confirm your 6-digit PIN to secure withdrawals.</p>
+            <p className="text-sm text-gray-400">Create a 4-digit PIN to secure your withdrawals.</p>
           </div>
-          
+
           <div className="bg-dark-200 rounded-xl p-4">
-            <PINInput 
-              value={pin} 
-              onChange={setPin} 
-              length={6}
+            <PINInput
+              value={pin}
+              onChange={setPin}
+              length={4}
               label="Enter PIN"
+              autoFocus={true}
             />
           </div>
-          
+
           <div className="bg-dark-200 rounded-xl p-4">
-            <PINInput 
-              value={confirmPin} 
-              onChange={setConfirmPin} 
-              length={6}
+            <PINInput
+              value={confirmPin}
+              onChange={setConfirmPin}
+              length={4}
               label="Confirm PIN"
+              autoFocus={confirmAutoFocus}
             />
           </div>
-          
+
           <div className="h-6">
-            {confirmPin.length === 6 && pin.length === 6 && !pinsMatch && (
+            {confirmPin.length === 4 && pin.length === 4 && !pinsMatch && (
               <p className="text-sm text-red-400 text-center animate-pulse">PINs do not match</p>
             )}
             {pinsMatch && (
@@ -164,7 +176,7 @@ function SetPINModal({ open, onClose, onSuccess }) {
             disabled={loading || !canSubmit}
             className="flex-1 py-3 rounded-xl bg-primary-500 text-white font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {loading ? 'Setting...' : 'Set PIN'}
+            {loading ? 'Setting...' : 'Save PIN'}
           </button>
         </div>
       </DialogFooter>

@@ -188,42 +188,58 @@ export function AuthProvider({ children }) {
 
   const setWithdrawalPIN = useCallback(async (pin) => {
     if (!user?.id) return { success: false, error: 'Not logged in' }
-    
-    const pinHash = btoa(pin).slice(0, 32)
-    
-    // Update DB
+    if (!pin || pin.length !== 4) return { success: false, error: 'PIN must be 4 digits' }
+
+    const API_URL = import.meta.env.VITE_API_URL || 'https://eight769bet-backend.onrender.com'
+    const token = user?.access_token || localStorage.getItem('sb-auth-token')
+
     try {
-      const { error } = await supabase
-        .from('users')
-        .update({ withdrawal_pin_set: true, withdrawal_pin_hash: pinHash, updated_at: new Date().toISOString() })
-        .eq('id', user.id)
-      
-      if (error) {
-        console.error('DB update error:', error)
-        // Continue anyway - we'll save to localStorage
+      const response = await fetch(`${API_URL}/api/users/${user.id}/set-pin`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ pin })
+      })
+      const result = await response.json()
+
+      if (result.success) {
+        const updatedUser = { ...user, withdrawal_pin_set: true }
+        setUser(updatedUser)
+        localStorage.setItem('sb_user', JSON.stringify(updatedUser))
+        return { success: true }
       } else {
-        console.log('PIN saved to DB successfully')
+        return { success: false, error: result.error || 'Failed to set PIN' }
       }
     } catch (e) {
-      console.error('DB update failed:', e)
+      console.error('Set PIN failed:', e)
+      return { success: false, error: 'Network error' }
     }
-    
-    // Always update local state and cache
-    const updatedUser = { 
-      ...user, 
-      withdrawal_pin_set: true, 
-      withdrawal_pin_hash: pinHash 
-    }
-    setUser(updatedUser)
-    localStorage.setItem('sb_user', JSON.stringify(updatedUser))
-    
-    return { success: true }
   }, [user])
 
-  const verifyWithdrawalPIN = useCallback((pin) => {
-    if (!user?.withdrawal_pin_hash) return false
-    const pinHash = btoa(pin).slice(0, 32)
-    return user.withdrawal_pin_hash === pinHash
+  const verifyWithdrawalPIN = useCallback(async (pin) => {
+    if (!user?.id) return false
+    if (!user?.withdrawal_pin_set) return false
+
+    const API_URL = import.meta.env.VITE_API_URL || 'https://eight769bet-backend.onrender.com'
+    const token = user?.access_token || localStorage.getItem('sb-auth-token')
+
+    try {
+      const response = await fetch(`${API_URL}/api/users/${user.id}/verify-pin`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ pin })
+      })
+      const result = await response.json()
+      return result.success || false
+    } catch (e) {
+      console.error('Verify PIN failed:', e)
+      return false
+    }
   }, [user])
 
   const addWithdrawalAccount = useCallback(async (account) => {
