@@ -10,6 +10,7 @@ import auditRoutes from './routes/audit.js'
 import adminAccountRoutes from './routes/admin-accounts.js'
 import securityRoutes from './routes/security.js'
 import supportRoutes from './routes/support.js'
+import aiWithdrawalRoutes from './routes/ai-withdrawal.js'
 import { landingContent } from './store.js'
 import { initGameEngine, getCurrentState, requestManualCrash, updateSettings, placeBet, cashoutBet } from './gameEngine.js'
 import { authenticateAdmin, getRequiredRoleForPath, requireRole } from './middleware/auth.js'
@@ -69,6 +70,7 @@ app.use('/api/admin/audit', authenticateAdmin, auditRoutes)
 app.use('/api/admin/accounts', authenticateAdmin, adminAccountRoutes)
 app.use('/api/admin/security', authenticateAdmin, securityRoutes)
 app.use('/api/admin/support', authenticateAdmin, supportRoutes)
+app.use('/api/admin/ai/withdrawal', authenticateAdmin, aiWithdrawalRoutes)
 app.use('/api/support', supportRoutes)
 
 // Public landing page endpoint
