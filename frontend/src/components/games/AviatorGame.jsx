@@ -166,6 +166,11 @@ const CSS = `
   .av-live-amt{font-size:11px;font-weight:700;color:var(--text)}
   .av-live-mult{font-size:10px;font-weight:800}
   .av-live-empty{display:flex;align-items:center;justify-content:center;height:80px;font-size:10px;color:rgba(255,255,255,.13)}
+  .av-reconnect-overlay { position:absolute;inset:0;z-index:10; background:rgba(12,18,32,0.85); backdrop-filter:blur(8px); display:flex;flex-direction:column;align-items:center;justify-content:center; }
+  .av-reconnect-spinner { width:40px;height:40px;border:3px solid rgba(255,255,255,0.1);border-top-color:var(--green);border-radius:50%;animation:avSpin .8s linear infinite;margin-bottom:16px; }
+  @keyframes avSpin{to{transform:rotate(360deg)}}
+  .av-reconnect-text{font-size:12px;font-weight:700;color:var(--text);letter-spacing:.05em}
+  .av-reconnect-sub{font-size:10px;color:rgba(255,255,255,.4);margin-top:4px}
 `
 
 // ΓöÇΓöÇ Loading Screen ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
@@ -291,6 +296,7 @@ export default function AviatorGame() {
   const [hist, setHist] = useState([])
   const [myHistory, setMyHistory] = useState([])
   const [cashoutExits, setCashoutExits] = useState([])
+  const [wsConnected, setWsConnected] = useState(false)
   const exitCountRef = useRef(0)
 
   const [b1a, setB1a] = useState(10)
@@ -369,10 +375,15 @@ export default function AviatorGame() {
 
   useEffect(() => { phaseRef.current = phase }, [phase])
 
-  // ΓöÇΓöÇ WebSocket connection ΓöÇΓöÇ
+  // ── WebSocket connection ──
   useEffect(() => {
     if (showLoading) return
     aviatorWS.connect()
+
+    // Track WS connection state
+    const checkConn = setInterval(() => {
+      setWsConnected(aviatorWS.isConnected)
+    }, 1000)
 
     aviatorWS.on('game_state', (state) => {
       if (state.phase === 'betting') {
@@ -474,7 +485,7 @@ export default function AviatorGame() {
       }
     })
 
-    return () => {}
+    return () => { clearInterval(checkConn) }
   }, [showLoading])
 
   // ΓöÇΓöÇ Round transitions ΓöÇΓöÇ
@@ -815,7 +826,7 @@ export default function AviatorGame() {
               <div className="av-header-left">
                 <button className="av-back" onClick={() => navigate(-1)}><ChevronLeft size={15} /></button>
                 <div className="av-logo">
-                  <div className="av-logo-icon">Γ£ê</div>
+                  <div className="av-logo-icon">✈</div>
                   <span className="av-logo-text">Aviator</span>
                   <div className="av-live-dot" />
                 </div>
@@ -866,6 +877,15 @@ export default function AviatorGame() {
                       <div className="av-crash-val">{crashedAt.toFixed(2)}x</div>
                     )}
                   </div>
+
+                  {/* Reconnecting overlay */}
+                  {!wsConnected && !showLoading && (
+                    <div className="av-reconnect-overlay">
+                      <div className="av-reconnect-spinner" />
+                      <div className="av-reconnect-text">Reconnecting...</div>
+                      <div className="av-reconnect-sub">Game will resume automatically</div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Live Bets */}
