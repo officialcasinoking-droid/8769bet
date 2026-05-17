@@ -8,6 +8,8 @@ class AviatorWebSocketClient {
     this.ws = null
     this.reconnectTimer = null
     this.isConnected = false
+    this.reconnectAttempts = 0
+    this.maxReconnectDelay = 15000
     this.listeners = {
       game_state: [],
       bets_update: [],
@@ -60,6 +62,7 @@ class AviatorWebSocketClient {
       this.ws.onopen = () => {
         console.log('[WS] Connected to game server')
         this.isConnected = true
+        this.resetReconnectAttempts()
         if (this.reconnectTimer) {
           clearTimeout(this.reconnectTimer)
           this.reconnectTimer = null
@@ -94,15 +97,26 @@ class AviatorWebSocketClient {
   }
 
   /**
-   * Schedule reconnection attempt
+   * Schedule reconnection attempt with exponential backoff
    */
   scheduleReconnect() {
     if (this.reconnectTimer) return
     
-    console.log('[WS] Reconnecting in 3 seconds...')
+    // Exponential backoff: 1s, 2s, 4s, 8s, 15s max
+    const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), this.maxReconnectDelay)
+    this.reconnectAttempts++
+    
+    console.log(`[WS] Reconnecting in ${delay/1000}s (attempt ${this.reconnectAttempts})...`)
     this.reconnectTimer = setTimeout(() => {
       this.connect()
-    }, 3000)
+    }, delay)
+  }
+
+  /**
+   * Reset reconnect counter on successful connection
+   */
+  resetReconnectAttempts() {
+    this.reconnectAttempts = 0
   }
 
   /**

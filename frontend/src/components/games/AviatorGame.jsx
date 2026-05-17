@@ -171,6 +171,12 @@ const CSS = `
   @keyframes avSpin{to{transform:rotate(360deg)}}
   .av-reconnect-text{font-size:12px;font-weight:700;color:var(--text);letter-spacing:.05em}
   .av-reconnect-sub{font-size:10px;color:rgba(255,255,255,.4);margin-top:4px}
+  .av-connecting-overlay { position:absolute;inset:0;z-index:10; background:var(--bg-primary); display:flex;flex-direction:column;align-items:center;justify-content:center; }
+  .av-connecting-logo { width:100px;height:100px;border-radius:20px; background:linear-gradient(135deg,#ff4d4d,#ff8c00); display:flex;flex-direction:column;align-items:center;justify-content:center; box-shadow:0 0 40px rgba(255,77,77,0.3); margin-bottom:20px; }
+  .av-connecting-logo-text { font-family:'Exo 2',sans-serif;font-size:32px;font-weight:900; color:#fff;letter-spacing:.08em;text-transform:uppercase;line-height:1; }
+  .av-connecting-logo-sub { font-family:'Exo 2',sans-serif;font-size:8px;font-weight:700; color:rgba(255,255,255,.7);letter-spacing:.2em;text-transform:uppercase;margin-top:3px; }
+  .av-connecting-text{font-size:14px;font-weight:700;color:var(--text);letter-spacing:.1em}
+  .av-connecting-sub{font-size:11px;color:rgba(255,255,255,.3);margin-top:6px}
 `
 
 // ΓöÇΓöÇ Loading Screen ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
@@ -297,6 +303,7 @@ export default function AviatorGame() {
   const [myHistory, setMyHistory] = useState([])
   const [cashoutExits, setCashoutExits] = useState([])
   const [wsConnected, setWsConnected] = useState(false)
+  const [initialConnect, setInitialConnect] = useState(true)
   const exitCountRef = useRef(0)
 
   const [b1a, setB1a] = useState(10)
@@ -370,7 +377,9 @@ export default function AviatorGame() {
           setMyHistory(history)
         }
       })
-      .catch(() => {})
+      .catch(() => {
+        // Silently fail - bet history is not critical
+      })
   }, [user?.id, showLoading])
 
   useEffect(() => { phaseRef.current = phase }, [phase])
@@ -388,6 +397,7 @@ export default function AviatorGame() {
     // Handle WS reconnection - sync game state
     aviatorWS.on('ws_connected', () => {
       setWsConnected(true)
+      setInitialConnect(false)
       // Request full state from server
       if (aviatorWS.ws) {
         aviatorWS.ws.send(JSON.stringify({ type: 'get_state' }))
@@ -895,7 +905,17 @@ export default function AviatorGame() {
                   </div>
 
                   {/* Reconnecting overlay */}
-                  {!wsConnected && !showLoading && (
+                  {initialConnect && !wsConnected && !showLoading && (
+                    <div className="av-connecting-overlay">
+                      <div className="av-connecting-logo">
+                        <div className="av-connecting-logo-text">AVIATOR</div>
+                        <div className="av-connecting-logo-sub">CRASH GAME</div>
+                      </div>
+                      <div className="av-connecting-text">Connecting to server...</div>
+                      <div className="av-connecting-sub">This may take a moment if server is waking up</div>
+                    </div>
+                  )}
+                  {!initialConnect && !wsConnected && !showLoading && (
                     <div className="av-reconnect-overlay">
                       <div className="av-reconnect-spinner" />
                       <div className="av-reconnect-text">Reconnecting...</div>
