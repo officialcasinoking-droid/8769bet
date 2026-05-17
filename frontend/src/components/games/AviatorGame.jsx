@@ -31,8 +31,10 @@ const CSS = `
   }
   .av-root { font-family: 'Inter','Exo 2',-apple-system,sans-serif; }
   .av-loading { position:fixed;inset:0;z-index:200; background:var(--bg-primary); display:flex;flex-direction:column;align-items:center;justify-content:center; }
-  .av-loading-icon { width:72px;height:72px;border-radius:18px; background:linear-gradient(135deg,#ff4d4d,#ff8c00); display:flex;align-items:center;justify-content:center; box-shadow:0 0 50px rgba(255,77,77,0.4); margin-bottom:28px; font-size:36px; }
-  .av-loading-title { font-family:'Exo 2',sans-serif;font-size:38px;font-weight:900; color:var(--text);letter-spacing:.15em;text-transform:uppercase;margin:0 0 6px; }
+  .av-loading-logo { width:120px;height:120px;border-radius:24px; background:linear-gradient(135deg,#ff4d4d,#ff8c00); display:flex;flex-direction:column;align-items:center;justify-content:center; box-shadow:0 0 60px rgba(255,77,77,0.4); margin-bottom:28px; }
+  .av-loading-logo-text { font-family:'Exo 2',sans-serif;font-size:42px;font-weight:900; color:#fff;letter-spacing:.08em;text-transform:uppercase;line-height:1; }
+  .av-loading-logo-sub { font-family:'Exo 2',sans-serif;font-size:10px;font-weight:700; color:rgba(255,255,255,.7);letter-spacing:.25em;text-transform:uppercase;margin-top:4px; }
+  .av-loading-title { font-family:'Exo 2',sans-serif;font-size:28px;font-weight:900; color:var(--text);letter-spacing:.2em;text-transform:uppercase;margin:0 0 6px; }
   .av-loading-sub { font-size:11px;color:rgba(255,255,255,.28);letter-spacing:.3em; text-transform:uppercase;margin:0 0 36px; }
   .av-bar-wrap {width:260px;margin-bottom:28px;}
   .av-bar-track {width:100%;height:3px;background:rgba(255,255,255,.1);border-radius:3px;overflow:hidden;}
@@ -170,7 +172,10 @@ const CSS = `
 function LoadingScreen({ progress }) {
   return (
     <div className="av-loading">
-      <div className="av-loading-icon">Γ£ê</div>
+      <div className="av-loading-logo">
+        <div className="av-loading-logo-text">AVIATOR</div>
+        <div className="av-loading-logo-sub">CRASH GAME</div>
+      </div>
       <h1 className="av-loading-title">AVIATOR</h1>
       <p className="av-loading-sub">Loading...</p>
       <div className="av-bar-wrap">
@@ -445,6 +450,30 @@ export default function AviatorGame() {
       }
     })
 
+    // Handle instant cashout result from WebSocket
+    aviatorWS.on('cashout_result', (result) => {
+      if (result.success) {
+        const won = result.winAmount
+        const num = result.betNum || 1
+        const betData = num === 1 ? b1dRef.current : b2dRef.current
+        const newBal = bal + won
+        setBal(newBal)
+        updateBalance(newBal)
+        const setter = num === 1 ? setB1d : setB2d
+        setter(prev => prev ? { ...prev, cashed: { won } } : null)
+        if (betData) {
+          setMyHistory(prev => prev.map(entry => {
+            if (entry.pending && entry.betId === betData.id) {
+              return { ...entry, mult: result.multiplier, won: true, profit: won, pending: false }
+            }
+            return entry
+          }))
+        }
+        addCashoutExit(user?.username || 'You', won)
+        toast.success(`Cashed ${result.multiplier.toFixed(2)}x — +₨${won.toLocaleString()}`)
+      }
+    })
+
     return () => {}
   }, [showLoading])
 
@@ -475,7 +504,7 @@ export default function AviatorGame() {
     }
   }, [phase, user?.id])
 
-  // ΓöÇΓöÇ Loading animation ΓöÇΓöÇ
+  // Loading animation with timeout
   useEffect(() => {
     let prog = 0
     const tick = setInterval(() => {
@@ -489,7 +518,15 @@ export default function AviatorGame() {
         setLoadingProgress(prog)
       }
     }, 150)
-    return () => clearInterval(tick)
+
+    // Force dismiss loading after 5 seconds max
+    const forceDismiss = setTimeout(() => {
+      clearInterval(tick)
+      setLoadingProgress(100)
+      setShowLoading(false)
+    }, 5000)
+
+    return () => { clearInterval(tick); clearTimeout(forceDismiss) }
   }, [])
 
   // ΓöÇΓöÇ Exit popups ΓöÇΓöÇ
@@ -555,41 +592,78 @@ export default function AviatorGame() {
     }
   }, [isLoggedIn, b1a, b1o, b1v, b2a, b2o, b2v, bal, user, navigate, toast])
 
-  // ΓöÇΓöÇ Cashout ΓöÇΓöÇ
+  // ── Cashout ──
   const cashout = useCallback(async (num) => {
     if (phaseRef.current !== 'running') return
     const betData = num === 1 ? b1dRef.current : b2dRef.current
     if (!betData || betData.cashed) return
 
-    try {
-      const response = await fetch(`${API_URL}/api/aviator/cashout`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user?.id, betNum: num }),
-      })
-      const result = await response.json()
-      if (result.success) {
-        const won = result.winAmount
-        const newBal = bal + won
-        setBal(newBal)
-        updateBalance(newBal)
-        const setter = num === 1 ? setB1d : setB2d
-        setter(prev => prev ? { ...prev, cashed: { won } } : null)
-        setMyHistory(prev => prev.map(entry => {
-          if (entry.pending && entry.betId === betData.id) {
-            return { ...entry, mult: result.multiplier, won: true, profit: won, pending: false }
+    // Use WebSocket for instant cashout
+    if (aviatorWS.isConnected) {
+      const result = aviatorWS.cashout(user?.id, num)
+      if (!result.success) {
+        // Fallback to REST API if WS fails
+        try {
+          const response = await fetch(`${API_URL}/api/aviator/cashout`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId: user?.id, betNum: num }),
+          })
+          const apiResult = await response.json()
+          if (apiResult.success) {
+            const won = apiResult.winAmount
+            const newBal = bal + won
+            setBal(newBal)
+            updateBalance(newBal)
+            const setter = num === 1 ? setB1d : setB2d
+            setter(prev => prev ? { ...prev, cashed: { won } } : null)
+            setMyHistory(prev => prev.map(entry => {
+              if (entry.pending && entry.betId === betData.id) {
+                return { ...entry, mult: apiResult.multiplier, won: true, profit: won, pending: false }
+              }
+              return entry
+            }))
+            addCashoutExit(user?.username || 'You', won)
+            toast.success(`Cashed ${apiResult.multiplier.toFixed(2)}x — +₨${won.toLocaleString()}`)
+          } else {
+            toast.error(apiResult.error || 'Failed to cash out')
           }
-          return entry
-        }))
-        addCashoutExit(user?.username || 'You', won)
-        toast.success(`Cashed ${result.multiplier.toFixed(2)}x — +₨${won.toLocaleString()}`)
-      } else {
-        toast.error(result.error || 'Failed to cash out')
+        } catch (err) {
+          toast.error('Failed to cash out')
+        }
       }
-    } catch (err) {
-      toast.error('Failed to cash out')
+    } else {
+      // Fallback to REST API if WS not connected
+      try {
+        const response = await fetch(`${API_URL}/api/aviator/cashout`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: user?.id, betNum: num }),
+        })
+        const result = await response.json()
+        if (result.success) {
+          const won = result.winAmount
+          const newBal = bal + won
+          setBal(newBal)
+          updateBalance(newBal)
+          const setter = num === 1 ? setB1d : setB2d
+          setter(prev => prev ? { ...prev, cashed: { won } } : null)
+          setMyHistory(prev => prev.map(entry => {
+            if (entry.pending && entry.betId === betData.id) {
+              return { ...entry, mult: result.multiplier, won: true, profit: won, pending: false }
+            }
+            return entry
+          }))
+          addCashoutExit(user?.username || 'You', won)
+          toast.success(`Cashed ${result.multiplier.toFixed(2)}x — +₨${won.toLocaleString()}`)
+        } else {
+          toast.error(result.error || 'Failed to cash out')
+        }
+      } catch (err) {
+        toast.error('Failed to cash out')
+      }
     }
-  }, [user, toast, addCashoutExit])
+  }, [user, bal, toast, addCashoutExit, updateBalance])
 
   // ΓöÇΓöÇ Cancel bet ΓöÇΓöÇ
   const cancelBet = useCallback(async (num) => {

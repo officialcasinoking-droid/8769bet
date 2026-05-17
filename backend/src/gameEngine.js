@@ -755,7 +755,7 @@ async function initGameEngine(server) {
 
         if (msg.type === 'cashout') {
           const result = await cashoutBet(msg.userId, msg.betNum)
-          ws.send(JSON.stringify({ type: 'cashout_result', ...result }))
+          ws.send(JSON.stringify({ type: 'cashout_result', ...result, betNum: msg.betNum }))
         }
 
         if (msg.type === 'manual_crash') {
