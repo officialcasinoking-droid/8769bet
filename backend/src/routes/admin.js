@@ -88,27 +88,54 @@ router.post('/withdrawals/:id', async (req, res) => {
   }
 })
 
-      await logAudit({
-        actorType: 'admin',
-        actorId: admin.id,
-        actorUsername: admin.username,
-        action: 'admin_login',
-        ipAddress: req.ip,
-        userAgent: req.headers['user-agent']
-      })
+// Admin login
+router.post('/login', async (req, res) => {
+  try {
+    const { username, password } = req.body
+    const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-in-production'
 
-      return res.json({
-        success: true,
-        token,
-        admin: {
-          id: admin.id,
-          username: admin.username,
-          email: admin.email,
-          fullName: admin.full_name,
-          role: admin.role,
-          permissions: admin.permissions
-        }
-      })
+    if (!username || !password) {
+      return res.status(400).json({ error: 'Username and password required' })
+    }
+
+    // Try database admin accounts first
+    const { data: admin, error: adminError } = await supabase
+      .from('admins')
+      .select('*')
+      .eq('username', username)
+      .single()
+
+    if (!adminError && admin && admin.password_hash) {
+      const isValid = await bcrypt.compare(password, admin.password_hash)
+      if (isValid) {
+        const token = jwt.sign(
+          { adminId: admin.id, username: admin.username, role: admin.role },
+          JWT_SECRET,
+          { expiresIn: '24h' }
+        )
+
+        await logAudit({
+          actorType: 'admin',
+          actorId: admin.id,
+          actorUsername: admin.username,
+          action: 'admin_login',
+          ipAddress: req.ip,
+          userAgent: req.headers['user-agent']
+        })
+
+        return res.json({
+          success: true,
+          token,
+          admin: {
+            id: admin.id,
+            username: admin.username,
+            email: admin.email,
+            fullName: admin.full_name,
+            role: admin.role,
+            permissions: admin.permissions
+          }
+        })
+      }
     }
 
     // Fallback: try the old platform_settings credentials
