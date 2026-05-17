@@ -101,6 +101,43 @@ async function persistHouseEdgeStats() {
   }
 }
 
+async function creditUserBalance(userId, winAmount, bet) {
+  if (!supabaseAvailable) return
+  try {
+    const { data: user } = await supabase
+      .from('users')
+      .select('balance')
+      .eq('id', userId)
+      .single()
+
+    if (user) {
+      const currentBalance = Number(user.balance) || 0
+      await supabase
+        .from('users')
+        .update({ balance: currentBalance + winAmount, updated_at: new Date().toISOString() })
+        .eq('id', userId)
+    }
+
+    if (bet) {
+      await supabase
+        .from('aviator_bets')
+        .update({
+          cashed_out: true,
+          cashout_multiplier: bet.cashoutMult,
+          win_amount: bet.winAmount,
+          status: 'won',
+          updated_at: new Date().toISOString()
+        })
+        .eq('user_id', userId)
+        .eq('round_id', gameState.roundId)
+        .eq('bet_number', bet.betNum)
+        .eq('cashed_out', false)
+    }
+  } catch (e) {
+    console.error('[creditUserBalance] DB error:', e.message)
+  }
+}
+
 async function loadHouseEdgeStats() {
   if (!supabaseAvailable) return
   try {
@@ -310,39 +347,9 @@ function startGameLoop() {
           bet.status = 'won'
           betsChanged = true
 
-          // Credit winnings to user balance in DB
+          // Credit winnings to user balance in DB (non-blocking)
           if (supabaseAvailable && !bet.is_bot) {
-            try {
-              const { data: user } = await supabase
-                .from('users')
-                .select('balance')
-                .eq('id', bet.userId)
-                .single()
-
-              if (user) {
-                const currentBalance = Number(user.balance) || 0
-                await supabase
-                  .from('users')
-                  .update({ balance: currentBalance + bet.winAmount, updated_at: new Date().toISOString() })
-                  .eq('id', bet.userId)
-              }
-
-              await supabase
-                .from('aviator_bets')
-                .update({
-                  cashed_out: true,
-                  cashout_multiplier: bet.cashoutMult,
-                  win_amount: bet.winAmount,
-                  status: 'won',
-                  updated_at: new Date().toISOString()
-                })
-                .eq('user_id', bet.userId)
-                .eq('round_id', gameState.roundId)
-                .eq('bet_number', bet.betNum)
-                .eq('cashed_out', false)
-            } catch (e) {
-              console.error('[auto-cashout] DB error:', e.message)
-            }
+            creditUserBalance(bet.userId, bet.winAmount, bet)
           }
         }
       }
@@ -434,12 +441,16 @@ function crashRound(crashPoint, reason = 'natural') {
         bet.cashoutMult = currentMult
         bet.winAmount = Math.floor(bet.amount * currentMult)
         bet.status = 'won'
+        // Credit winnings (non-blocking)
+        if (supabaseAvailable && !bet.is_bot) {
+          creditUserBalance(bet.userId, bet.winAmount, bet)
+        }
       } else {
         bet.status = 'lost'
       }
     }
 
-    // Update bet record in DB for non-bot bets
+    // Update bet record in DB for non-bot bets (non-blocking)
     if (supabaseAvailable && !bet.is_bot) {
       supabase
         .from('aviator_bets')
@@ -453,9 +464,7 @@ function crashRound(crashPoint, reason = 'natural') {
         .eq('user_id', bet.userId)
         .eq('round_id', gameState.roundId)
         .eq('bet_number', bet.betNum)
-        .then(({ error }) => {
-          if (error) console.error('[crashRound] Failed to update bet:', error.message)
-        })
+        .catch(e => console.error('[crashRound] Failed to update bet:', e.message))
     }
   })
 
