@@ -517,6 +517,28 @@ export default function AviatorGame() {
       }
     })
 
+    // Handle bet result from WebSocket
+    aviatorWS.on('bet_result', (result) => {
+      if (result.success) {
+        // Update temp bet ID with real server ID
+        const num = result.betNumber
+        const setter = num === 1 ? setB1d : setB2d
+        setter(prev => prev && prev.id.startsWith('temp_') ? { ...prev, id: result.bet.id } : prev)
+        setMyHistory(prev => prev.map(entry => {
+          if (entry.pending && entry.betId.startsWith('temp_')) {
+            return { ...entry, betId: result.bet.id }
+          }
+          return entry
+        }))
+      } else {
+        // Bet failed - revert UI
+        toast.error(result.error || 'Failed to place bet')
+        setB1d(null)
+        setB2d(null)
+        setMyHistory(prev => prev.filter(e => !e.betId.startsWith('temp_')))
+      }
+    })
+
     return () => { clearInterval(checkConn) }
   }, [showLoading])
 
@@ -597,8 +619,8 @@ export default function AviatorGame() {
     prevLiveRef.current = [...live]
   }, [live, addCashoutExit, user])
 
-  // ΓöÇΓöÇ Bet placement ΓöÇΓöÇ
-  const place = useCallback(async (num) => {
+  // ── Bet placement ──
+  const place = useCallback((num) => {
     if (!isLoggedIn) { navigate('/login', { state: { from: '/play/aviator' } }); return }
     const amount = num === 1 ? b1a : b2a
     if (amount < MIN_BET) { toast.error(`Min ₨${MIN_BET}`); return }
@@ -608,105 +630,51 @@ export default function AviatorGame() {
 
     const autoCashout = (num === 1 ? b1o : b2o) ? parseFloat(num === 1 ? b1v : b2v) : null
 
-    try {
-      const response = await fetch(`${API_URL}/api/aviator/bet`, {
+    // Optimistic UI update - immediate response
+    const tempId = `temp_${Date.now()}_${num}`
+    const newBal = bal - amount
+    setBal(newBal)
+    updateBalance(newBal)
+    const entry = { id: tempId, amount, autoCashout, cashed: null }
+    if (num === 1) setB1d(entry); else setB2d(entry)
+    setMyHistory(prev => [{
+      amount, mult: null, won: false, profit: 0, pending: true, betId: tempId,
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    }, ...prev].slice(0, 15))
+
+    // Send via WebSocket for instant response
+    if (aviatorWS.isConnected) {
+      aviatorWS.placeBet({ userId: user?.id, username: user?.username || 'You', amount, autoCashout, betNumber: num })
+    } else {
+      // Fallback to REST API
+      fetch(`${API_URL}/api/aviator/bet`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: user?.id, username: user?.username || 'You', amount, autoCashout, betNumber: num }),
-      })
-      const result = await response.json()
-      if (result.success) {
-        // Deduct balance locally and sync to AuthContext
-        const newBal = bal - amount
-        setBal(newBal)
-        updateBalance(newBal)
-        const entry = { id: result.bet.id, amount, autoCashout, cashed: null }
-        if (num === 1) setB1d(entry); else setB2d(entry)
-        setMyHistory(prev => [{
-          amount, mult: null, won: false, profit: 0, pending: true, betId: result.bet.id,
-          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-        }, ...prev].slice(0, 15))
-        toast.success(`Bet ${num}: ₨${amount} placed`)
-      } else {
-        toast.error(result.error || 'Failed to place bet')
-      }
-    } catch (err) {
-      toast.error('Failed to place bet')
+      }).catch(() => {})
     }
-  }, [isLoggedIn, b1a, b1o, b1v, b2a, b2o, b2v, bal, user, navigate, toast])
+
+    toast.success(`Bet ${num}: ₨${amount} placed`)
+  }, [isLoggedIn, b1a, b1o, b1v, b2a, b2o, b2v, bal, user, navigate, toast, updateBalance])
 
   // ── Cashout ──
-  const cashout = useCallback(async (num) => {
+  const cashout = useCallback((num) => {
     if (phaseRef.current !== 'running') return
     const betData = num === 1 ? b1dRef.current : b2dRef.current
     if (!betData || betData.cashed) return
 
     // Use WebSocket for instant cashout
     if (aviatorWS.isConnected) {
-      const result = aviatorWS.cashout(user?.id, num)
-      if (!result.success) {
-        // Fallback to REST API if WS fails
-        try {
-          const response = await fetch(`${API_URL}/api/aviator/cashout`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userId: user?.id, betNum: num }),
-          })
-          const apiResult = await response.json()
-          if (apiResult.success) {
-            const won = apiResult.winAmount
-            const newBal = bal + won
-            setBal(newBal)
-            updateBalance(newBal)
-            const setter = num === 1 ? setB1d : setB2d
-            setter(prev => prev ? { ...prev, cashed: { won } } : null)
-            setMyHistory(prev => prev.map(entry => {
-              if (entry.pending && entry.betId === betData.id) {
-                return { ...entry, mult: apiResult.multiplier, won: true, profit: won, pending: false }
-              }
-              return entry
-            }))
-            addCashoutExit(user?.username || 'You', won)
-            toast.success(`Cashed ${apiResult.multiplier.toFixed(2)}x — +₨${won.toLocaleString()}`)
-          } else {
-            toast.error(apiResult.error || 'Failed to cash out')
-          }
-        } catch (err) {
-          toast.error('Failed to cash out')
-        }
-      }
+      aviatorWS.cashout(user?.id, num)
     } else {
       // Fallback to REST API if WS not connected
-      try {
-        const response = await fetch(`${API_URL}/api/aviator/cashout`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId: user?.id, betNum: num }),
-        })
-        const result = await response.json()
-        if (result.success) {
-          const won = result.winAmount
-          const newBal = bal + won
-          setBal(newBal)
-          updateBalance(newBal)
-          const setter = num === 1 ? setB1d : setB2d
-          setter(prev => prev ? { ...prev, cashed: { won } } : null)
-          setMyHistory(prev => prev.map(entry => {
-            if (entry.pending && entry.betId === betData.id) {
-              return { ...entry, mult: result.multiplier, won: true, profit: won, pending: false }
-            }
-            return entry
-          }))
-          addCashoutExit(user?.username || 'You', won)
-          toast.success(`Cashed ${result.multiplier.toFixed(2)}x — +₨${won.toLocaleString()}`)
-        } else {
-          toast.error(result.error || 'Failed to cash out')
-        }
-      } catch (err) {
-        toast.error('Failed to cash out')
-      }
+      fetch(`${API_URL}/api/aviator/cashout`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user?.id, betNum: num }),
+      }).catch(() => {})
     }
-  }, [user, bal, toast, addCashoutExit, updateBalance])
+  }, [user])
 
   // ΓöÇΓöÇ Cancel bet ΓöÇΓöÇ
   const cancelBet = useCallback(async (num) => {
