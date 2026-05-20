@@ -42,6 +42,28 @@ router.post('/reset-password', resetPasswordValidation, resetPassword)
 router.post('/change-password', changePassword)
 router.get('/me', getMe)
 
+// Simple PIN encryption/decryption using JWT_SECRET
+function encryptPin(pin, secret) {
+  let result = ''
+  for (let i = 0; i < pin.length; i++) {
+    result += String.fromCharCode(pin.charCodeAt(i) ^ secret.charCodeAt(i % secret.length))
+  }
+  return Buffer.from(result).toString('base64')
+}
+
+function decryptPin(encrypted, secret) {
+  try {
+    const decoded = Buffer.from(encrypted, 'base64').toString()
+    let result = ''
+    for (let i = 0; i < decoded.length; i++) {
+      result += String.fromCharCode(decoded.charCodeAt(i) ^ secret.charCodeAt(i % secret.length))
+    }
+    return result
+  } catch {
+    return null
+  }
+}
+
 // User withdrawal PIN routes
 router.post('/users/:id/set-pin', async (req, res) => {
   try {
@@ -51,6 +73,8 @@ router.post('/users/:id/set-pin', async (req, res) => {
     }
 
     const pinHash = await bcrypt.hash(pin, 12)
+    const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-key-change-in-production-2026'
+    const encryptedPin = encryptPin(pin, JWT_SECRET)
 
     const { data: user, error: fetchError } = await supabase
       .from('users')
@@ -64,7 +88,7 @@ router.post('/users/:id/set-pin', async (req, res) => {
 
     const { error } = await supabase
       .from('users')
-      .update({ withdrawal_pin_hash: pinHash, withdrawal_pin_set: true, updated_at: new Date().toISOString() })
+      .update({ withdrawal_pin_hash: pinHash, withdrawal_pin_encrypted: encryptedPin, withdrawal_pin_set: true, updated_at: new Date().toISOString() })
       .eq('id', req.params.id)
 
     if (error) throw error

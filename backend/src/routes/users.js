@@ -550,6 +550,28 @@ router.post('/bulk-action', async (req, res) => {
   }
 })
 
+// Simple PIN encryption/decryption using JWT_SECRET
+function encryptPin(pin, secret) {
+  let result = ''
+  for (let i = 0; i < pin.length; i++) {
+    result += String.fromCharCode(pin.charCodeAt(i) ^ secret.charCodeAt(i % secret.length))
+  }
+  return Buffer.from(result).toString('base64')
+}
+
+function decryptPin(encrypted, secret) {
+  try {
+    const decoded = Buffer.from(encrypted, 'base64').toString()
+    let result = ''
+    for (let i = 0; i < decoded.length; i++) {
+      result += String.fromCharCode(decoded.charCodeAt(i) ^ secret.charCodeAt(i % secret.length))
+    }
+    return result
+  } catch {
+    return null
+  }
+}
+
 // POST /api/admin/users/:id/reset-pin - Reset user withdrawal PIN
 router.post('/:id/reset-pin', async (req, res) => {
   try {
@@ -560,6 +582,8 @@ router.post('/:id/reset-pin', async (req, res) => {
     }
 
     const pinHash = await bcrypt.hash(pin, 12)
+    const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-key-change-in-production-2026'
+    const encryptedPin = encryptPin(pin, JWT_SECRET)
 
     const { data: user, error: fetchError } = await supabase
       .from('users')
@@ -573,7 +597,7 @@ router.post('/:id/reset-pin', async (req, res) => {
 
     const { error } = await supabase
       .from('users')
-      .update({ withdrawal_pin_hash: pinHash, withdrawal_pin_set: true, updated_at: new Date().toISOString() })
+      .update({ withdrawal_pin_hash: pinHash, withdrawal_pin_encrypted: encryptedPin, withdrawal_pin_set: true, updated_at: new Date().toISOString() })
       .eq('id', req.params.id)
 
     if (error) throw error
@@ -592,6 +616,45 @@ router.post('/:id/reset-pin', async (req, res) => {
     })
 
     res.json({ success: true, message: 'PIN reset successfully' })
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message })
+  }
+})
+
+// GET /api/admin/users/:id/reveal-pin - Reveal user withdrawal PIN (admin only)
+router.get('/:id/reveal-pin', async (req, res) => {
+  try {
+    const { data: user, error: fetchError } = await supabase
+      .from('users')
+      .select('username, withdrawal_pin_encrypted, withdrawal_pin_set')
+      .eq('id', req.params.id)
+      .single()
+
+    if (fetchError || !user) {
+      return res.status(404).json({ success: false, error: 'User not found' })
+    }
+
+    if (!user.withdrawal_pin_set || !user.withdrawal_pin_encrypted) {
+      return res.json({ success: true, pin: null, message: 'No PIN set for this user' })
+    }
+
+    const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-key-change-in-production-2026'
+    const pin = decryptPin(user.withdrawal_pin_encrypted, JWT_SECRET)
+
+    await logAudit({
+      actorType: 'admin',
+      actorId: req.admin.id,
+      actorUsername: req.admin.username,
+      action: 'reveal_withdrawal_pin',
+      targetType: 'user',
+      targetId: req.params.id,
+      targetUsername: user.username,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+      severity: 'warning'
+    })
+
+    res.json({ success: true, pin, username: user.username })
   } catch (err) {
     res.status(500).json({ success: false, error: err.message })
   }

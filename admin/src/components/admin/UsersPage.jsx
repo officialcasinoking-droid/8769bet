@@ -64,6 +64,8 @@ export default function UsersPage() {
   const [showConfirmPin, setShowConfirmPin] = useState(false)
   const [showPinForm, setShowPinForm] = useState(false)
   const [pinError, setPinError] = useState('')
+  const [revealedPin, setRevealedPin] = useState(null)
+  const [showRevealedPin, setShowRevealedPin] = useState(false)
 
   // Status state
   const [newStatus, setNewStatus] = useState('')
@@ -121,6 +123,8 @@ export default function UsersPage() {
     setShowPinForm(false)
     setShowStatusForm(false)
     setShowLockForm(false)
+    setRevealedPin(null)
+    setShowRevealedPin(false)
     setEditForm({
       username: user.username || '',
       email: user.email || '',
@@ -190,6 +194,25 @@ export default function UsersPage() {
       setBalanceHistory(balanceData.history || [])
     } catch (err) {
       console.error('Balance adjustment failed:', err)
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  const handleRevealPin = async () => {
+    if (!selectedUser) return
+    setActionLoading(true)
+    try {
+      const data = await apiCall(`/api/admin/users/${selectedUser.id}/reveal-pin`)
+      if (data.success && data.pin) {
+        setRevealedPin(data.pin)
+        setShowRevealedPin(true)
+      } else {
+        setRevealedPin(null)
+        setShowRevealedPin(false)
+      }
+    } catch (err) {
+      console.error('Reveal PIN failed:', err)
     } finally {
       setActionLoading(false)
     }
@@ -898,6 +921,23 @@ export default function UsersPage() {
                       <h4 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
                         <Key className="w-4 h-4 text-cyan-400" /> Withdrawal PIN
                       </h4>
+                      
+                      {/* Revealed PIN display */}
+                      {showRevealedPin && revealedPin && (
+                        <div className="mb-3 bg-amber-500/10 border border-amber-500/30 rounded-lg p-3">
+                          <p className="text-xs text-amber-400 mb-1">Current PIN (visible to admin only)</p>
+                          <div className="flex items-center justify-between">
+                            <p className="text-2xl font-mono font-bold text-white tracking-widest">{revealedPin}</p>
+                            <button
+                              onClick={() => { setShowRevealedPin(false); setRevealedPin(null) }}
+                              className="text-xs text-slate-400 hover:text-white"
+                            >
+                              Hide
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                      
                       <div className="mb-3">
                         <p className="text-xs text-slate-400">Current Status</p>
                         <p className="text-sm text-white mt-0.5">
@@ -908,6 +948,14 @@ export default function UsersPage() {
                           )}
                         </p>
                       </div>
+                      
+                      {/* Reveal button */}
+                      {selectedUser.withdrawal_pin_set && !showRevealedPin && !showPinForm && (
+                        <Button onClick={handleRevealPin} disabled={actionLoading} variant="outline" className="w-full mb-2">
+                          <Eye className="w-4 h-4" /> Reveal PIN
+                        </Button>
+                      )}
+                      
                       {!showPinForm ? (
                         <Button onClick={() => setShowPinForm(true)} variant="outline" className="w-full">
                           <Key className="w-4 h-4" /> {selectedUser.withdrawal_pin_set ? 'Reset PIN' : 'Set PIN'}
