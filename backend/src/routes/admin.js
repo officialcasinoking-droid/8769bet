@@ -104,7 +104,7 @@ router.post('/withdrawals/:id', async (req, res) => {
     }
 
     // Log to audit_logs
-    await supabase
+    const { error: auditError } = await supabase
       .from('audit_logs')
       .insert({
         actor_type: 'admin',
@@ -125,7 +125,10 @@ router.post('/withdrawals/:id', async (req, res) => {
         success: true,
         timestamp: now
       })
-      .catch(err => console.error('[admin/withdrawals] Audit log error:', err.message))
+
+    if (auditError) {
+      console.error('[admin/withdrawals] Audit log error:', auditError.message)
+    }
 
     console.log(`[admin/withdrawals] ${action}: ID ${id} by ${adminUsername || 'admin'}`)
     res.json({ success: true, withdrawal: updated?.[0] || withdrawal })

@@ -1,7 +1,19 @@
-import { useState, useEffect, useRef } from 'react'
-import { Send, Bot, User, Loader2, Sparkles, CheckCircle, XCircle, AlertTriangle } from 'lucide-react'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { Send, Bot, User, Loader2, Sparkles, CheckCircle, XCircle, RefreshCw, AlertTriangle } from 'lucide-react'
 
 const API_URL = import.meta.env.VITE_API_URL || 'https://eight769bet-backend.onrender.com'
+
+function getAuthToken() {
+  return localStorage.getItem('admin_token')
+}
+
+function getAdminUser() {
+  try {
+    return JSON.parse(localStorage.getItem('admin_user') || '{}')
+  } catch {
+    return {}
+  }
+}
 
 export default function AIWithdrawalAgent() {
   const [messages, setMessages] = useState([
@@ -16,10 +28,8 @@ export default function AIWithdrawalAgent() {
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [stats, setStats] = useState(null)
+  const [authError, setAuthError] = useState(false)
   const messagesEndRef = useRef(null)
-
-  const adminUser = JSON.parse(localStorage.getItem('admin_user') || '{}')
-  const adminToken = localStorage.getItem('admin_token')
 
   useEffect(() => {
     fetchStats()
@@ -29,23 +39,38 @@ export default function AIWithdrawalAgent() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
-  const fetchStats = async () => {
+  const fetchStats = useCallback(async () => {
+    const token = getAuthToken()
+    if (!token) {
+      setAuthError(true)
+      return
+    }
     try {
       const response = await fetch(`${API_URL}/api/admin/ai/withdrawal/stats`, {
-        headers: { 'Authorization': `Bearer ${adminToken}` }
+        headers: { 'Authorization': `Bearer ${token}` }
       })
       if (response.ok) {
         const data = await response.json()
         setStats(data)
+        setAuthError(false)
+      } else if (response.status === 401) {
+        setAuthError(true)
       }
     } catch (err) {
       console.error('Failed to fetch stats:', err)
     }
-  }
+  }, [])
 
   const sendMessage = async () => {
     if (!input.trim() || loading) return
 
+    const token = getAuthToken()
+    if (!token) {
+      setAuthError(true)
+      return
+    }
+
+    const adminUser = getAdminUser()
     const userMessage = {
       id: Date.now(),
       role: 'user',
@@ -56,13 +81,14 @@ export default function AIWithdrawalAgent() {
     setMessages(prev => [...prev, userMessage])
     setInput('')
     setLoading(true)
+    setAuthError(false)
 
     try {
       const response = await fetch(`${API_URL}/api/admin/ai/withdrawal/assistant`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${adminToken}`
+          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
           message: input,
@@ -70,6 +96,18 @@ export default function AIWithdrawalAgent() {
           adminUsername: adminUser?.username
         })
       })
+
+      if (response.status === 401) {
+        setAuthError(true)
+        setMessages(prev => [...prev, {
+          id: Date.now() + 1,
+          role: 'assistant',
+          content: '🔐 **Session expired.** Please log out and log back in to refresh your session, then try again.',
+          timestamp: new Date().toISOString(),
+          isError: true
+        }])
+        return
+      }
 
       const data = await response.json()
 
@@ -84,7 +122,6 @@ export default function AIWithdrawalAgent() {
         }
         setMessages(prev => [...prev, assistantMessage])
         
-        // Refresh stats after action
         if (data.execution?.executed) {
           fetchStats()
         }
@@ -127,24 +164,50 @@ export default function AIWithdrawalAgent() {
   ]
 
   const formatContent = (content) => {
-    // Simple markdown-like formatting
     return content
       .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
       .replace(/\n/g, '<br/>')
+  }
+
+  if (authError) {
+    return (
+      <div className="flex flex-col h-full bg-gray-900 items-center justify-center p-8">
+        <AlertTriangle className="w-16 h-16 text-amber-400 mb-4" />
+        <h3 className="text-white text-lg font-semibold mb-2">Session Expired</h3>
+        <p className="text-gray-400 text-sm text-center mb-4">
+          Your admin session has expired. Please log out and log back in to use the AI assistant.
+        </p>
+        <button
+          onClick={() => window.location.hash = '/login'}
+          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+        >
+          Go to Login
+        </button>
+      </div>
+    )
   }
 
   return (
     <div className="flex flex-col h-full bg-gray-900">
       {/* Header */}
       <div className="bg-gray-800 border-b border-gray-700 p-4">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center">
-            <Sparkles className="w-5 h-5 text-white" />
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center">
+              <Sparkles className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <h2 className="text-white font-semibold">AI Withdrawal Assistant</h2>
+              <p className="text-xs text-gray-400">Powered by Groq AI</p>
+            </div>
           </div>
-          <div>
-            <h2 className="text-white font-semibold">AI Withdrawal Assistant</h2>
-            <p className="text-xs text-gray-400">Powered by Groq AI</p>
-          </div>
+          <button
+            onClick={fetchStats}
+            className="p-2 rounded-lg hover:bg-gray-700 transition-colors"
+            title="Refresh stats"
+          >
+            <RefreshCw className="w-4 h-4 text-gray-400" />
+          </button>
         </div>
 
         {/* Stats cards */}
@@ -172,9 +235,7 @@ export default function AIWithdrawalAgent() {
           {quickActions.map((action, i) => (
             <button
               key={i}
-              onClick={() => {
-                setInput(action.command)
-              }}
+              onClick={() => setInput(action.command)}
               className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-300 text-xs rounded-full whitespace-nowrap transition-colors"
             >
               {action.label}
@@ -238,8 +299,9 @@ export default function AIWithdrawalAgent() {
             <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center">
               <Bot className="w-4 h-4 text-white" />
             </div>
-            <div className="bg-gray-800 rounded-lg p-3">
+            <div className="bg-gray-800 rounded-lg p-3 flex items-center gap-2">
               <Loader2 className="w-4 h-4 text-gray-400 animate-spin" />
+              <span className="text-xs text-gray-400">Thinking...</span>
             </div>
           </div>
         )}
