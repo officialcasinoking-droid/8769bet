@@ -11,7 +11,7 @@ import {
   RefreshCw, Check, X, Upload, Globe, Smartphone, Building2, Coins,
   ArrowUpRight, ArrowDownRight, Clock, CheckCircle, XCircle, Filter,
   ChevronLeft, ChevronRight, ArrowLeftRight, TrendingUp, Wallet, FileText,
-  Loader2, Sparkles
+  Loader2, Sparkles, Eye
 } from 'lucide-react'
 
 const BUCKET = 'landing-images'
@@ -52,22 +52,58 @@ function Gift(props) {
 
 // ── API Functions ────────────────────────────────────────────
 async function getAllTransactions() {
-  const { data, error } = await supabase
-    .from('transactions')
-    .select('*')
-    .order('created_at', { ascending: false })
-    .limit(200)
-  if (error) return []
-  return data || []
+  try {
+    const adminToken = localStorage.getItem('admin_token')
+    const [txRes, wdRes] = await Promise.all([
+      supabase.from('transactions').select('*').order('created_at', { ascending: false }).limit(200),
+      fetch(`${API_URL}/api/admin/withdrawals`, {
+        headers: { 'Authorization': `Bearer ${adminToken}` }
+      })
+    ])
+    
+    let transactions = txRes.error ? [] : (txRes.data || [])
+    let withdrawals = wdRes.ok ? await wdRes.json() : []
+    
+    // Transform withdrawals to match transaction format
+    const withdrawalTransactions = withdrawals.map(w => ({
+      id: w.id,
+      user_id: w.user_id,
+      type: 'withdrawal',
+      amount: w.amount,
+      status: w.status,
+      method: w.method,
+      details: w.details,
+      note: `Withdrawal via ${w.method}`,
+      reference: w.id,
+      created_at: w.created_at,
+      processed_at: w.processed_at,
+      rejection_reason: w.rejection_reason,
+      isWithdrawal: true,
+      users: w.users
+    }))
+    
+    // Combine and sort by date
+    const all = [...transactions, ...withdrawalTransactions]
+      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+      .slice(0, 200)
+    
+    return all
+  } catch (err) {
+    console.error('Failed to fetch all transactions:', err)
+    return []
+  }
 }
 
 async function getPendingTransactions() {
   try {
-    const adminUser = JSON.parse(localStorage.getItem('admin_user') || '{}')
+    const adminToken = localStorage.getItem('admin_token')
     const response = await fetch(`${API_URL}/api/admin/withdrawals?status=pending`, {
-      headers: { 'Authorization': `Bearer ${adminUser.token}` }
+      headers: { 'Authorization': `Bearer ${adminToken}` }
     })
-    if (!response.ok) return []
+    if (!response.ok) {
+      console.error('Failed to fetch pending withdrawals:', await response.text())
+      return []
+    }
     const data = await response.json()
     return data || []
   } catch (err) {
@@ -78,11 +114,14 @@ async function getPendingTransactions() {
 
 async function getCompletedTransactions() {
   try {
-    const adminUser = JSON.parse(localStorage.getItem('admin_user') || '{}')
+    const adminToken = localStorage.getItem('admin_token')
     const response = await fetch(`${API_URL}/api/admin/withdrawals?status=approved`, {
-      headers: { 'Authorization': `Bearer ${adminUser.token}` }
+      headers: { 'Authorization': `Bearer ${adminToken}` }
     })
-    if (!response.ok) return []
+    if (!response.ok) {
+      console.error('Failed to fetch completed withdrawals:', await response.text())
+      return []
+    }
     const data = await response.json()
     return data || []
   } catch (err) {
@@ -101,17 +140,18 @@ async function getPaymentMethods() {
 }
 
 async function approveWithdrawal(id) {
+  const adminToken = localStorage.getItem('admin_token')
   const adminUser = JSON.parse(localStorage.getItem('admin_user') || '{}')
   const response = await fetch(`${API_URL}/api/admin/withdrawals/${id}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${adminUser.token}`
+      'Authorization': `Bearer ${adminToken}`
     },
     body: JSON.stringify({
       action: 'approve',
-      adminId: adminUser.admin?.id,
-      adminUsername: adminUser.admin?.username
+      adminId: adminUser?.id,
+      adminUsername: adminUser?.username
     })
   })
   const data = await response.json()
@@ -120,17 +160,18 @@ async function approveWithdrawal(id) {
 }
 
 async function rejectWithdrawal(id, reason) {
+  const adminToken = localStorage.getItem('admin_token')
   const adminUser = JSON.parse(localStorage.getItem('admin_user') || '{}')
   const response = await fetch(`${API_URL}/api/admin/withdrawals/${id}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${adminUser.token}`
+      'Authorization': `Bearer ${adminToken}`
     },
     body: JSON.stringify({
       action: 'reject',
-      adminId: adminUser.admin?.id,
-      adminUsername: adminUser.admin?.username,
+      adminId: adminUser?.id,
+      adminUsername: adminUser?.username,
       rejectionReason: reason
     })
   })
@@ -228,7 +269,7 @@ function TransactionRow({ tx, type }) {
 }
 
 // ── Pending Withdrawal Row ───────────────────────────────────
-function PendingRow({ item, onApprove, onReject }) {
+function PendingRow({ item, onApprove, onReject, onView }) {
   return (
     <motion.div
       initial={{ opacity: 0, x: -10 }}
@@ -247,15 +288,18 @@ function PendingRow({ item, onApprove, onReject }) {
             </span>
           </div>
           <p className="text-xs text-slate-400">
-            User: {item.user_id?.slice(0, 8)} | Method: {item.method} | {new Date(item.created_at).toLocaleDateString('en-IN')}
+            User: {item.users?.username || item.user_id?.slice(0, 8)} | Method: {item.method} | {new Date(item.created_at).toLocaleDateString('en-IN')}
           </p>
         </div>
       </div>
-      <div className="flex items-center gap-3">
-        <div className="text-right mr-4">
-          <p className="text-sm font-bold text-white">PKR {Number(item.amount).toLocaleString('en-IN')}</p>
-          {item.fee > 0 && <p className="text-[10px] text-slate-500">Fee: PKR {Number(item.fee).toLocaleString()}</p>}
+      <div className="flex items-center gap-2">
+        <div className="text-right mr-2">
+          <p className="text-sm font-bold text-white">₨{Number(item.amount).toLocaleString()}</p>
+          {item.fee > 0 && <p className="text-[10px] text-slate-500">Fee: ₨{Number(item.fee).toLocaleString()}</p>}
         </div>
+        <Button variant="outline" size="sm" onClick={() => onView(item)}>
+          <Eye className="w-3 h-3" /> View
+        </Button>
         <Button variant="outline" size="sm" onClick={() => onReject(item)}>
           <X className="w-3 h-3" /> Reject
         </Button>
@@ -588,6 +632,7 @@ export default function DepositWithdrawalSection() {
   const [confirmDelete, setConfirmDelete] = useState(null)
   const [approveItem, setApproveItem] = useState(null)
   const [rejectItem, setRejectItem] = useState(null)
+  const [viewItem, setViewItem] = useState(null)
 
   // Queries
   const { data: transactions = [], isLoading: loadingTx } = useQuery({
@@ -673,6 +718,8 @@ export default function DepositWithdrawalSection() {
       await approveWithdrawal(item.id)
       toast.success('Withdrawal approved')
       qc.invalidateQueries({ queryKey: ['withdrawals-pending'] })
+      qc.invalidateQueries({ queryKey: ['withdrawals-completed'] })
+      qc.invalidateQueries({ queryKey: ['transactions'] })
     } catch (e) {
       toast.error(`Approve failed: ${e.message}`)
     }
@@ -683,6 +730,8 @@ export default function DepositWithdrawalSection() {
       await rejectWithdrawal(item.id, reason)
       toast.success('Withdrawal rejected')
       qc.invalidateQueries({ queryKey: ['withdrawals-pending'] })
+      qc.invalidateQueries({ queryKey: ['withdrawals-completed'] })
+      qc.invalidateQueries({ queryKey: ['transactions'] })
     } catch (e) {
       toast.error(`Reject failed: ${e.message}`)
     }
@@ -799,7 +848,7 @@ export default function DepositWithdrawalSection() {
                   <>
                     {activeTab === 'all' && paginatedData.map(tx => <TransactionRow key={tx.id} tx={tx} type="all" />)}
                     {activeTab === 'pending' && paginatedData.map(item => (
-                      <PendingRow key={item.id} item={item} onApprove={setApproveItem} onReject={setRejectItem} />
+                      <PendingRow key={item.id} item={item} onApprove={setApproveItem} onReject={setRejectItem} onView={setViewItem} />
                     ))}
                     {activeTab === 'completed' && paginatedData.map(item => <TransactionRow key={item.id} tx={{ ...item, type: 'withdrawal' }} type="completed" />)}
                     {activeTab === 'payment-methods' && paginatedData.map(method => (
@@ -847,6 +896,134 @@ export default function DepositWithdrawalSection() {
         item={rejectItem}
         onConfirm={handleReject}
       />
+
+      {/* View Withdrawal Details Modal */}
+      <Dialog open={!!viewItem} onClose={() => setViewItem(null)} className="max-w-lg">
+        <DialogHeader onClose={() => setViewItem(null)}>
+          <DialogTitle>Withdrawal Details</DialogTitle>
+          <DialogDescription>
+            Viewing withdrawal #{viewItem?.id?.slice(0, 8)}
+          </DialogDescription>
+        </DialogHeader>
+        <DialogContent>
+          {viewItem && (
+            <div className="space-y-4">
+              {/* User Info */}
+              <div className="bg-slate-800/50 rounded-xl p-4 space-y-2">
+                <h4 className="text-sm font-semibold text-white flex items-center gap-2">
+                  <Wallet className="w-4 h-4 text-violet-400" />
+                  User Information
+                </h4>
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  <div>
+                    <p className="text-xs text-slate-500">Username</p>
+                    <p className="text-white font-medium">{viewItem.users?.username || 'N/A'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-slate-500">User ID</p>
+                    <p className="text-white font-mono text-xs">{viewItem.user_id}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Withdrawal Info */}
+              <div className="bg-slate-800/50 rounded-xl p-4 space-y-2">
+                <h4 className="text-sm font-semibold text-white flex items-center gap-2">
+                  <ArrowUpRight className="w-4 h-4 text-red-400" />
+                  Withdrawal Details
+                </h4>
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  <div>
+                    <p className="text-xs text-slate-500">Amount</p>
+                    <p className="text-white font-bold">₨{Number(viewItem.amount).toLocaleString()}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-slate-500">Fee</p>
+                    <p className="text-white">₨{Number(viewItem.fee || 0).toLocaleString()}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-slate-500">Net Amount</p>
+                    <p className="text-emerald-400 font-bold">₨{Number(viewItem.net_amount || viewItem.amount - (viewItem.fee || 0)).toLocaleString()}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-slate-500">Status</p>
+                    <span className={`px-2 py-0.5 rounded text-xs font-bold border ${STATUS_CONFIG[viewItem.status]?.color || 'bg-slate-700/50 text-slate-400'}`}>
+                      {viewItem.status?.toUpperCase()}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Payment Method */}
+              <div className="bg-slate-800/50 rounded-xl p-4 space-y-2">
+                <h4 className="text-sm font-semibold text-white flex items-center gap-2">
+                  <CreditCard className="w-4 h-4 text-blue-400" />
+                  Payment Method
+                </h4>
+                <div className="space-y-2 text-sm">
+                  <div>
+                    <p className="text-xs text-slate-500">Method</p>
+                    <p className="text-white font-medium capitalize">{viewItem.method}</p>
+                  </div>
+                  {viewItem.details && (
+                    <div>
+                      <p className="text-xs text-slate-500">Account Details</p>
+                      <div className="bg-slate-900/50 rounded-lg p-3 mt-1">
+                        {typeof viewItem.details === 'object' ? (
+                          <pre className="text-xs text-white font-mono whitespace-pre-wrap">
+                            {JSON.stringify(viewItem.details, null, 2)}
+                          </pre>
+                        ) : (
+                          <p className="text-xs text-white">{viewItem.details}</p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Timestamps */}
+              <div className="bg-slate-800/50 rounded-xl p-4 space-y-2">
+                <h4 className="text-sm font-semibold text-white flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-slate-400" />
+                  Timeline
+                </h4>
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  <div>
+                    <p className="text-xs text-slate-500">Requested</p>
+                    <p className="text-white text-xs">{new Date(viewItem.created_at).toLocaleString()}</p>
+                  </div>
+                  {viewItem.processed_at && (
+                    <div>
+                      <p className="text-xs text-slate-500">Processed</p>
+                      <p className="text-white text-xs">{new Date(viewItem.processed_at).toLocaleString()}</p>
+                    </div>
+                  )}
+                </div>
+                {viewItem.rejection_reason && (
+                  <div>
+                    <p className="text-xs text-slate-500">Rejection Reason</p>
+                    <p className="text-red-400 text-sm mt-1">{viewItem.rejection_reason}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </DialogContent>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setViewItem(null)}>Close</Button>
+          {viewItem?.status === 'pending' && (
+            <>
+              <Button variant="danger" onClick={() => { setRejectItem(viewItem); setViewItem(null); }}>
+                <X className="w-3 h-3" /> Reject
+              </Button>
+              <Button onClick={() => { setApproveItem(viewItem); setViewItem(null); }}>
+                <Check className="w-3 h-3" /> Approve
+              </Button>
+            </>
+          )}
+        </DialogFooter>
+      </Dialog>
     </div>
   )
 }

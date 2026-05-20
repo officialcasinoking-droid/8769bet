@@ -19,6 +19,7 @@ export default function AIWithdrawalAgent() {
   const messagesEndRef = useRef(null)
 
   const adminUser = JSON.parse(localStorage.getItem('admin_user') || '{}')
+  const adminToken = localStorage.getItem('admin_token')
 
   useEffect(() => {
     fetchStats()
@@ -31,7 +32,7 @@ export default function AIWithdrawalAgent() {
   const fetchStats = async () => {
     try {
       const response = await fetch(`${API_URL}/api/admin/ai/withdrawal/stats`, {
-        headers: { 'Authorization': `Bearer ${adminUser.token}` }
+        headers: { 'Authorization': `Bearer ${adminToken}` }
       })
       if (response.ok) {
         const data = await response.json()
@@ -61,12 +62,12 @@ export default function AIWithdrawalAgent() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${adminUser.token}`
+          'Authorization': `Bearer ${adminToken}`
         },
         body: JSON.stringify({
           message: input,
-          adminId: adminUser.admin?.id,
-          adminUsername: adminUser.admin?.username
+          adminId: adminUser?.id,
+          adminUsername: adminUser?.username
         })
       })
 
@@ -88,10 +89,11 @@ export default function AIWithdrawalAgent() {
           fetchStats()
         }
       } else {
+        const errorMsg = data.error || data.response || 'Sorry, I encountered an error. Please try again.'
         setMessages(prev => [...prev, {
           id: Date.now() + 1,
           role: 'assistant',
-          content: '❌ Sorry, I encountered an error. Please try again.',
+          content: `❌ ${errorMsg}`,
           timestamp: new Date().toISOString(),
           isError: true
         }])
@@ -101,7 +103,7 @@ export default function AIWithdrawalAgent() {
       setMessages(prev => [...prev, {
         id: Date.now() + 1,
         role: 'assistant',
-        content: '❌ Network error. Please check your connection and try again.',
+        content: `❌ Network error: ${err.message}`,
         timestamp: new Date().toISOString(),
         isError: true
       }])

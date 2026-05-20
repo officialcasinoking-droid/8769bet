@@ -48,9 +48,10 @@ router.post('/assistant', async (req, res) => {
   }
 
   if (!GROQ_API_KEY) {
-    return res.status(500).json({ 
-      error: 'Groq API key not configured',
-      response: 'AI assistant is not available. Please configure GROQ_API_KEY environment variable.'
+    console.warn('[AI/withdrawal] Groq API key not configured')
+    return res.json({ 
+      success: false,
+      response: 'AI assistant is currently unavailable. Please contact the administrator to configure the AI service.'
     })
   }
 
@@ -101,7 +102,10 @@ ${pendingWithdrawals?.map(w => `- ID: ${w.id}, User: ${w.users?.username}, Amoun
     
     if (!response.ok) {
       console.error('[AI/withdrawal] Groq API error:', groqData)
-      return res.status(500).json({ error: 'AI service error' })
+      return res.json({ 
+        success: false,
+        response: `AI service error: ${groqData.error?.message || 'Failed to get AI response'}`
+      })
     }
 
     const aiResponse = groqData.choices?.[0]?.message?.content || 'No response from AI'
@@ -195,6 +199,7 @@ ${pendingWithdrawals?.map(w => `- ID: ${w.id}, User: ${w.users?.username}, Amoun
     }
 
     // Log the AI interaction
+    const logTimestamp = new Date().toISOString()
     await supabase
       .from('audit_logs')
       .insert({
@@ -205,7 +210,7 @@ ${pendingWithdrawals?.map(w => `- ID: ${w.id}, User: ${w.users?.username}, Amoun
         details: { message, ai_response: aiResponse.substring(0, 500), action_executed: executionResult },
         severity: 'info',
         success: true,
-        timestamp: now
+        timestamp: logTimestamp
       })
       .catch(() => {})
 
