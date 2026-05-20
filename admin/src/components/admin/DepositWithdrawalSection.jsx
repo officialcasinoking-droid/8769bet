@@ -233,10 +233,11 @@ function exportCSV(data, filename) {
 }
 
 // ── Transaction Row ──────────────────────────────────────────
-function TransactionRow({ tx, type }) {
+function TransactionRow({ tx, type, onView, onApprove, onReject }) {
   const config = TYPE_CONFIG[tx.type] || TYPE_CONFIG.deposit
   const statusInfo = STATUS_CONFIG[tx.status] || STATUS_CONFIG.pending
   const Icon = config.icon
+  const isPendingWithdrawal = tx.isWithdrawal && tx.status === 'pending'
 
   return (
     <motion.div
@@ -256,13 +257,30 @@ function TransactionRow({ tx, type }) {
             </span>
           </div>
           <p className="text-xs text-slate-400 truncate">
-            {tx.note || tx.reference || `ID: ${tx.id?.slice(0, 8)}`}
+            {tx.users?.username ? `User: ${tx.users.username}` : (tx.note || tx.reference || `ID: ${tx.id?.slice(0, 8)}`)}
           </p>
         </div>
       </div>
-      <div className="text-right">
-        <p className={`text-sm font-bold ${config.color}`}>{Number(tx.amount).toLocaleString('en-IN', { style: 'currency', currency: 'INR' })}</p>
-        <p className="text-[10px] text-slate-500">{new Date(tx.created_at).toLocaleDateString('en-IN')}</p>
+      <div className="flex items-center gap-2">
+        <div className="text-right mr-2">
+          <p className={`text-sm font-bold ${config.color}`}>{Number(tx.amount).toLocaleString('en-IN', { style: 'currency', currency: 'INR' })}</p>
+          <p className="text-[10px] text-slate-500">{new Date(tx.created_at).toLocaleDateString('en-IN')}</p>
+        </div>
+        {isPendingWithdrawal && onView && (
+          <Button variant="outline" size="sm" onClick={() => onView(tx)}>
+            <Eye className="w-3 h-3" />
+          </Button>
+        )}
+        {isPendingWithdrawal && onReject && (
+          <Button variant="outline" size="sm" onClick={() => onReject(tx)}>
+            <X className="w-3 h-3" />
+          </Button>
+        )}
+        {isPendingWithdrawal && onApprove && (
+          <Button size="sm" onClick={() => onApprove(tx)}>
+            <Check className="w-3 h-3" />
+          </Button>
+        )}
       </div>
     </motion.div>
   )
@@ -698,7 +716,10 @@ export default function DepositWithdrawalSection() {
         item.status?.toLowerCase().includes(q) ||
         item.note?.toLowerCase().includes(q) ||
         item.method?.toLowerCase().includes(q) ||
-        String(item.amount).includes(q)
+        String(item.amount).includes(q) ||
+        item.users?.username?.toLowerCase().includes(q) ||
+        item.user_id?.toLowerCase().includes(q) ||
+        item.reference?.toLowerCase().includes(q)
       )
     }
 
@@ -846,11 +867,27 @@ export default function DepositWithdrawalSection() {
                   </div>
                 ) : (
                   <>
-                    {activeTab === 'all' && paginatedData.map(tx => <TransactionRow key={tx.id} tx={tx} type="all" />)}
+                    {activeTab === 'all' && paginatedData.map(tx => (
+                      <TransactionRow
+                        key={tx.id}
+                        tx={tx}
+                        type="all"
+                        onView={tx.isWithdrawal && tx.status === 'pending' ? setViewItem : undefined}
+                        onApprove={tx.isWithdrawal && tx.status === 'pending' ? setApproveItem : undefined}
+                        onReject={tx.isWithdrawal && tx.status === 'pending' ? setRejectItem : undefined}
+                      />
+                    ))}
                     {activeTab === 'pending' && paginatedData.map(item => (
                       <PendingRow key={item.id} item={item} onApprove={setApproveItem} onReject={setRejectItem} onView={setViewItem} />
                     ))}
-                    {activeTab === 'completed' && paginatedData.map(item => <TransactionRow key={item.id} tx={{ ...item, type: 'withdrawal' }} type="completed" />)}
+                    {activeTab === 'completed' && paginatedData.map(item => (
+                      <TransactionRow
+                        key={item.id}
+                        tx={{ ...item, type: 'withdrawal' }}
+                        type="completed"
+                        onView={setViewItem}
+                      />
+                    ))}
                     {activeTab === 'payment-methods' && paginatedData.map(method => (
                       <PaymentMethodRow key={method.id} method={method} onEdit={m => setModal({ open: true, method: m })} onDelete={setConfirmDelete} />
                     ))}

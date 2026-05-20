@@ -49,45 +49,57 @@ router.post('/withdrawals/:id', async (req, res) => {
       .single()
 
     if (fetchError || !withdrawal) {
+      console.error('[admin/withdrawals] Fetch error:', fetchError?.message)
       return res.status(404).json({ error: 'Withdrawal not found' })
     }
 
     const now = new Date().toISOString()
     const newStatus = action === 'approve' ? 'approved' : 'rejected'
     
+    // Build update data - only include fields that exist
     const updateData = {
       status: newStatus,
-      processed_at: now,
-      updated_at: now
+      processed_at: now
     }
 
     if (action === 'reject' && rejectionReason) {
       updateData.rejection_reason = rejectionReason
     }
     
-    const { error: updateError } = await supabase
+    console.log('[admin/withdrawals] Updating:', id, updateData)
+    
+    const { data: updated, error: updateError } = await supabase
       .from('withdrawals')
       .update(updateData)
       .eq('id', id)
+      .select()
 
     if (updateError) {
-      console.error('[admin/withdrawals/update] Error:', updateError.message)
-      return res.status(500).json({ error: 'Failed to update withdrawal' })
+      console.error('[admin/withdrawals/update] Error:', updateError.message, updateError.details)
+      return res.status(500).json({ error: `Failed to update withdrawal: ${updateError.message}` })
     }
+
+    console.log('[admin/withdrawals] Update result:', updated)
 
     // If rejected, refund balance
     if (action === 'reject') {
-      const { data: user } = await supabase
+      const { data: user, error: userError } = await supabase
         .from('users')
         .select('balance')
         .eq('id', withdrawal.user_id)
         .single()
 
-      if (user) {
-        await supabase
+      if (userError) {
+        console.error('[admin/withdrawals] User fetch error:', userError.message)
+      } else if (user) {
+        const { error: balanceError } = await supabase
           .from('users')
-          .update({ balance: Number(user.balance) + withdrawal.amount, updated_at: now })
+          .update({ balance: Number(user.balance) + withdrawal.amount })
           .eq('id', withdrawal.user_id)
+        
+        if (balanceError) {
+          console.error('[admin/withdrawals] Balance update error:', balanceError.message)
+        }
       }
     }
 
@@ -116,10 +128,10 @@ router.post('/withdrawals/:id', async (req, res) => {
       .catch(err => console.error('[admin/withdrawals] Audit log error:', err.message))
 
     console.log(`[admin/withdrawals] ${action}: ID ${id} by ${adminUsername || 'admin'}`)
-    res.json({ success: true })
+    res.json({ success: true, withdrawal: updated?.[0] || withdrawal })
   } catch (err) {
-    console.error('[admin/withdrawals] Exception:', err.message)
-    res.status(500).json({ error: 'Internal server error' })
+    console.error('[admin/withdrawals] Exception:', err.message, err.stack)
+    res.status(500).json({ error: `Internal server error: ${err.message}` })
   }
 })
 
