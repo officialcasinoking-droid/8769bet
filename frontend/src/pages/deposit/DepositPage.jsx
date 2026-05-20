@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { WalletIcon, BuildingLibraryIcon, CheckCircleIcon, ClockIcon, ExclamationTriangleIcon, ArrowTrendingUpIcon, BanknotesIcon, Eye, RefreshCw } from 'lucide-react'
+import { Wallet, Building2, CheckCircle, Clock, AlertTriangle, TrendingUp, Eye, RefreshCw, Banknotes } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../components/ui/Toast'
 import { Dialog, DialogHeader, DialogTitle, DialogContent, DialogFooter } from '../../components/ui/Dialog'
@@ -135,7 +135,7 @@ export default function DepositPage() {
       <div className="max-w-lg mx-auto px-3 py-4">
         {/* Header */}
         <div className="flex items-center gap-2 mb-4">
-          <WalletIcon className="w-6 h-6 text-emerald-400" />
+          <Wallet className="w-6 h-6 text-emerald-400" />
           <h1 className="text-xl font-bold text-white">Deposit Funds</h1>
         </div>
 
@@ -150,14 +150,14 @@ export default function DepositPage() {
               <p className="text-xs text-emerald-400/80">Current Balance</p>
               <p className="text-2xl font-bold text-white">{formatBalance(availableBalance)}</p>
             </div>
-            <BanknotesIcon className="w-6 h-6 text-emerald-400" />
+            <Banknotes className="w-6 h-6 text-emerald-400" />
           </div>
         </motion.div>
 
         {/* How it works */}
         <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-3 mb-4">
           <div className="flex items-start gap-2">
-            <ExclamationTriangleIcon className="w-4 h-4 text-blue-400 mt-0.5 flex-shrink-0" />
+            <AlertTriangle className="w-4 h-4 text-blue-400 mt-0.5 flex-shrink-0" />
             <div>
               <p className="text-xs font-medium text-blue-300 mb-1">How Deposit Works</p>
               <ol className="text-[10px] text-blue-400/80 space-y-0.5 list-decimal list-inside">
@@ -252,7 +252,7 @@ export default function DepositPage() {
             </>
           ) : (
             <>
-              <ArrowTrendingUpIcon className="w-4 h-4" />
+              <TrendingUp className="w-4 h-4" />
               Deposit {formatBalance(Number(amount) || 0)}
             </>
           )}
@@ -273,7 +273,7 @@ export default function DepositPage() {
             </div>
           ) : transactions.length === 0 ? (
             <div className="bg-dark-300/30 border border-dark-100 rounded-xl p-4 text-center">
-              <BanknotesIcon className="w-8 h-8 text-gray-600 mx-auto mb-1" />
+              <Banknotes className="w-8 h-8 text-gray-600 mx-auto mb-1" />
               <p className="text-xs text-gray-500">No deposits yet</p>
             </div>
           ) : (
@@ -369,7 +369,7 @@ export default function DepositPage() {
             {/* Important Note */}
             <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3">
               <div className="flex items-start gap-2">
-                <ClockIcon className="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" />
+                <Clock className="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" />
                 <p className="text-xs text-amber-300">
                   After sending payment, your deposit request will be submitted for admin verification. 
                   Balance will be credited once approved.
