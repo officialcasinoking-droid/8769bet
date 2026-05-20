@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { Wallet, Building2, CheckCircle, Clock, AlertTriangle, TrendingUp, Eye, RefreshCw, Banknotes } from 'lucide-react'
+import { Wallet, Building2, CheckCircle, Clock, AlertTriangle, TrendingUp, Eye, RefreshCw, Coins } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../components/ui/Toast'
 import { Dialog, DialogHeader, DialogTitle, DialogContent, DialogFooter } from '../../components/ui/Dialog'
@@ -150,7 +150,7 @@ export default function DepositPage() {
               <p className="text-xs text-emerald-400/80">Current Balance</p>
               <p className="text-2xl font-bold text-white">{formatBalance(availableBalance)}</p>
             </div>
-            <Banknotes className="w-6 h-6 text-emerald-400" />
+            <Coins className="w-6 h-6 text-emerald-400" />
           </div>
         </motion.div>
 
@@ -273,7 +273,7 @@ export default function DepositPage() {
             </div>
           ) : transactions.length === 0 ? (
             <div className="bg-dark-300/30 border border-dark-100 rounded-xl p-4 text-center">
-              <Banknotes className="w-8 h-8 text-gray-600 mx-auto mb-1" />
+              <Coins className="w-8 h-8 text-gray-600 mx-auto mb-1" />
               <p className="text-xs text-gray-500">No deposits yet</p>
             </div>
           ) : (
