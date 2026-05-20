@@ -241,6 +241,30 @@ app.post('/api/deposits', async (req, res) => {
   }
 })
 
+// Get user deposits
+app.get('/api/deposits/:userId', async (req, res) => {
+  const { userId } = req.params
+  
+  try {
+    const { data, error } = await supabase
+      .from('deposits')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(20)
+
+    if (error) {
+      console.error('[deposit] Fetch error:', error.message)
+      return res.status(500).json({ error: 'Failed to fetch deposits' })
+    }
+
+    res.json(data || [])
+  } catch (err) {
+    console.error('[deposit] Exception:', err.message)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
 // Create withdrawal request
 app.post('/api/withdrawals', async (req, res) => {
   const { userId, amount, method, details } = req.body

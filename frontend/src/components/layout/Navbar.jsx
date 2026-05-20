@@ -26,10 +26,9 @@ import { supabase, getLanding } from '../../api/landing'
 
 const navigation = [
   { id: 'home', name: 'Home', href: '/', icon: HomeIcon },
-  { id: 'games', name: 'Aviator', href: '/play/aviator', icon: SparklesIcon, highlight: true },
+  { id: 'wallet', name: 'Wallet', href: '/wallet', icon: CreditCardIcon },
   { id: 'referral', name: 'Referral', href: '/referral', icon: UsersIcon },
   { id: 'offers', name: 'Offers', href: '/offers', icon: GiftIcon },
-  { id: 'withdraw', name: 'Withdraw', href: '/withdraw', icon: ArrowTrendingUpIcon },
   { id: 'profile', name: 'Profile', href: '/profile', icon: UserIcon },
 ]
 

@@ -15,6 +15,7 @@ import AviatorPage from './pages/games/AviatorPage'
 import AviatorGame from './components/games/AviatorGame'
 import DepositPage from './pages/deposit/DepositPage'
 import WithdrawPage from './pages/withdraw/WithdrawPage'
+import WalletPage from './pages/wallet/WalletPage'
 import OffersPage from './pages/offers/OffersPage'
 import ProfilePage from './pages/profile/ProfilePage'
 import BetHistoryPage from './pages/profile/BetHistoryPage'
@@ -63,6 +64,11 @@ function AppRoutes() {
         <Route path="withdraw" element={
           <ProtectedRoute>
             <WithdrawPage />
+          </ProtectedRoute>
+        } />
+        <Route path="wallet" element={
+          <ProtectedRoute>
+            <WalletPage />
           </ProtectedRoute>
         } />
         <Route path="offers" element={

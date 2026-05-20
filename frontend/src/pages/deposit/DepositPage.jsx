@@ -40,15 +40,10 @@ export default function DepositPage() {
     if (!user?.id) return
     setLoadingTx(true)
     try {
-      const { data, error } = await supabase
-        .from('deposits')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
-        .limit(10)
-      
-      if (!error && data) {
-        setTransactions(data)
+      const response = await fetch(`${API_URL}/api/deposits/${user.id}`)
+      if (response.ok) {
+        const data = await response.json()
+        setTransactions(data || [])
       }
     } catch (err) {
       console.error('Error fetching deposits:', err)
