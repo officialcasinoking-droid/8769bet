@@ -8,6 +8,125 @@ import { supabase } from '../lib/supabase.js'
 
 const router = express.Router()
 
+// Get all deposits
+router.get('/deposits', async (req, res) => {
+  const { status } = req.query
+  
+  try {
+    let query = supabase
+      .from('deposits')
+      .select('*, users(username)')
+      .order('created_at', { ascending: false })
+    
+    if (status) {
+      query = query.eq('status', status)
+    }
+
+    const { data, error } = await query
+
+    if (error) {
+      console.error('[admin/deposits] Error:', error.message)
+      return res.status(500).json({ error: 'Failed to fetch deposits' })
+    }
+
+    res.json(data || [])
+  } catch (err) {
+    console.error('[admin/deposits] Exception:', err.message)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+// Approve/reject deposit
+router.post('/deposits/:id', async (req, res) => {
+  const { id } = req.params
+  const { action, adminId, adminUsername, rejectionReason } = req.body
+  
+  try {
+    const { data: deposit, error: fetchError } = await supabase
+      .from('deposits')
+      .select('*, users(username, balance)')
+      .eq('id', id)
+      .single()
+
+    if (fetchError || !deposit) {
+      console.error('[admin/deposits] Fetch error:', fetchError?.message)
+      return res.status(404).json({ error: 'Deposit not found' })
+    }
+
+    if (deposit.status !== 'pending') {
+      return res.status(400).json({ error: 'Deposit already processed' })
+    }
+
+    const now = new Date().toISOString()
+    const newStatus = action === 'approve' ? 'approved' : 'rejected'
+    
+    const updateData = {
+      status: newStatus,
+      processed_at: now
+    }
+
+    if (action === 'reject' && rejectionReason) {
+      updateData.rejection_reason = rejectionReason
+    }
+    
+    const { data: updated, error: updateError } = await supabase
+      .from('deposits')
+      .update(updateData)
+      .eq('id', id)
+      .select()
+
+    if (updateError) {
+      console.error('[admin/deposits/update] Error:', updateError.message)
+      return res.status(500).json({ error: `Failed to update deposit: ${updateError.message}` })
+    }
+
+    // If approved, add balance to user
+    if (action === 'approve') {
+      const { error: balanceError } = await supabase
+        .from('users')
+        .update({ balance: Number(deposit.users?.balance || 0) + deposit.amount })
+        .eq('id', deposit.user_id)
+      
+      if (balanceError) {
+        console.error('[admin/deposits] Balance update error:', balanceError.message)
+      }
+    }
+
+    // Log to audit_logs
+    const { error: auditError } = await supabase
+      .from('audit_logs')
+      .insert({
+        actor_type: 'admin',
+        actor_id: adminId || 'system',
+        actor_username: adminUsername || 'admin',
+        action: action === 'approve' ? 'approve_deposit' : 'reject_deposit',
+        target_type: 'deposit',
+        target_id: id,
+        target_username: deposit.users?.username || 'unknown',
+        details: { 
+          amount: deposit.amount, 
+          method: deposit.method,
+          rejection_reason: rejectionReason || null
+        },
+        ip_address: req.ip,
+        user_agent: req.headers['user-agent'],
+        severity: action === 'approve' ? 'info' : 'warning',
+        success: true,
+        timestamp: now
+      })
+
+    if (auditError) {
+      console.error('[admin/deposits] Audit log error:', auditError.message)
+    }
+
+    console.log(`[admin/deposits] ${action}: ID ${id} by ${adminUsername || 'admin'}`)
+    res.json({ success: true, deposit: updated?.[0] || deposit })
+  } catch (err) {
+    console.error('[admin/deposits] Exception:', err.message, err.stack)
+    res.status(500).json({ error: `Internal server error: ${err.message}` })
+  }
+})
+
 // Get all pending withdrawals
 router.get('/withdrawals', async (req, res) => {
   const { status } = req.query

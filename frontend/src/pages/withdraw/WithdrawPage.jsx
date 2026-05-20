@@ -494,7 +494,7 @@ export default function WithdrawPage() {
       {/* Transaction Details Modal */}
       <Dialog open={!!showDetails} onClose={() => setShowDetails(null)} className="max-w-sm">
         <DialogHeader onClose={() => setShowDetails(null)}>
-          <DialogTitle>Details</DialogTitle>
+          <DialogTitle>Withdrawal Details</DialogTitle>
         </DialogHeader>
         <DialogContent>
           {showDetails && (
@@ -502,27 +502,54 @@ export default function WithdrawPage() {
               <div className="bg-dark-300/50 rounded-xl p-4 text-center">
                 <p className="text-xs text-gray-500">Amount</p>
                 <p className="text-xl font-bold text-white">{formatBalance(showDetails.amount)}</p>
+                {showDetails.fee > 0 && (
+                  <p className="text-xs text-gray-500 mt-1">Fee: {formatBalance(showDetails.fee)} | Net: {formatBalance(showDetails.net_amount || showDetails.amount - showDetails.fee)}</p>
+                )}
               </div>
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
                   <span className="text-gray-500">Status</span>
-                  <span className={showDetails.status === 'approved' ? 'text-emerald-400' : showDetails.status === 'rejected' ? 'text-red-400' : 'text-amber-400'}>
+                  <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                    showDetails.status === 'approved' ? 'bg-emerald-500/20 text-emerald-400' :
+                    showDetails.status === 'rejected' ? 'bg-red-500/20 text-red-400' :
+                    'bg-amber-500/20 text-amber-400'
+                  }`}>
                     {showDetails.status}
                   </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-500">Method</span>
-                  <span className="text-white">{showDetails.method}</span>
+                  <span className="text-white capitalize">{showDetails.method}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-500">Account</span>
-                  <span className="text-white">{showDetails.account_number}</span>
+                  <span className="text-gray-500">Requested</span>
+                  <span className="text-white text-xs">{new Date(showDetails.created_at).toLocaleString()}</span>
                 </div>
+                {showDetails.processed_at && (
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Processed</span>
+                    <span className="text-white text-xs">{new Date(showDetails.processed_at).toLocaleString()}</span>
+                  </div>
+                )}
               </div>
-              {showDetails.admin_note && (
+              {showDetails.rejection_reason && (
+                <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3">
+                  <p className="text-xs text-red-400 mb-1">Rejection Reason</p>
+                  <p className="text-sm text-red-300">{showDetails.rejection_reason}</p>
+                </div>
+              )}
+              {showDetails.details && (
                 <div className="bg-dark-300/50 rounded-xl p-3">
-                  <p className="text-xs text-gray-500 mb-1">Admin Response</p>
-                  <p className="text-sm text-gray-300">{showDetails.admin_note}</p>
+                  <p className="text-xs text-gray-500 mb-1">Account Details</p>
+                  {typeof showDetails.details === 'object' ? (
+                    <div className="space-y-1 text-xs">
+                      {showDetails.details.account_name && <p className="text-gray-300">Name: {showDetails.details.account_name}</p>}
+                      {showDetails.details.account_number && <p className="text-gray-300">Account: {showDetails.details.account_number}</p>}
+                      {showDetails.details.cnic && <p className="text-gray-300">CNIC: {showDetails.details.cnic}</p>}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-gray-300">{showDetails.details}</p>
+                  )}
                 </div>
               )}
             </div>

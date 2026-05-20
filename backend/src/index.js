@@ -170,6 +170,77 @@ app.get('/api/aviator/bet-history', async (req, res) => {
   }
 })
 
+// Create deposit request
+app.post('/api/deposits', async (req, res) => {
+  const { userId, amount, method, transactionId } = req.body
+  
+  if (!userId || !amount) {
+    return res.status(400).json({ error: 'userId and amount required' })
+  }
+
+  try {
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('username')
+      .eq('id', userId)
+      .single()
+
+    if (userError || !user) {
+      return res.status(404).json({ error: 'User not found' })
+    }
+
+    const now = new Date().toISOString()
+
+    const { data: deposit, error: depError } = await supabase
+      .from('deposits')
+      .insert({
+        user_id: userId,
+        amount: amount,
+        method: method || 'bank',
+        transaction_id: transactionId || null,
+        status: 'pending',
+        created_at: now,
+        processed_at: null,
+        rejection_reason: null
+      })
+      .select()
+      .single()
+
+    if (depError) {
+      console.error('[deposit] Create error:', depError.message)
+      return res.status(500).json({ error: 'Failed to create deposit request' })
+    }
+
+    // Log to audit_logs
+    const { error: auditError } = await supabase
+      .from('audit_logs')
+      .insert({
+        actor_type: 'user',
+        actor_id: userId,
+        actor_username: user.username,
+        action: 'request_deposit',
+        target_type: 'deposit',
+        target_id: deposit.id,
+        details: { amount, method },
+        ip_address: req.ip,
+        user_agent: req.headers['user-agent'],
+        severity: 'info',
+        success: true,
+        timestamp: now
+      })
+
+    if (auditError) {
+      console.error('[deposit] Audit log error:', auditError.message)
+    }
+
+    console.log(`[deposit] Created: ID ${deposit.id}, User ${user.username}, Amount ${amount}`)
+    res.json({ success: true, deposit })
+  } catch (err) {
+    console.error('[deposit] Exception:', err.message)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
 // Create withdrawal request
 app.post('/api/withdrawals', async (req, res) => {
   const { userId, amount, method, details } = req.body

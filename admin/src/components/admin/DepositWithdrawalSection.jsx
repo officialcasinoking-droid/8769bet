@@ -20,6 +20,7 @@ const API_URL = import.meta.env.VITE_API_URL || 'https://eight769bet-backend.onr
 // ── Tabs Config ──────────────────────────────────────────────
 const TABS = [
   { id: 'all', label: 'All Transactions', icon: FileText },
+  { id: 'deposits', label: 'Deposits', icon: ArrowDownRight },
   { id: 'pending', label: 'Pending', icon: Clock },
   { id: 'completed', label: 'Completed', icon: CheckCircle },
   { id: 'payment-methods', label: 'Payment Methods', icon: CreditCard },
@@ -54,17 +55,21 @@ function Gift(props) {
 async function getAllTransactions() {
   try {
     const adminToken = localStorage.getItem('admin_token')
-    const [txRes, wdRes] = await Promise.all([
+    const [txRes, wdRes, depRes] = await Promise.all([
       supabase.from('transactions').select('*').order('created_at', { ascending: false }).limit(200),
       fetch(`${API_URL}/api/admin/withdrawals`, {
+        headers: { 'Authorization': `Bearer ${adminToken}` }
+      }),
+      fetch(`${API_URL}/api/admin/deposits`, {
         headers: { 'Authorization': `Bearer ${adminToken}` }
       })
     ])
     
     let transactions = txRes.error ? [] : (txRes.data || [])
     let withdrawals = wdRes.ok ? await wdRes.json() : []
+    let deposits = depRes.ok ? await depRes.json() : []
     
-    // Transform withdrawals to match transaction format
+    // Transform withdrawals
     const withdrawalTransactions = withdrawals.map(w => ({
       id: w.id,
       user_id: w.user_id,
@@ -82,14 +87,46 @@ async function getAllTransactions() {
       users: w.users
     }))
     
+    // Transform deposits
+    const depositTransactions = deposits.map(d => ({
+      id: d.id,
+      user_id: d.user_id,
+      type: 'deposit',
+      amount: d.amount,
+      status: d.status,
+      method: d.method,
+      note: `Deposit via ${d.method}`,
+      reference: d.id,
+      created_at: d.created_at,
+      processed_at: d.processed_at,
+      rejection_reason: d.rejection_reason,
+      isDeposit: true,
+      users: d.users
+    }))
+    
     // Combine and sort by date
-    const all = [...transactions, ...withdrawalTransactions]
+    const all = [...transactions, ...withdrawalTransactions, ...depositTransactions]
       .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
       .slice(0, 200)
     
     return all
   } catch (err) {
     console.error('Failed to fetch all transactions:', err)
+    return []
+  }
+}
+
+async function getDeposits() {
+  try {
+    const adminToken = localStorage.getItem('admin_token')
+    const response = await fetch(`${API_URL}/api/admin/deposits`, {
+      headers: { 'Authorization': `Bearer ${adminToken}` }
+    })
+    if (!response.ok) return []
+    const data = await response.json()
+    return data || []
+  } catch (err) {
+    console.error('Failed to fetch deposits:', err)
     return []
   }
 }
@@ -651,6 +688,8 @@ export default function DepositWithdrawalSection() {
   const [approveItem, setApproveItem] = useState(null)
   const [rejectItem, setRejectItem] = useState(null)
   const [viewItem, setViewItem] = useState(null)
+  const [approveDepositItem, setApproveDepositItem] = useState(null)
+  const [rejectDepositItem, setRejectDepositItem] = useState(null)
 
   // Queries
   const { data: transactions = [], isLoading: loadingTx } = useQuery({
@@ -658,6 +697,13 @@ export default function DepositWithdrawalSection() {
     queryFn: getAllTransactions,
     staleTime: 0,
     enabled: activeTab === 'all',
+  })
+
+  const { data: deposits = [], isLoading: loadingDeposits } = useQuery({
+    queryKey: ['deposits'],
+    queryFn: getDeposits,
+    staleTime: 0,
+    enabled: activeTab === 'deposits',
   })
 
   const { data: pendingItems = [], isLoading: loadingPending } = useQuery({
@@ -704,6 +750,7 @@ export default function DepositWithdrawalSection() {
   const filteredData = useMemo(() => {
     let data = []
     if (activeTab === 'all') data = transactions
+    else if (activeTab === 'deposits') data = deposits
     else if (activeTab === 'pending') data = pendingItems
     else if (activeTab === 'completed') data = completedItems
     else if (activeTab === 'payment-methods') data = methods
@@ -734,6 +781,59 @@ export default function DepositWithdrawalSection() {
   const pendingCount = pendingItems.length
 
   // Handlers
+  const handleApproveDeposit = async (item) => {
+    try {
+      const adminToken = localStorage.getItem('admin_token')
+      const adminUser = JSON.parse(localStorage.getItem('admin_user') || '{}')
+      const response = await fetch(`${API_URL}/api/admin/deposits/${item.id}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${adminToken}`
+        },
+        body: JSON.stringify({
+          action: 'approve',
+          adminId: adminUser?.id,
+          adminUsername: adminUser?.username
+        })
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Failed to approve')
+      toast.success('Deposit approved')
+      qc.invalidateQueries({ queryKey: ['deposits'] })
+      qc.invalidateQueries({ queryKey: ['transactions'] })
+    } catch (e) {
+      toast.error(`Approve failed: ${e.message}`)
+    }
+  }
+
+  const handleRejectDeposit = async (item, reason) => {
+    try {
+      const adminToken = localStorage.getItem('admin_token')
+      const adminUser = JSON.parse(localStorage.getItem('admin_user') || '{}')
+      const response = await fetch(`${API_URL}/api/admin/deposits/${item.id}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${adminToken}`
+        },
+        body: JSON.stringify({
+          action: 'reject',
+          adminId: adminUser?.id,
+          adminUsername: adminUser?.username,
+          rejectionReason: reason
+        })
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Failed to reject')
+      toast.success('Deposit rejected')
+      qc.invalidateQueries({ queryKey: ['deposits'] })
+      qc.invalidateQueries({ queryKey: ['transactions'] })
+    } catch (e) {
+      toast.error(`Reject failed: ${e.message}`)
+    }
+  }
+
   const handleApprove = async (item) => {
     try {
       await approveWithdrawal(item.id)
@@ -780,7 +880,7 @@ export default function DepositWithdrawalSection() {
     exportCSV(data, `withdrawal-${activeTab}`)
   }
 
-  const isLoading = activeTab === 'all' ? loadingTx : activeTab === 'pending' ? loadingPending : activeTab === 'completed' ? loadingCompleted : loadingMethods
+  const isLoading = activeTab === 'all' ? loadingTx : activeTab === 'deposits' ? loadingDeposits : activeTab === 'pending' ? loadingPending : activeTab === 'completed' ? loadingCompleted : loadingMethods
 
   return (
     <div className="space-y-6">
@@ -872,9 +972,19 @@ export default function DepositWithdrawalSection() {
                         key={tx.id}
                         tx={tx}
                         type="all"
-                        onView={tx.isWithdrawal && tx.status === 'pending' ? setViewItem : undefined}
-                        onApprove={tx.isWithdrawal && tx.status === 'pending' ? setApproveItem : undefined}
-                        onReject={tx.isWithdrawal && tx.status === 'pending' ? setRejectItem : undefined}
+                        onView={(tx.isWithdrawal || tx.isDeposit) && tx.status === 'pending' ? setViewItem : undefined}
+                        onApprove={tx.isWithdrawal && tx.status === 'pending' ? setApproveItem : tx.isDeposit && tx.status === 'pending' ? setApproveDepositItem : undefined}
+                        onReject={tx.isWithdrawal && tx.status === 'pending' ? setRejectItem : tx.isDeposit && tx.status === 'pending' ? setRejectDepositItem : undefined}
+                      />
+                    ))}
+                    {activeTab === 'deposits' && paginatedData.map(item => (
+                      <TransactionRow
+                        key={item.id}
+                        tx={{ ...item, type: 'deposit' }}
+                        type="deposits"
+                        onView={item.status === 'pending' ? setViewItem : undefined}
+                        onApprove={item.status === 'pending' ? setApproveDepositItem : undefined}
+                        onReject={item.status === 'pending' ? setRejectDepositItem : undefined}
                       />
                     ))}
                     {activeTab === 'pending' && paginatedData.map(item => (
@@ -934,7 +1044,23 @@ export default function DepositWithdrawalSection() {
         onConfirm={handleReject}
       />
 
-      {/* View Withdrawal Details Modal */}
+      {/* Deposit Approve Modal */}
+      <ApproveModal
+        open={!!approveDepositItem}
+        onClose={() => setApproveDepositItem(null)}
+        item={approveDepositItem}
+        onConfirm={handleApproveDeposit}
+      />
+
+      {/* Deposit Reject Modal */}
+      <RejectModal
+        open={!!rejectDepositItem}
+        onClose={() => setRejectDepositItem(null)}
+        item={rejectDepositItem}
+        onConfirm={handleRejectDeposit}
+      />
+
+      {/* View Withdrawal/Deposit Details Modal */}
       <Dialog open={!!viewItem} onClose={() => setViewItem(null)} className="max-w-lg">
         <DialogHeader onClose={() => setViewItem(null)}>
           <DialogTitle>Withdrawal Details</DialogTitle>
@@ -1051,12 +1177,25 @@ export default function DepositWithdrawalSection() {
           <Button variant="outline" onClick={() => setViewItem(null)}>Close</Button>
           {viewItem?.status === 'pending' && (
             <>
-              <Button variant="danger" onClick={() => { setRejectItem(viewItem); setViewItem(null); }}>
-                <X className="w-3 h-3" /> Reject
-              </Button>
-              <Button onClick={() => { setApproveItem(viewItem); setViewItem(null); }}>
-                <Check className="w-3 h-3" /> Approve
-              </Button>
+              {viewItem.isDeposit ? (
+                <>
+                  <Button variant="danger" onClick={() => { setRejectDepositItem(viewItem); setViewItem(null); }}>
+                    <X className="w-3 h-3" /> Reject
+                  </Button>
+                  <Button onClick={() => { setApproveDepositItem(viewItem); setViewItem(null); }}>
+                    <Check className="w-3 h-3" /> Approve
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Button variant="danger" onClick={() => { setRejectItem(viewItem); setViewItem(null); }}>
+                    <X className="w-3 h-3" /> Reject
+                  </Button>
+                  <Button onClick={() => { setApproveItem(viewItem); setViewItem(null); }}>
+                    <Check className="w-3 h-3" /> Approve
+                  </Button>
+                </>
+              )}
             </>
           )}
         </DialogFooter>
