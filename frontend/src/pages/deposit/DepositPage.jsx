@@ -32,6 +32,8 @@ export default function DepositPage() {
   const [screenshotPreview, setScreenshotPreview] = useState(null)
   const [transactionId, setTransactionId] = useState('')
   const [uploading, setUploading] = useState(false)
+  const [screenshotError, setScreenshotError] = useState('')
+  const [submitError, setSubmitError] = useState('')
   const fileInputRef = useRef(null)
 
   const currentMethod = paymentMethods.find(m => m.type === selectedMethod)
@@ -141,22 +143,30 @@ export default function DepositPage() {
       toast.error(`Maximum deposit is ${formatBalance(currentMethod?.max_amount || 50000)}`)
       return
     }
+    setScreenshotError('')
+    setSubmitError('')
     setShowPaymentInfo(true)
   }
 
   const handleDepositSubmit = async () => {
-    setShowPaymentInfo(false)
+    setScreenshotError('')
+    setSubmitError('')
 
-    let screenshotUrl = null
-    if (screenshotFile) {
-      screenshotUrl = await uploadScreenshot()
-      if (!screenshotUrl) {
-        setDepositing(false)
-        return
-      }
+    // Validate screenshot before closing modal
+    if (!screenshotFile) {
+      setScreenshotError('Please upload a transaction screenshot as proof of payment')
+      return
     }
 
+    setShowPaymentInfo(false)
     setDepositing(true)
+
+    let screenshotUrl = await uploadScreenshot()
+    if (!screenshotUrl) {
+      setDepositing(false)
+      setShowPaymentInfo(true)
+      return
+    }
 
     try {
       const response = await fetch(`${API_URL}/api/deposits`, {
@@ -173,8 +183,9 @@ export default function DepositPage() {
 
       const result = await response.json()
 
-      if (!result.success) {
-        toast.error(result.error || 'Failed to create deposit request')
+      if (!response.ok || !result.success) {
+        setSubmitError(result.error || 'Failed to create deposit request')
+        setShowPaymentInfo(true)
         setDepositing(false)
         return
       }
@@ -194,7 +205,8 @@ export default function DepositPage() {
       }
     } catch (err) {
       console.error('[deposit] Error:', err)
-      toast.error('Deposit failed. Please try again.')
+      setSubmitError('Deposit failed. Please try again.')
+      setShowPaymentInfo(true)
     } finally {
       setDepositing(false)
     }
@@ -447,7 +459,9 @@ export default function DepositPage() {
               ) : (
                 <button
                   onClick={() => fileInputRef.current?.click()}
-                  className="w-full py-8 border-2 border-dashed border-dark-100 rounded-lg text-gray-500 hover:border-emerald-500 hover:text-emerald-400 transition-all flex flex-col items-center gap-2"
+                  className={`w-full py-8 border-2 border-dashed rounded-lg transition-all flex flex-col items-center gap-2 ${
+                    screenshotError ? 'border-red-500 text-red-400' : 'border-dark-100 text-gray-500 hover:border-emerald-500 hover:text-emerald-400'
+                  }`}
                 >
                   <Upload className="w-6 h-6" />
                   <span className="text-xs">Click to upload</span>
@@ -458,8 +472,14 @@ export default function DepositPage() {
                 type="file"
                 accept="image/*"
                 className="hidden"
-                onChange={handleScreenshotSelect}
+                onChange={(e) => { handleScreenshotSelect(e); setScreenshotError('') }}
               />
+              {screenshotError && (
+                <p className="text-xs text-red-400 mt-2 flex items-center gap-1">
+                  <AlertTriangle className="w-3 h-3 flex-shrink-0" />
+                  {screenshotError}
+                </p>
+              )}
             </div>
 
             {/* Transaction ID */}
@@ -484,6 +504,15 @@ export default function DepositPage() {
                 </p>
               </div>
             </div>
+
+            {submitError && (
+              <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3">
+                <p className="text-xs text-red-400 flex items-center gap-1">
+                  <AlertTriangle className="w-3 h-3 flex-shrink-0" />
+                  {submitError}
+                </p>
+              </div>
+            )}
           </div>
         </DialogContent>
         <DialogFooter>

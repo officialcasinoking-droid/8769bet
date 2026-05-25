@@ -11,7 +11,7 @@ import {
   RefreshCw, Check, X, Upload, Globe, Smartphone, Building2, Coins,
   ArrowUpRight, ArrowDownRight, Clock, CheckCircle, XCircle, Filter,
   ChevronLeft, ChevronRight, ArrowLeftRight, TrendingUp, Wallet, FileText,
-  Loader2, Sparkles, Eye
+  Loader2, Sparkles, Eye, Image
 } from 'lucide-react'
 
 const BUCKET = 'landing-images'
@@ -100,6 +100,8 @@ async function getAllTransactions() {
       created_at: d.created_at,
       processed_at: d.processed_at,
       rejection_reason: d.rejection_reason,
+      screenshot_url: d.screenshot_url,
+      transaction_id: d.transaction_id,
       isDeposit: true,
       users: d.users
     }))
@@ -275,6 +277,7 @@ function TransactionRow({ tx, type, onView, onApprove, onReject }) {
   const statusInfo = STATUS_CONFIG[tx.status] || STATUS_CONFIG.pending
   const Icon = config.icon
   const isPendingWithdrawal = tx.isWithdrawal && tx.status === 'pending'
+  const isPendingDeposit = tx.isDeposit && tx.status === 'pending'
 
   return (
     <motion.div
@@ -303,17 +306,17 @@ function TransactionRow({ tx, type, onView, onApprove, onReject }) {
           <p className={`text-sm font-bold ${config.color}`}>{Number(tx.amount).toLocaleString('en-IN', { style: 'currency', currency: 'INR' })}</p>
           <p className="text-[10px] text-slate-500">{new Date(tx.created_at).toLocaleDateString('en-IN')}</p>
         </div>
-        {isPendingWithdrawal && onView && (
+        {(isPendingWithdrawal || isPendingDeposit) && onView && (
           <Button variant="outline" size="sm" onClick={() => onView(tx)}>
             <Eye className="w-3 h-3" />
           </Button>
         )}
-        {isPendingWithdrawal && onReject && (
+        {(isPendingWithdrawal || isPendingDeposit) && onReject && (
           <Button variant="outline" size="sm" onClick={() => onReject(tx)}>
             <X className="w-3 h-3" />
           </Button>
         )}
-        {isPendingWithdrawal && onApprove && (
+        {(isPendingWithdrawal || isPendingDeposit) && onApprove && (
           <Button size="sm" onClick={() => onApprove(tx)}>
             <Check className="w-3 h-3" />
           </Button>
@@ -1114,9 +1117,9 @@ export default function DepositWithdrawalSection() {
       {/* View Withdrawal/Deposit Details Modal */}
       <Dialog open={!!viewItem} onClose={() => setViewItem(null)} className="max-w-lg">
         <DialogHeader onClose={() => setViewItem(null)}>
-          <DialogTitle>Withdrawal Details</DialogTitle>
+          <DialogTitle>{viewItem?.isDeposit ? 'Deposit Details' : 'Withdrawal Details'}</DialogTitle>
           <DialogDescription>
-            Viewing withdrawal #{viewItem?.id?.slice(0, 8)}
+            Viewing {viewItem?.isDeposit ? 'deposit' : 'withdrawal'} #{viewItem?.id?.slice(0, 8)}
           </DialogDescription>
         </DialogHeader>
         <DialogContent>
@@ -1140,11 +1143,11 @@ export default function DepositWithdrawalSection() {
                 </div>
               </div>
 
-              {/* Withdrawal Info */}
+              {/* Transaction Info */}
               <div className="bg-slate-800/50 rounded-xl p-4 space-y-2">
                 <h4 className="text-sm font-semibold text-white flex items-center gap-2">
-                  <ArrowUpRight className="w-4 h-4 text-red-400" />
-                  Withdrawal Details
+                  {viewItem.isDeposit ? <ArrowDownRight className="w-4 h-4 text-emerald-400" /> : <ArrowUpRight className="w-4 h-4 text-red-400" />}
+                  {viewItem.isDeposit ? 'Deposit Details' : 'Withdrawal Details'}
                 </h4>
                 <div className="grid grid-cols-2 gap-2 text-sm">
                   <div>
@@ -1152,19 +1155,29 @@ export default function DepositWithdrawalSection() {
                     <p className="text-white font-bold">₨{Number(viewItem.amount).toLocaleString()}</p>
                   </div>
                   <div>
-                    <p className="text-xs text-slate-500">Fee</p>
-                    <p className="text-white">₨{Number(viewItem.fee || 0).toLocaleString()}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-slate-500">Net Amount</p>
-                    <p className="text-emerald-400 font-bold">₨{Number(viewItem.net_amount || viewItem.amount - (viewItem.fee || 0)).toLocaleString()}</p>
-                  </div>
-                  <div>
                     <p className="text-xs text-slate-500">Status</p>
                     <span className={`px-2 py-0.5 rounded text-xs font-bold border ${STATUS_CONFIG[viewItem.status]?.color || 'bg-slate-700/50 text-slate-400'}`}>
                       {viewItem.status?.toUpperCase()}
                     </span>
                   </div>
+                  {!viewItem.isDeposit && (
+                    <>
+                      <div>
+                        <p className="text-xs text-slate-500">Fee</p>
+                        <p className="text-white">₨{Number(viewItem.fee || 0).toLocaleString()}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-slate-500">Net Amount</p>
+                        <p className="text-emerald-400 font-bold">₨{Number(viewItem.net_amount || viewItem.amount - (viewItem.fee || 0)).toLocaleString()}</p>
+                      </div>
+                    </>
+                  )}
+                  {viewItem.isDeposit && viewItem.transaction_id && (
+                    <div className="col-span-2">
+                      <p className="text-xs text-slate-500">Transaction ID</p>
+                      <p className="text-white font-mono text-xs">{viewItem.transaction_id}</p>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -1195,6 +1208,19 @@ export default function DepositWithdrawalSection() {
                   )}
                 </div>
               </div>
+
+              {/* Deposit Screenshot */}
+              {viewItem.isDeposit && viewItem.screenshot_url && (
+                <div className="bg-slate-800/50 rounded-xl p-4 space-y-2">
+                  <h4 className="text-sm font-semibold text-white flex items-center gap-2">
+                    <Image className="w-4 h-4 text-blue-400" />
+                    Payment Proof Screenshot
+                  </h4>
+                  <a href={viewItem.screenshot_url} target="_blank" rel="noopener noreferrer">
+                    <img src={viewItem.screenshot_url} alt="Payment proof" className="w-full rounded-lg border border-slate-700/50 cursor-pointer hover:opacity-90 transition-opacity" />
+                  </a>
+                </div>
+              )}
 
               {/* Timestamps */}
               <div className="bg-slate-800/50 rounded-xl p-4 space-y-2">
