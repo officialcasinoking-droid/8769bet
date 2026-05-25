@@ -419,127 +419,127 @@ export default function DepositPage() {
       </div>
 
       {/* Payment Info Modal */}
-      <Dialog open={showPaymentInfo} onClose={() => setShowPaymentInfo(false)} className="max-w-sm">
+      <Dialog open={showPaymentInfo} onClose={() => setShowPaymentInfo(false)} className="max-w-sm max-h-none overflow-visible">
         <DialogHeader onClose={() => setShowPaymentInfo(false)}>
-          <DialogTitle>Payment Details</DialogTitle>
+          <DialogTitle>Complete Payment</DialogTitle>
         </DialogHeader>
         <DialogContent>
-          <div className="space-y-4">
-            {/* Amount Summary */}
-            <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-4 text-center">
-              <p className="text-xs text-emerald-400">Deposit Amount</p>
-              <p className="text-2xl font-bold text-white">{formatBalance(Number(amount))}</p>
-              <p className="text-[10px] text-gray-500 mt-1">via {currentMethod?.name || 'Payment Method'}</p>
+          <div className="space-y-3">
+            {/* Amount & Method row */}
+            <div className="flex items-center justify-between bg-emerald-500/10 border border-emerald-500/30 rounded-xl px-4 py-3">
+              <div>
+                <p className="text-[10px] text-emerald-400">Amount</p>
+                <p className="text-lg font-bold text-white">{formatBalance(Number(amount))}</p>
+              </div>
+              <div className="text-right">
+                <p className="text-[10px] text-gray-500">Method</p>
+                <p className="text-sm text-white font-medium">{currentMethod?.name || 'Payment Method'}</p>
+              </div>
             </div>
 
-            {/* Payment Account Details */}
-            {currentMethod?.account_details && Object.keys(currentMethod.account_details).length > 0 ? (
-              <div className="bg-dark-300/50 rounded-xl p-4">
-                <h4 className="text-sm font-semibold text-white mb-3">Send Payment To:</h4>
-                <div className="space-y-2.5">
-                  {Object.entries(currentMethod.account_details).filter(([, v]) => v).map(([key, value]) => {
-                    const label = key.replace(/_/g, ' ')
-                    const isValue = key === 'account_number' || key === 'account_title' || key === 'bank_name'
+            {/* Payment Account Details - only title, number, bank */}
+            {currentMethod?.account_details && (
+              <div className="bg-dark-300/50 rounded-xl p-3.5">
+                <h4 className="text-xs font-semibold text-white mb-2.5">Send Payment To:</h4>
+                <div className="space-y-2">
+                  {[['account_title', 'Account Title'], ['account_number', 'Account Number'], ['bank_name', 'Bank']].map(([key, label]) => {
+                    const value = currentMethod.account_details[key]
+                    if (!value) return null
+                    const isAccountNumber = key === 'account_number'
                     return (
-                      <div key={key} className="flex items-center justify-between bg-dark-400/50 rounded-lg px-3 py-2.5">
+                      <div key={key} className="flex items-center justify-between bg-dark-400/50 rounded-lg px-3 py-2">
                         <div className="flex-1 min-w-0">
-                          <p className="text-[10px] text-gray-500 uppercase tracking-wider">{label}</p>
-                          <p className={`text-sm font-medium text-white truncate ${isValue ? 'font-mono' : ''}`}>
+                          <p className="text-[10px] text-gray-500">{label}</p>
+                          <p className={`text-sm text-white truncate ${isAccountNumber ? 'font-mono font-bold tracking-wider' : 'font-medium'}`}>
                             {String(value)}
                           </p>
                         </div>
-                        <button
-                          onClick={() => handleCopyText(String(value))}
-                          className="ml-2 p-1.5 rounded-lg hover:bg-dark-300 text-gray-400 hover:text-emerald-400 transition-all flex-shrink-0"
-                          title={`Copy ${label}`}
-                        >
-                          <Copy className="w-3.5 h-3.5" />
-                        </button>
+                        {isAccountNumber && (
+                          <button
+                            onClick={() => handleCopyText(String(value))}
+                            className="ml-2 p-2 rounded-lg bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 transition-all flex-shrink-0"
+                            title="Copy account number"
+                          >
+                            <Copy className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                       </div>
                     )
                   })}
                 </div>
                 {currentMethod.account_details.instructions && (
-                  <p className="text-xs text-amber-400/80 mt-3 italic">
+                  <p className="text-[11px] text-amber-400/80 mt-2 italic">
                     {currentMethod.account_details.instructions}
                   </p>
                 )}
               </div>
-            ) : currentMethod && (
-              <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 text-center">
-                <p className="text-xs text-amber-300">Payment account details not configured yet. Please contact support.</p>
-              </div>
             )}
 
-            {/* Screenshot Upload */}
-            <div className="bg-dark-300/50 rounded-xl p-4">
-              <h4 className="text-sm font-semibold text-white mb-2 flex items-center gap-2">
-                <Image className="w-4 h-4 text-blue-400" />
-                Transaction Screenshot
-              </h4>
-              <p className="text-xs text-gray-500 mb-3">Upload a screenshot of your payment confirmation</p>
-
+            {/* Screenshot Upload - compact bar */}
+            <div className={`rounded-xl border ${screenshotError ? 'border-red-500/50' : 'border-dark-100'} ${screenshotPreview ? 'bg-dark-300/50 p-3' : ''}`}>
               {screenshotPreview ? (
-                <div className="relative">
-                  <img src={screenshotPreview} alt="Screenshot preview" className="w-full h-32 object-cover rounded-lg" />
-                  <button
-                    onClick={removeScreenshot}
-                    className="absolute top-1 right-1 p-1 bg-red-500/80 rounded-full text-white"
-                  >
-                    <X className="w-3 h-3" />
+                <div className="flex items-center gap-3">
+                  <div className="relative w-16 h-12 flex-shrink-0">
+                    <img src={screenshotPreview} alt="Screenshot" className="w-full h-full object-cover rounded-lg" />
+                    <button onClick={removeScreenshot} className="absolute -top-1.5 -right-1.5 p-0.5 bg-red-500 rounded-full text-white">
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs text-white font-medium truncate">{screenshotFile?.name || 'Screenshot'}</p>
+                    <p className="text-[10px] text-gray-500">Tap to change</p>
+                  </div>
+                  <button onClick={() => fileInputRef.current?.click()} className="p-2 rounded-lg bg-dark-400 text-gray-400 hover:text-white">
+                    <Upload className="w-4 h-4" />
                   </button>
                 </div>
               ) : (
                 <button
                   onClick={() => fileInputRef.current?.click()}
-                  className={`w-full py-8 border-2 border-dashed rounded-lg transition-all flex flex-col items-center gap-2 ${
-                    screenshotError ? 'border-red-500 text-red-400' : 'border-dark-100 text-gray-500 hover:border-emerald-500 hover:text-emerald-400'
+                  className={`w-full flex items-center gap-2.5 px-4 py-2.5 transition-all ${
+                    screenshotError ? 'bg-red-500/5' : 'bg-dark-300/50 hover:bg-dark-300'
                   }`}
                 >
-                  <Upload className="w-6 h-6" />
-                  <span className="text-xs">Click to upload</span>
+                  <div className={`p-1.5 rounded-lg ${screenshotError ? 'bg-red-500/20' : 'bg-blue-500/20'}`}>
+                    <Upload className={`w-4 h-4 ${screenshotError ? 'text-red-400' : 'text-blue-400'}`} />
+                  </div>
+                  <div className="flex-1 text-left">
+                    <p className={`text-xs font-medium ${screenshotError ? 'text-red-400' : 'text-gray-300'}`}>
+                      {screenshotError ? 'Upload screenshot required' : 'Tap to upload payment screenshot'}
+                    </p>
+                    <p className="text-[10px] text-gray-500">Proof of payment</p>
+                  </div>
+                  {screenshotError && <AlertTriangle className="w-4 h-4 text-red-400 flex-shrink-0" />}
                 </button>
               )}
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={(e) => { handleScreenshotSelect(e); setScreenshotError('') }}
-              />
-              {screenshotError && (
-                <p className="text-xs text-red-400 mt-2 flex items-center gap-1">
-                  <AlertTriangle className="w-3 h-3 flex-shrink-0" />
-                  {screenshotError}
-                </p>
-              )}
+              <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => { handleScreenshotSelect(e); setScreenshotError('') }} />
             </div>
 
-            {/* Transaction ID */}
-            <div className="bg-dark-300/50 rounded-xl p-4">
-              <label className="text-sm font-semibold text-white mb-2 block">Transaction ID (Optional)</label>
+            {/* Transaction ID - inline compact */}
+            <div className="flex items-center gap-2 bg-dark-300/50 border border-dark-100 rounded-xl px-3 py-2">
               <input
                 type="text"
                 value={transactionId}
                 onChange={(e) => setTransactionId(e.target.value)}
-                placeholder="Enter transaction reference"
-                className="w-full bg-dark-400 border border-dark-100 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-emerald-500"
+                placeholder="Transaction ID (optional)"
+                className="flex-1 bg-transparent text-sm text-white placeholder-gray-500 focus:outline-none"
               />
+              <span className="text-[10px] text-gray-600 flex-shrink-0">Ref</span>
             </div>
 
-            {/* Important Note */}
-            <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3">
-              <div className="flex items-start gap-2">
-                <Clock className="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" />
-                <p className="text-xs text-amber-300">
-                  After sending payment, your deposit request will be submitted for admin verification.
-                  Balance will be credited once approved.
-                </p>
-              </div>
-            </div>
+            {/* Submit button */}
+            <button
+              onClick={handleDepositSubmit}
+              disabled={depositing || uploading}
+              className="w-full py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-600 text-white font-semibold text-sm disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              {(depositing || uploading) ? (
+                <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />{uploading ? 'Uploading...' : 'Submitting...'}</>
+              ) : 'I Have Sent Payment'}
+            </button>
 
             {submitError && (
-              <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3">
+              <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-2.5">
                 <p className="text-xs text-red-400 flex items-center gap-1">
                   <AlertTriangle className="w-3 h-3 flex-shrink-0" />
                   {submitError}
@@ -548,23 +548,6 @@ export default function DepositPage() {
             )}
           </div>
         </DialogContent>
-        <DialogFooter>
-          <button onClick={() => setShowPaymentInfo(false)} className="flex-1 py-3 rounded-xl bg-dark-300 text-gray-400 font-medium">
-            Cancel
-          </button>
-          <button
-            onClick={handleDepositSubmit}
-            disabled={depositing || uploading}
-            className="flex-1 py-3 rounded-xl bg-emerald-500 text-white font-semibold disabled:opacity-50 flex items-center justify-center gap-2"
-          >
-            {(depositing || uploading) ? (
-              <>
-                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                {uploading ? 'Uploading...' : 'Submitting...'}
-              </>
-            ) : 'I Have Sent Payment'}
-          </button>
-        </DialogFooter>
       </Dialog>
 
       {/* Transaction Details Modal */}
