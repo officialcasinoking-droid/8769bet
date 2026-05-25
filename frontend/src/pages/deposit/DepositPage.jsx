@@ -36,7 +36,7 @@ export default function DepositPage() {
   const [submitError, setSubmitError] = useState('')
   const fileInputRef = useRef(null)
 
-  const currentMethod = paymentMethods.find(m => m.type === selectedMethod)
+  const currentMethod = paymentMethods.find(m => m.id === selectedMethod)
   const availableBalance = user?.balance || 0
 
   useEffect(() => {
@@ -47,7 +47,7 @@ export default function DepositPage() {
 
   useEffect(() => {
     if (paymentMethods.length > 0 && !selectedMethod) {
-      setSelectedMethod(paymentMethods[0].type)
+      setSelectedMethod(paymentMethods[0].id)
     }
   }, [paymentMethods])
 
@@ -175,7 +175,7 @@ export default function DepositPage() {
         body: JSON.stringify({
           userId: user.id,
           amount: Number(amount),
-          method: selectedMethod,
+          method: currentMethod?.type || selectedMethod,
           transactionId: transactionId || null,
           screenshotUrl: screenshotUrl
         })
@@ -284,11 +284,11 @@ export default function DepositPage() {
           ) : (
             <div className="grid grid-cols-2 gap-2">
               {paymentMethods.map((method) => {
-                const isSelected = selectedMethod === method.type
+                const isSelected = selectedMethod === method.id
                 return (
                   <button
                     key={method.id}
-                    onClick={() => setSelectedMethod(method.type)}
+                    onClick={() => setSelectedMethod(method.id)}
                     className={`p-3 rounded-lg border transition-all flex flex-col items-center gap-1 ${
                       isSelected
                         ? 'border-emerald-500 bg-emerald-500/10'
@@ -429,7 +429,7 @@ export default function DepositPage() {
             <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-4 text-center">
               <p className="text-xs text-emerald-400">Deposit Amount</p>
               <p className="text-2xl font-bold text-white">{formatBalance(Number(amount))}</p>
-              <p className="text-[10px] text-gray-500 mt-1">via {currentMethod?.name || selectedMethod}</p>
+              <p className="text-[10px] text-gray-500 mt-1">via {currentMethod?.name || 'Payment Method'}</p>
             </div>
 
             {/* Payment Account Details */}

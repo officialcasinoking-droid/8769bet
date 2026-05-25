@@ -21,6 +21,12 @@ async function apiCall(endpoint, options = {}) {
     ...(token ? { Authorization: `Bearer ${token}` } : {})
   }
   const response = await fetch(`${API_URL}${endpoint}`, { ...options, headers })
+  if (response.status === 401) {
+    localStorage.removeItem('admin_user')
+    localStorage.removeItem('admin_token')
+    window.location.href = '/login'
+    throw new Error('Session expired')
+  }
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: 'Request failed' }))
     throw new Error(error.error || 'Request failed')

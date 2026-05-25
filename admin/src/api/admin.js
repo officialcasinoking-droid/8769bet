@@ -7,13 +7,17 @@ export const getPublicLanding = getLanding
 const BUCKET = 'landing-images'
 
 export async function getWallet() {
-  const { data, error } = await supabase
-    .from('admin_wallet')
-    .select('*')
-    .eq('id', 'main')
-    .single()
-  if (error) return null
-  return data
+  try {
+    const { data, error } = await supabase
+      .from('admin_wallet')
+      .select('*')
+      .eq('id', 'main')
+      .single()
+    if (error) return null
+    return data
+  } catch {
+    return null
+  }
 }
 
 export async function uploadImage(file) {

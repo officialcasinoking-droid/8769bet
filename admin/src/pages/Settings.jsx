@@ -21,13 +21,21 @@ async function updateSettings(updates) {
 }
 
 async function getWalletSettings() {
-  const { data } = await supabase.from('admin_wallet').select('*').eq('id', 'main').single()
-  return data || {}
+  try {
+    const { data } = await supabase.from('admin_wallet').select('*').eq('id', 'main').single()
+    return data || {}
+  } catch {
+    return {}
+  }
 }
 
 async function updateWalletSettings(updates) {
-  const { error } = await supabase.from('admin_wallet').update({ ...updates, updated_at: new Date().toISOString() }).eq('id', 'main')
-  if (error) throw error
+  try {
+    const { error } = await supabase.from('admin_wallet').update({ ...updates, updated_at: new Date().toISOString() }).eq('id', 'main')
+    if (error) throw error
+  } catch (e) {
+    throw e
+  }
 }
 
 // ── Main Component ───────────────────────────────────────────
