@@ -11,7 +11,13 @@ import { logAudit } from '../middleware/auditLogger.js'
 const router = express.Router()
 
 router.use(authenticateAdmin)
-router.use(requireRole('super_admin'))
+// Allow both super_admin and admin roles to view audit logs
+router.use((req, res, next) => {
+  if (req.user?.role === 'super_admin' || req.user?.role === 'admin') {
+    return next()
+  }
+  return res.status(403).json({ error: 'Insufficient permissions' })
+})
 
 // GET /api/admin/audit/logs - Get audit logs with filters
 router.get('/logs', async (req, res) => {

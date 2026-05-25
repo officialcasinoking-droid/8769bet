@@ -16,6 +16,7 @@ import { initGameEngine, getCurrentState, requestManualCrash, updateSettings, pl
 import { authenticateAdmin, getRequiredRoleForPath, requireRole } from './middleware/auth.js'
 import { createAuditMiddleware } from './middleware/auditLogger.js'
 import { createLoginRateLimiter } from './middleware/rateLimiter.js'
+import multer from 'multer'
 
 dotenv.config()
 
@@ -172,7 +173,7 @@ app.get('/api/aviator/bet-history', async (req, res) => {
 
 // Create deposit request
 app.post('/api/deposits', async (req, res) => {
-  const { userId, amount, method, transactionId } = req.body
+  const { userId, amount, method, transactionId, screenshotUrl } = req.body
   
   if (!userId || !amount) {
     return res.status(400).json({ error: 'userId and amount required' })
@@ -181,7 +182,7 @@ app.post('/api/deposits', async (req, res) => {
   try {
     const { data: user, error: userError } = await supabase
       .from('users')
-      .select('username')
+      .select('username, balance')
       .eq('id', userId)
       .single()
 
@@ -198,6 +199,7 @@ app.post('/api/deposits', async (req, res) => {
         amount: amount,
         method: method || 'bank',
         transaction_id: transactionId || null,
+        screenshot_url: screenshotUrl || null,
         status: 'pending',
         created_at: now,
         processed_at: null,
@@ -211,6 +213,32 @@ app.post('/api/deposits', async (req, res) => {
       return res.status(500).json({ error: 'Failed to create deposit request' })
     }
 
+    // Check if this payment method has auto_approve enabled
+    let autoApproved = false
+    const { data: payMethod } = await supabase
+      .from('payment_methods')
+      .select('auto_approve, max_amount')
+      .eq('type', method || 'bank')
+      .eq('is_active', true)
+      .single()
+
+    if (payMethod?.auto_approve && Number(amount) <= Number(payMethod.max_amount)) {
+      // Auto-approve the deposit
+      const { error: approveError } = await supabase
+        .from('deposits')
+        .update({ status: 'approved', processed_at: now })
+        .eq('id', deposit.id)
+
+      if (!approveError) {
+        // Add balance to user
+        await supabase
+          .from('users')
+          .update({ balance: Number(user.balance) + Number(amount), updated_at: now })
+          .eq('id', userId)
+        autoApproved = true
+      }
+    }
+
     // Log to audit_logs
     const { error: auditError } = await supabase
       .from('audit_logs')
@@ -218,10 +246,10 @@ app.post('/api/deposits', async (req, res) => {
         actor_type: 'user',
         actor_id: userId,
         actor_username: user.username,
-        action: 'request_deposit',
+        action: autoApproved ? 'deposit_auto_approved' : 'request_deposit',
         target_type: 'deposit',
         target_id: deposit.id,
-        details: { amount, method },
+        details: { amount, method, auto_approved: autoApproved, screenshot_url: screenshotUrl },
         ip_address: req.ip,
         user_agent: req.headers['user-agent'],
         severity: 'info',
@@ -233,8 +261,8 @@ app.post('/api/deposits', async (req, res) => {
       console.error('[deposit] Audit log error:', auditError.message)
     }
 
-    console.log(`[deposit] Created: ID ${deposit.id}, User ${user.username}, Amount ${amount}`)
-    res.json({ success: true, deposit })
+    console.log(`[deposit] Created: ID ${deposit.id}, User ${user.username}, Amount ${amount}${autoApproved ? ' [AUTO-APPROVED]' : ''}`)
+    res.json({ success: true, deposit: { ...deposit, auto_approved: autoApproved } })
   } catch (err) {
     console.error('[deposit] Exception:', err.message)
     res.status(500).json({ error: 'Internal server error' })
@@ -324,23 +352,26 @@ app.post('/api/withdrawals', async (req, res) => {
       .eq('id', userId)
 
     // Log to audit_logs
-    await supabase
-      .from('audit_logs')
-      .insert({
-        actor_type: 'user',
-        actor_id: userId,
-        actor_username: user.username,
-        action: 'request_withdrawal',
-        target_type: 'withdrawal',
-        target_id: withdrawal.id,
-        details: { amount, method, fee, netAmount },
-        ip_address: req.ip,
-        user_agent: req.headers['user-agent'],
-        severity: 'info',
-        success: true,
-        timestamp: now
-      })
-      .catch(err => console.error('[withdrawal] Audit log error:', err.message))
+    try {
+      await supabase
+        .from('audit_logs')
+        .insert({
+          actor_type: 'user',
+          actor_id: userId,
+          actor_username: user.username,
+          action: 'request_withdrawal',
+          target_type: 'withdrawal',
+          target_id: withdrawal.id,
+          details: { amount, method, fee, netAmount },
+          ip_address: req.ip,
+          user_agent: req.headers['user-agent'],
+          severity: 'info',
+          success: true,
+          timestamp: now
+        })
+    } catch (_auditErr) {
+      console.error('[withdrawal] Audit log error:', _auditErr.message)
+    }
 
     console.log(`[withdrawal] Created: ${user.username} requested ₨${amount}`)
     res.json({ success: true, withdrawal })
@@ -363,6 +394,74 @@ app.get('/api/health', (req, res) => {
 app.get('/api/aviator/house-edge', (req, res) => {
   const state = getCurrentState()
   res.json(state.settings || {})
+})
+
+// ── Public Payment Methods ──────────────────────────────────
+app.get('/api/payment-methods', async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('payment_methods')
+      .select('*')
+      .eq('is_active', true)
+      .order('created_at', { ascending: false })
+
+    if (error) {
+      console.error('[payment-methods] Error:', error.message)
+      return res.status(500).json({ error: 'Failed to fetch payment methods' })
+    }
+
+    res.json(data || [])
+  } catch (err) {
+    console.error('[payment-methods] Exception:', err.message)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+// ── File Upload ────────────────────────────────────────────
+const storage = multer.memoryStorage()
+const upload = multer({
+  storage,
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) {
+      cb(null, true)
+    } else {
+      cb(new Error('Only image files are allowed'))
+    }
+  }
+})
+
+app.post('/api/upload', upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' })
+    }
+
+    const ext = req.file.originalname.split('.').pop()
+    const fileName = `uploads/${Date.now()}-${Math.random().toString(36).substring(7)}.${ext}`
+
+    const { data, error } = await supabase.storage
+      .from('landing-images')
+      .upload(fileName, req.file.buffer, {
+        contentType: req.file.mimetype,
+        cacheControl: '3600',
+        upsert: true
+      })
+
+    if (error) {
+      console.error('[upload] Storage error:', error.message)
+      return res.status(500).json({ error: 'Failed to upload file' })
+    }
+
+    const { data: urlData } = supabase.storage
+      .from('landing-images')
+      .getPublicUrl(data.path)
+
+    res.json({ success: true, url: urlData.publicUrl })
+  } catch (err) {
+    console.error('[upload] Exception:', err.message)
+    res.status(500).json({ error: 'Upload failed' })
+  }
 })
 
 // Error handler

@@ -218,4 +218,5 @@ router.delete('/users/:id/withdrawal-accounts/:accountId', async (req, res) => {
   }
 })
 
+export { encryptPin, decryptPin }
 export default router

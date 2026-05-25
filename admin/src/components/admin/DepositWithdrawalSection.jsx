@@ -420,6 +420,7 @@ function PaymentMethodModal({ open, onClose, method, onSaved }) {
     name: '', type: 'wallet', country: 'pakistan',
     logo_url: '', min_amount: 100, max_amount: 50000,
     fee_percent: 0, daily_limit: 100000, auto_approve: false, is_active: true,
+    account_details: {},
   })
   const [logoFile, setLogoFile] = useState(null)
   const [saving, setSaving] = useState(false)
@@ -438,9 +439,10 @@ function PaymentMethodModal({ open, onClose, method, onSaved }) {
         daily_limit: Number(method.daily_limit) || 100000,
         auto_approve: method.auto_approve || false,
         is_active: method.is_active !== false,
+        account_details: method.account_details || {},
       })
     } else if (open) {
-      setForm({ name: '', type: 'wallet', country: 'pakistan', logo_url: '', min_amount: 100, max_amount: 50000, fee_percent: 0, daily_limit: 100000, auto_approve: false, is_active: true })
+      setForm({ name: '', type: 'wallet', country: 'pakistan', logo_url: '', min_amount: 100, max_amount: 50000, fee_percent: 0, daily_limit: 100000, auto_approve: false, is_active: true, account_details: {} })
     }
   }, [open, method])
 
@@ -454,7 +456,7 @@ function PaymentMethodModal({ open, onClose, method, onSaved }) {
     try {
       let logoUrl = form.logo_url
       if (logoFile) logoUrl = await uploadLogo(logoFile)
-      const payload = { ...form, logo_url: logoUrl, min_amount: Number(form.min_amount), max_amount: Number(form.max_amount), fee_percent: Number(form.fee_percent), daily_limit: Number(form.daily_limit) }
+      const payload = { ...form, logo_url: logoUrl, min_amount: Number(form.min_amount), max_amount: Number(form.max_amount), fee_percent: Number(form.fee_percent), daily_limit: Number(form.daily_limit), account_details: form.account_details || {} }
       const result = await savePaymentMethod(method ? { ...payload, id: method.id } : payload)
       toast.success(result._action === 'update' ? 'Method updated' : 'Method created')
       qc.invalidateQueries({ queryKey: ['payment_methods'] })
@@ -543,6 +545,51 @@ function PaymentMethodModal({ open, onClose, method, onSaved }) {
             </FormField>
             <FormField label="Daily Limit">
               <Input type="number" value={form.daily_limit} onChange={e => set('daily_limit', e.target.value)} />
+            </FormField>
+          </div>
+
+          {/* Account Details (shown to users) */}
+          <div className="bg-slate-800/30 rounded-xl p-4 space-y-4">
+            <h4 className="text-sm font-semibold text-white flex items-center gap-2">
+              <CreditCard className="w-4 h-4 text-blue-400" />
+              Account Details (shown to users)
+            </h4>
+            <div className="grid grid-cols-2 gap-3">
+              <FormField label="Account Name">
+                <Input
+                  value={form.account_details?.account_name || ''}
+                  onChange={e => setForm(f => ({ ...f, account_details: { ...f.account_details, account_name: e.target.value } }))}
+                  placeholder="e.g. 8769bet Official"
+                />
+              </FormField>
+              <FormField label="Account Number / IBAN">
+                <Input
+                  value={form.account_details?.account_number || ''}
+                  onChange={e => setForm(f => ({ ...f, account_details: { ...f.account_details, account_number: e.target.value } }))}
+                  placeholder="e.g. 0300-1234567"
+                />
+              </FormField>
+              <FormField label="Bank / Provider Name">
+                <Input
+                  value={form.account_details?.bank_name || ''}
+                  onChange={e => setForm(f => ({ ...f, account_details: { ...f.account_details, bank_name: e.target.value } }))}
+                  placeholder="e.g. Meezan Bank"
+                />
+              </FormField>
+              <FormField label="Account Title">
+                <Input
+                  value={form.account_details?.account_title || ''}
+                  onChange={e => setForm(f => ({ ...f, account_details: { ...f.account_details, account_title: e.target.value } }))}
+                  placeholder="e.g. 8769bet Pvt Ltd"
+                />
+              </FormField>
+            </div>
+            <FormField label="Additional Instructions">
+              <Input
+                value={form.account_details?.instructions || ''}
+                onChange={e => setForm(f => ({ ...f, account_details: { ...f.account_details, instructions: e.target.value } }))}
+                placeholder="e.g. Send exact amount for faster verification"
+              />
             </FormField>
           </div>
 
@@ -737,6 +784,10 @@ export default function DepositWithdrawalSection() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'withdrawals' }, () => {
         qc.invalidateQueries({ queryKey: ['withdrawals-pending'] })
         qc.invalidateQueries({ queryKey: ['withdrawals-completed'] })
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'deposits' }, () => {
+        qc.invalidateQueries({ queryKey: ['deposits'] })
+        qc.invalidateQueries({ queryKey: ['transactions'] })
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'payment_methods' }, () => {
         qc.invalidateQueries({ queryKey: ['payment_methods'] })
