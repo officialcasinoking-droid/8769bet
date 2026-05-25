@@ -1,14 +1,12 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { useQuery } from '@tanstack/react-query'
-import { ArrowTrendingUpIcon, CheckCircleIcon, ClockIcon, ExclamationTriangleIcon, LockClosedIcon, BanknotesIcon, ShieldCheckIcon, ArrowDownTrayIcon } from '@heroicons/react/24/outline'
+import { BanknotesIcon, CheckCircleIcon, ClockIcon, ExclamationTriangleIcon, ShieldCheckIcon } from '@heroicons/react/24/outline'
 import { RefreshCw, Eye } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../components/ui/Toast'
 import { Dialog, DialogHeader, DialogTitle, DialogContent, DialogFooter } from '../../components/ui/Dialog'
 import { supabase } from '../../lib/supabase'
-import { getHouseEdgePool } from '../../api/aviator'
 
 const API_URL = import.meta.env.VITE_API_URL || 'https://eight769bet-backend.onrender.com'
 
@@ -121,13 +119,6 @@ export default function WithdrawPage() {
   const [loadingTx, setLoadingTx] = useState(false)
   const [showDetails, setShowDetails] = useState(null)
 
-  const { data: hePool } = useQuery({
-    queryKey: ['withdraw-he-pool'],
-    queryFn: getHouseEdgePool,
-    staleTime: 10000,
-    refetchInterval: 10000,
-  })
-
   const availableBalance = user?.balance || 0
   const withdrawalAccounts = user?.withdrawal_accounts || []
   const hasPIN = user?.withdrawal_pin_set || false
@@ -194,11 +185,6 @@ export default function WithdrawPage() {
       toast.error(`Minimum balance of ${formatBalance(MIN_WITHDRAWAL)} required`)
       return
     }
-    const hePoolBalance = Number(hePool?.house_edge_pool || 0)
-    if (hePoolBalance < 0) {
-      toast.error('Platform processing high volume. Your request has been queued.', { duration: 5000 })
-      return
-    }
     setShowPINModal(true)
   }
 
@@ -260,13 +246,7 @@ export default function WithdrawPage() {
   return (
     <div className="pt-16 pb-24 min-h-screen">
       <div className="max-w-lg mx-auto px-3 py-4">
-        {/* Header */}
-        <div className="flex items-center gap-2 mb-4">
-          <ArrowTrendingUpIcon className="w-6 h-6 text-emerald-400" />
-          <h1 className="text-xl font-bold text-white">Withdraw</h1>
-        </div>
-
-        {/* Requirements Check - Compact */}
+        {/* Requirements Check */}
         {!hasPIN || !hasAccount ? (
           <motion.div
             initial={{ opacity: 0, y: 10 }}
@@ -298,46 +278,25 @@ export default function WithdrawPage() {
           </motion.div>
         ) : null}
 
-        {/* House Edge Pool Status Banner */}
-        {(() => {
-          const poolBalance = Number(hePool?.house_edge_pool || 0)
-          const isNegative = poolBalance < 0
-          return (
-            <div className={`border rounded-xl p-3 mb-3 ${isNegative ? 'bg-orange-500/10 border-orange-500/40' : 'bg-emerald-500/5 border-emerald-500/20'}`}>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <ExclamationTriangleIcon className={`w-4 h-4 ${isNegative ? 'text-orange-400' : 'text-emerald-400'}`} />
-                  <div>
-                    <p className={`text-xs font-medium ${isNegative ? 'text-orange-300' : 'text-gray-300'}`}>
-                      {isNegative ? 'Processing High Volume' : 'Platform Healthy'}
-                    </p>
-                    <p className={`text-[10px] ${isNegative ? 'text-orange-400/70' : 'text-gray-500'}`}>
-                      {isNegative
-                        ? 'Requests queued. Support notified.'
-                        : `HE Pool: ${formatBalance(poolBalance)}`}
-                    </p>
-                  </div>
-                </div>
-                <div className={`text-right ${isNegative ? 'text-orange-400' : 'text-emerald-400'}`}>
-                  <p className="text-xs font-bold">{formatBalance(poolBalance)}</p>
-                  <p className="text-[10px] text-gray-500">HE Pool</p>
-                </div>
+        {/* Selected Withdrawal Account */}
+        {selectedAccount && hasPIN && hasAccount && (
+          <div className="bg-gradient-to-br from-emerald-500/20 to-emerald-500/10 border border-emerald-500/30 rounded-xl p-3 mb-3">
+            <p className="text-[10px] text-emerald-400/80">Withdraw To</p>
+            <div className="flex items-center gap-2 mt-1">
+              <span className="text-lg">
+                {selectedAccount.type === 'jazzcash' ? '📱' : selectedAccount.type === 'easypaisa' ? '📱' : '🏦'}
+              </span>
+              <div>
+                <p className="text-sm font-bold text-white capitalize">
+                  {selectedAccount.type === 'jazzcash' ? 'JazzCash' : selectedAccount.type === 'easypaisa' ? 'Easypaisa' : 'Bank'}
+                </p>
+                <p className="text-xs text-gray-400">••••{selectedAccount.account_number?.slice(-4)}</p>
               </div>
             </div>
-          )
-        })()}
+          </div>
+        )}
 
-        {/* Balance Card - Compact */}
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="bg-gradient-to-br from-emerald-500/20 to-emerald-500/10 border border-emerald-500/30 rounded-xl p-4 mb-3"
-        >
-          <p className="text-xs text-emerald-400/80">Available Balance</p>
-          <p className="text-2xl font-bold text-white">{formatBalance(availableBalance)}</p>
-        </motion.div>
-
-        {/* Withdrawal Amount - Compact */}
+        {/* Withdrawal Amount */}
         <div className="bg-dark-300/50 border border-dark-100 rounded-xl p-3 mb-3">
           <label className="text-xs font-medium text-gray-400 mb-2 block">Amount</label>
           
@@ -375,14 +334,14 @@ export default function WithdrawPage() {
           </div>
 
           <div className="mt-2 text-[10px] text-gray-500">
-            Min: ₨{MIN_WITHDRAWAL} | Max: ₨{MAX_WITHDRAWAL.toLocaleString()}
+            Min: ₨{MIN_WITHDRAWAL} | Max: ₨{MAX_WITHDRAWAL.toLocaleString()} | Balance: {formatBalance(availableBalance)}
           </div>
         </div>
 
-        {/* Withdrawal Account - Compact */}
+        {/* Withdrawal Account Selection */}
         {hasPIN && hasAccount && (
           <div className="bg-dark-300/50 border border-dark-100 rounded-xl p-3 mb-3">
-            <label className="text-xs font-medium text-gray-400 mb-2 block">Withdraw To</label>
+            <label className="text-xs font-medium text-gray-400 mb-2 block">Switch Account</label>
             <div className="space-y-2">
               {withdrawalAccounts.map((account) => {
                 const isSelected = selectedAccount?.id === account.id
@@ -438,11 +397,11 @@ export default function WithdrawPage() {
           </div>
           <div className="flex items-center gap-2 text-xs text-gray-500">
             <ShieldCheckIcon className="w-3.5 h-3.5 text-emerald-400" />
-            PIN protected • No charges
+            PIN protected • 1% fee
           </div>
         </div>
 
-        {/* Transactions - Compact */}
+        {/* Recent Withdrawals */}
         <div className="mt-4">
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-sm font-medium text-gray-300">Recent Withdrawals</h3>

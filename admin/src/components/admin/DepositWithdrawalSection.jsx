@@ -625,12 +625,23 @@ function PaymentMethodModal({ open, onClose, method, onSaved }) {
 }
 
 // ── Reject Modal ─────────────────────────────────────────────
+const REJECT_REASONS = [
+  'Insufficient balance',
+  'Suspicious activity',
+  'Account under review',
+  'Invalid payment details',
+  'Document verification required',
+  'Daily limit exceeded',
+  'Technical error - retry',
+  'Duplicate request',
+]
+
 function RejectModal({ open, onClose, item, onConfirm }) {
   const [reason, setReason] = useState('')
   const [loading, setLoading] = useState(false)
 
   const handleConfirm = async () => {
-    if (!reason.trim()) return toast.error('Reason is required')
+    if (!reason.trim()) return toast.error('Select or enter a reason')
     setLoading(true)
     await onConfirm(item, reason)
     setLoading(false)
@@ -645,9 +656,26 @@ function RejectModal({ open, onClose, item, onConfirm }) {
         <DialogDescription>Are you sure you want to reject this withdrawal of PKR {Number(item?.amount).toLocaleString('en-IN')}?</DialogDescription>
       </DialogHeader>
       <DialogContent>
-        <FormField label="Rejection Reason">
-          <Input value={reason} onChange={e => setReason(e.target.value)} placeholder="Enter reason..." />
-        </FormField>
+        <div className="space-y-3">
+          <div className="flex flex-wrap gap-1.5">
+            {REJECT_REASONS.map(r => (
+              <button
+                key={r}
+                onClick={() => setReason(r)}
+                className={`px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-all ${
+                  reason === r
+                    ? 'bg-red-500/20 text-red-300 border-red-500/40'
+                    : 'bg-slate-800/50 text-slate-400 border-slate-700/50 hover:border-slate-600'
+                }`}
+              >
+                {r}
+              </button>
+            ))}
+          </div>
+          <FormField label="Or type custom reason">
+            <Input value={reason} onChange={e => setReason(e.target.value)} placeholder="Enter reason..." />
+          </FormField>
+        </div>
       </DialogContent>
       <DialogFooter>
         <Button variant="outline" onClick={onClose}>Cancel</Button>
