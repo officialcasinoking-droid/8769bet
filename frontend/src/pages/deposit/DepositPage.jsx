@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { motion } from 'framer-motion'
-import { Wallet, Building2, CheckCircle, Clock, AlertTriangle, TrendingUp, Eye, RefreshCw, Coins, Upload, Image, X } from 'lucide-react'
+import { Wallet, Building2, CheckCircle, Clock, AlertTriangle, TrendingUp, Eye, RefreshCw, Coins, Upload, Image, X, Copy } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../components/ui/Toast'
 import { Dialog, DialogHeader, DialogTitle, DialogContent, DialogFooter } from '../../components/ui/Dialog'
@@ -209,6 +209,15 @@ export default function DepositPage() {
       setShowPaymentInfo(true)
     } finally {
       setDepositing(false)
+    }
+  }
+
+  const handleCopyText = async (text) => {
+    try {
+      await navigator.clipboard.writeText(text)
+      toast.success('Copied!')
+    } catch {
+      toast.error('Failed to copy')
     }
   }
 
@@ -424,17 +433,41 @@ export default function DepositPage() {
             </div>
 
             {/* Payment Account Details */}
-            {currentMethod?.account_details && (
+            {currentMethod?.account_details && Object.keys(currentMethod.account_details).length > 0 ? (
               <div className="bg-dark-300/50 rounded-xl p-4">
-                <h4 className="text-sm font-semibold text-white mb-2">Send Payment To:</h4>
-                <div className="space-y-2 text-sm">
-                  {Object.entries(currentMethod.account_details).map(([key, value]) => (
-                    <div key={key} className="flex justify-between">
-                      <span className="text-gray-500 capitalize">{key.replace(/_/g, ' ')}</span>
-                      <span className="text-white font-mono">{String(value)}</span>
-                    </div>
-                  ))}
+                <h4 className="text-sm font-semibold text-white mb-3">Send Payment To:</h4>
+                <div className="space-y-2.5">
+                  {Object.entries(currentMethod.account_details).filter(([, v]) => v).map(([key, value]) => {
+                    const label = key.replace(/_/g, ' ')
+                    const isValue = key === 'account_number' || key === 'account_title' || key === 'bank_name'
+                    return (
+                      <div key={key} className="flex items-center justify-between bg-dark-400/50 rounded-lg px-3 py-2.5">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[10px] text-gray-500 uppercase tracking-wider">{label}</p>
+                          <p className={`text-sm font-medium text-white truncate ${isValue ? 'font-mono' : ''}`}>
+                            {String(value)}
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => handleCopyText(String(value))}
+                          className="ml-2 p-1.5 rounded-lg hover:bg-dark-300 text-gray-400 hover:text-emerald-400 transition-all flex-shrink-0"
+                          title={`Copy ${label}`}
+                        >
+                          <Copy className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    )
+                  })}
                 </div>
+                {currentMethod.account_details.instructions && (
+                  <p className="text-xs text-amber-400/80 mt-3 italic">
+                    {currentMethod.account_details.instructions}
+                  </p>
+                )}
+              </div>
+            ) : currentMethod && (
+              <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 text-center">
+                <p className="text-xs text-amber-300">Payment account details not configured yet. Please contact support.</p>
               </div>
             )}
 
