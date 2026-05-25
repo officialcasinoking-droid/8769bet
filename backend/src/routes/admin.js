@@ -15,7 +15,7 @@ router.get('/deposits', async (req, res) => {
   try {
     let query = supabase
       .from('deposits')
-      .select('*, users(username)')
+      .select('*')
       .order('created_at', { ascending: false })
     
     if (status) {
@@ -29,7 +29,17 @@ router.get('/deposits', async (req, res) => {
       return res.status(500).json({ error: 'Failed to fetch deposits' })
     }
 
-    res.json(data || [])
+    // Fetch usernames separately (deposits FK is to auth.users, not public.users)
+    const depositsWithUsers = await Promise.all((data || []).map(async (dep) => {
+      const { data: u } = await supabase
+        .from('users')
+        .select('username')
+        .eq('id', dep.user_id)
+        .maybeSingle()
+      return { ...dep, users: u || { username: null } }
+    }))
+
+    res.json(depositsWithUsers)
   } catch (err) {
     console.error('[admin/deposits] Exception:', err.message)
     res.status(500).json({ error: 'Internal server error' })
@@ -44,7 +54,7 @@ router.post('/deposits/:id', async (req, res) => {
   try {
     const { data: deposit, error: fetchError } = await supabase
       .from('deposits')
-      .select('*, users(username, balance)')
+      .select('*')
       .eq('id', id)
       .single()
 
@@ -52,6 +62,15 @@ router.post('/deposits/:id', async (req, res) => {
       console.error('[admin/deposits] Fetch error:', fetchError?.message)
       return res.status(404).json({ error: 'Deposit not found' })
     }
+
+    // Fetch user data separately
+    const { data: depositUser } = await supabase
+      .from('users')
+      .select('username, balance')
+      .eq('id', deposit.user_id)
+      .maybeSingle()
+    
+    deposit.users = depositUser || { username: 'Unknown', balance: 0 }
 
     if (deposit.status !== 'pending') {
       return res.status(400).json({ error: 'Deposit already processed' })

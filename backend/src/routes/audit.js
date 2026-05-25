@@ -38,7 +38,7 @@ router.get('/logs', async (req, res) => {
 
     let query = supabase
       .from('audit_logs')
-      .select('*', { count: 'exact' })
+      .select('id, actor_type, actor_username, action, target_type, target_username, details, severity, success, timestamp', { count: 'estimated', head: false })
 
     if (dateFrom) query = query.gte('timestamp', dateFrom)
     if (dateTo) query = query.lte('timestamp', dateTo)

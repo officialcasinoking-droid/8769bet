@@ -14,7 +14,7 @@ import aiWithdrawalRoutes from './routes/ai-withdrawal.js'
 import { landingContent } from './store.js'
 import { initGameEngine, getCurrentState, requestManualCrash, updateSettings, placeBet, cashoutBet } from './gameEngine.js'
 import { authenticateAdmin, getRequiredRoleForPath, requireRole } from './middleware/auth.js'
-import { createAuditMiddleware } from './middleware/auditLogger.js'
+import { createAuditMiddleware, initAuditWebSocket } from './middleware/auditLogger.js'
 import { createLoginRateLimiter } from './middleware/rateLimiter.js'
 import multer from 'multer'
 
@@ -177,6 +177,10 @@ app.post('/api/deposits', async (req, res) => {
   
   if (!userId || !amount) {
     return res.status(400).json({ error: 'userId and amount required' })
+  }
+
+  if (!screenshotUrl) {
+    return res.status(400).json({ error: 'Transaction screenshot is required' })
   }
 
   try {
@@ -476,4 +480,6 @@ server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`)
   // Initialize the Aviator game engine with WebSocket
   initGameEngine(server)
+  // Initialize audit WebSocket
+  initAuditWebSocket(server)
 })

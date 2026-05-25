@@ -33,12 +33,16 @@ router.get('/', async (req, res) => {
       .select('id')
       .limit(1)
 
+    const allowedSorts = ['created_at', 'username', 'email', 'balance', 'status', 'id']
+    const safeSort = allowedSorts.includes(sortBy) ? sortBy : 'created_at'
+    const safeOrder = sortOrder === 'asc' ? { ascending: true } : { ascending: false }
+
     let query = supabase
       .from('users')
-      .select('*', { count: 'exact' })
+      .select('id, username, email, balance, status, role, withdrawal_pin_set, created_at, updated_at, risk_level, kyc_status, last_login', { count: 'estimated', head: false })
 
     if (search) {
-      query = query.or(`username.ilike.%${search}%,email.ilike.%${search}%,id.eq.${search}`)
+      query = query.or(`username.ilike.%${search}%,email.ilike.%${search}%`)
     }
 
     if (status) {
@@ -54,7 +58,7 @@ router.get('/', async (req, res) => {
     }
 
     query = query
-      .order(sortBy, { ascending: sortOrder === 'asc' })
+      .order(safeSort, safeOrder)
       .range(offset, offset + limit - 1)
 
     const { data: users, error, count } = await query
@@ -63,7 +67,7 @@ router.get('/', async (req, res) => {
 
     res.json({
       success: true,
-      users,
+      users: users || [],
       pagination: {
         page,
         limit,
