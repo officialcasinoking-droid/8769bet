@@ -276,6 +276,25 @@ router.post('/withdrawals/:id', async (req, res) => {
   }
 })
 
+async function seedDefaultAdmin(username, password) {
+  try {
+    const hash = await bcrypt.hash(password, 12)
+    const { error } = await supabase.from('admins').insert({
+      id: '00000000-0000-0000-0000-000000000001',
+      username,
+      password_hash: hash,
+      email: 'admin@8769bet.com',
+      full_name: 'Super Admin',
+      role: 'super_admin',
+      permissions: { all: true },
+      is_active: true
+    })
+    if (error) console.error('[seedAdmin] Insert error:', error.message)
+  } catch (e) {
+    console.error('[seedAdmin] Error:', e.message)
+  }
+}
+
 // Admin login
 router.post('/login', async (req, res) => {
   try {
@@ -286,70 +305,82 @@ router.post('/login', async (req, res) => {
       return res.status(400).json({ error: 'Username and password required' })
     }
 
-    // Try database admin accounts first
-    const { data: admin, error: adminError } = await supabase
-      .from('admins')
-      .select('*')
-      .eq('username', username)
-      .single()
-
-    if (!adminError && admin && admin.password_hash) {
-      const isValid = await bcrypt.compare(password, admin.password_hash)
-      if (isValid) {
-        const token = jwt.sign(
-          { adminId: admin.id, username: admin.username, role: admin.role },
-          JWT_SECRET,
-          { expiresIn: '24h' }
-        )
-
-        await logAudit({
-          actorType: 'admin',
-          actorId: admin.id,
-          actorUsername: admin.username,
-          action: 'admin_login',
-          ipAddress: req.ip,
-          userAgent: req.headers['user-agent']
-        })
-
-        return res.json({
-          success: true,
-          token,
-          admin: {
-            id: admin.id,
-            username: admin.username,
-            email: admin.email,
-            fullName: admin.full_name,
-            role: admin.role,
-            permissions: admin.permissions
-          }
-        })
-      }
-    }
-
-    // Fallback: try the old platform_settings credentials
-    const { data: platformSettings } = await supabase
-      .from('platform_settings')
-      .select('admin_username, admin_password')
-      .eq('id', 'main')
-      .single()
-
-    if (platformSettings && username === platformSettings.admin_username && password === platformSettings.admin_password) {
+    const respondAdmin = (adminId, adminUsername, role, permissions, email, fullName) => {
       const token = jwt.sign(
-        { adminId: '00000000-0000-0000-0000-000000000001', username, role: 'super_admin' },
+        { adminId, username: adminUsername, role },
         JWT_SECRET,
         { expiresIn: '24h' }
       )
-
+      logAudit({
+        actorType: 'admin',
+        actorId: adminId,
+        actorUsername: adminUsername,
+        action: 'admin_login',
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent']
+      }).catch(() => {})
       return res.json({
         success: true,
         token,
         admin: {
-          id: '00000000-0000-0000-0000-000000000001',
-          username,
-          role: 'super_admin',
-          permissions: { all: true }
+          id: adminId,
+          username: adminUsername,
+          email: email || 'admin@8769bet.com',
+          fullName: fullName || 'Super Admin',
+          role,
+          permissions
         }
       })
+    }
+
+    // 1. Try admins table (bcrypt)
+    const { data: admin, error: adminError } = await supabase
+      .from('admins')
+      .select('*')
+      .eq('username', username)
+      .maybeSingle()
+
+    if (admin && admin.password_hash) {
+      const isValid = await bcrypt.compare(password, admin.password_hash)
+      if (isValid) {
+        return respondAdmin(admin.id, admin.username, admin.role, admin.permissions, admin.email, admin.full_name)
+      }
+    }
+
+    // 2. Try admin_accounts table (used by auth middleware)
+    const { data: acct, error: acctError } = await supabase
+      .from('admin_accounts')
+      .select('*')
+      .eq('username', username)
+      .maybeSingle()
+
+    if (acct && acct.password_hash) {
+      const isValid = await bcrypt.compare(password, acct.password_hash)
+      if (isValid) {
+        return respondAdmin(acct.id, acct.username, acct.role || 'super_admin', acct.permissions || { all: true }, acct.email, acct.full_name)
+      }
+    }
+
+    // 3. Fallback: platform_settings
+    const { data: platformSettings, error: psError } = await supabase
+      .from('platform_settings')
+      .select('admin_username, admin_password')
+      .eq('id', 'main')
+      .maybeSingle()
+
+    if (!psError && platformSettings?.admin_username && platformSettings?.admin_password) {
+      if (username === platformSettings.admin_username && password === platformSettings.admin_password) {
+        seedDefaultAdmin(username, password)
+        return respondAdmin('00000000-0000-0000-0000-000000000001', username, 'super_admin', { all: true })
+      }
+    }
+
+    // 4. Fallback: environment variables
+    const envUsername = process.env.ADMIN_USERNAME
+    const envPassword = process.env.ADMIN_PASSWORD
+    if (envUsername && envPassword && username === envUsername && password === envPassword) {
+      seedDefaultAdmin(username, password)
+      return respondAdmin('00000000-0000-0000-0000-000000000001', username, 'super_admin', { all: true })
     }
 
     res.status(401).json({ error: 'Invalid credentials' })

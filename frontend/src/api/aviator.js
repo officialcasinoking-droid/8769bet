@@ -3,7 +3,7 @@
  * Uses Supabase Realtime for real-time game sync
  */
 
-import { supabaseAnon as supabase, supabaseAdmin } from '../lib/supabase'
+import { supabaseAnon as supabase } from '../lib/supabase'
 
 // ──────────────────────────────────────────────
 // Supabase Realtime Game State

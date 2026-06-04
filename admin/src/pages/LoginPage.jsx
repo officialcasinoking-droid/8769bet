@@ -109,7 +109,7 @@ export default function LoginPage() {
             <p className="text-xs text-admin-muted text-center mb-2">Demo Credentials</p>
             <div className="text-xs text-admin-muted space-y-1">
               <p><span className="text-primary-400">Username:</span> admin</p>
-              <p><span className="text-primary-400">Password:</span> admin123</p>
+              <p><span className="text-primary-400">Password:</span> admin8769</p>
             </div>
           </div>
         </div>

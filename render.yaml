@@ -48,3 +48,7 @@ services:
         value: https://eight769bet-backend.onrender.com
       - key: FRONTEND_URL
         value: https://eight769bet-frontend.onrender.com
+      - key: ADMIN_USERNAME
+        value: admin
+      - key: ADMIN_PASSWORD
+        value: admin123

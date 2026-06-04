@@ -278,20 +278,35 @@ export default function WithdrawPage() {
           </motion.div>
         ) : null}
 
-        {/* Selected Withdrawal Account */}
-        {selectedAccount && hasPIN && hasAccount && (
-          <div className="bg-gradient-to-br from-emerald-500/20 to-emerald-500/10 border border-emerald-500/30 rounded-xl p-3 mb-3">
-            <p className="text-[10px] text-emerald-400/80">Withdraw To</p>
-            <div className="flex items-center gap-2 mt-1">
-              <span className="text-lg">
-                {selectedAccount.type === 'jazzcash' ? '📱' : selectedAccount.type === 'easypaisa' ? '📱' : '🏦'}
-              </span>
-              <div>
-                <p className="text-sm font-bold text-white capitalize">
-                  {selectedAccount.type === 'jazzcash' ? 'JazzCash' : selectedAccount.type === 'easypaisa' ? 'Easypaisa' : 'Bank'}
-                </p>
-                <p className="text-xs text-gray-400">••••{selectedAccount.account_number?.slice(-4)}</p>
-              </div>
+        {/* Withdrawal Account Selection */}
+        {hasPIN && hasAccount && (
+          <div className="bg-dark-300/50 border border-dark-100 rounded-xl p-3 mb-3">
+            <label className="text-xs font-medium text-gray-400 mb-2 block">Withdraw To</label>
+            <div className="space-y-2">
+              {withdrawalAccounts.map((account) => {
+                const isSelected = selectedAccount?.id === account.id
+                const methodIcon = account.type === 'jazzcash' ? '📱' : account.type === 'easypaisa' ? '📱' : '🏦'
+                const methodName = account.type === 'jazzcash' ? 'JazzCash' : account.type === 'easypaisa' ? 'Easypaisa' : 'Bank'
+                
+                return (
+                  <button
+                    key={account.id}
+                    onClick={() => setSelectedAccount(account)}
+                    className={`w-full p-3 rounded-lg border transition-all flex items-center gap-2 ${
+                      isSelected
+                        ? 'border-emerald-500 bg-emerald-500/10'
+                        : 'border-dark-100 hover:border-dark-200'
+                    }`}
+                  >
+                    <span className="text-xl">{methodIcon}</span>
+                    <div className="flex-1 text-left">
+                      <p className={`text-sm font-medium ${isSelected ? 'text-white' : 'text-gray-300'}`}>{methodName}</p>
+                      <p className="text-xs text-gray-500">••••{account.account_number.slice(-4)}</p>
+                    </div>
+                    {isSelected && <CheckCircleIcon className="w-5 h-5 text-emerald-400" />}
+                  </button>
+                )
+              })}
             </div>
           </div>
         )}
@@ -337,39 +352,6 @@ export default function WithdrawPage() {
             Min: ₨{MIN_WITHDRAWAL} | Max: ₨{MAX_WITHDRAWAL.toLocaleString()} | Balance: {formatBalance(availableBalance)}
           </div>
         </div>
-
-        {/* Withdrawal Account Selection */}
-        {hasPIN && hasAccount && (
-          <div className="bg-dark-300/50 border border-dark-100 rounded-xl p-3 mb-3">
-            <label className="text-xs font-medium text-gray-400 mb-2 block">Switch Account</label>
-            <div className="space-y-2">
-              {withdrawalAccounts.map((account) => {
-                const isSelected = selectedAccount?.id === account.id
-                const methodIcon = account.type === 'jazzcash' ? '📱' : account.type === 'easypaisa' ? '📱' : '🏦'
-                const methodName = account.type === 'jazzcash' ? 'JazzCash' : account.type === 'easypaisa' ? 'Easypaisa' : 'Bank'
-                
-                return (
-                  <button
-                    key={account.id}
-                    onClick={() => setSelectedAccount(account)}
-                    className={`w-full p-3 rounded-lg border transition-all flex items-center gap-2 ${
-                      isSelected
-                        ? 'border-emerald-500 bg-emerald-500/10'
-                        : 'border-dark-100 hover:border-dark-200'
-                    }`}
-                  >
-                    <span className="text-xl">{methodIcon}</span>
-                    <div className="flex-1 text-left">
-                      <p className={`text-sm font-medium ${isSelected ? 'text-white' : 'text-gray-300'}`}>{methodName}</p>
-                      <p className="text-xs text-gray-500">••••{account.account_number.slice(-4)}</p>
-                    </div>
-                    {isSelected && <CheckCircleIcon className="w-5 h-5 text-emerald-400" />}
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-        )}
 
         {/* Withdraw Button */}
         <button
