@@ -11,7 +11,6 @@ import LoginPage from './pages/auth/LoginPage'
 import RegisterPage from './pages/auth/RegisterPage'
 import GamesPage from './pages/games/GamesPage'
 import GameDetailPage from './pages/games/GameDetailPage'
-import AviatorPage from './pages/games/AviatorPage'
 import AviatorGame from './components/games/AviatorGame'
 import DepositPage from './pages/deposit/DepositPage'
 import WithdrawPage from './pages/withdraw/WithdrawPage'
@@ -40,11 +39,7 @@ function AppRoutes() {
         <Route path="login" element={<LoginPage />} />
         <Route path="register" element={<RegisterPage />} />
         <Route path="games" element={<GamesPage />} />
-        <Route path="games/aviator" element={
-          <ProtectedRoute>
-            <AviatorPage />
-          </ProtectedRoute>
-        } />
+        <Route path="games/aviator" element={<Navigate to="/play/aviator" replace />} />
         <Route path="games/:slug" element={<GameDetailPage />} />
         <Route path="deposit" element={
           <ProtectedRoute>

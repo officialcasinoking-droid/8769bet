@@ -1,265 +1,208 @@
 /**
- * WebSocket Client for Aviator Game
- * Connects to backend WebSocket server for real-time game state
+ * Aviator Game Client
+ * WebSocket primary, HTTP polling fallback for Render free tier compatibility.
  */
 
-class AviatorWebSocketClient {
+const API_URL = import.meta.env.VITE_API_URL || 'https://eight769bet-backend.onrender.com'
+
+class AviatorGameClient {
   constructor() {
     this.ws = null
     this.reconnectTimer = null
     this.isConnected = false
+    this.isPolling = false
+    this.pollingTimer = null
     this.reconnectAttempts = 0
+    this.wsFailAttempts = 0
     this.maxReconnectDelay = 15000
+    this.maxWsFailBeforePoll = 2
     this.listeners = {
       game_state: [],
       bets_update: [],
       settings_updated: [],
       bet_result: [],
-      cashout_result: []
+      cashout_result: [],
+      cancel_result: [],
+      ws_connected: [],
+      ping: [],
+      polling_active: [],
     }
-    // Build WebSocket URL with path
     const envUrl = import.meta.env.VITE_BACKEND_WS_URL
     if (envUrl) {
-      // Clean URL - remove any trailing slashes and /ws/aviator if already present
-      let cleanUrl = envUrl.trim()
-      if (cleanUrl.endsWith('/')) {
-        cleanUrl = cleanUrl.slice(0, -1)
-      }
-      // Remove /ws/aviator if already present to avoid duplication
+      let cleanUrl = envUrl.trim().replace(/\/$/, '')
       if (cleanUrl.includes('/ws/aviator')) {
-        // Find the base URL before /ws/aviator
-        const idx = cleanUrl.indexOf('/ws/aviator')
-        cleanUrl = cleanUrl.substring(0, idx)
+        cleanUrl = cleanUrl.substring(0, cleanUrl.indexOf('/ws/aviator'))
       }
-      // Now add the path
-      this.backendUrl = `${cleanUrl}/ws/aviator`
+      this.wsUrl = `${cleanUrl}/ws/aviator`
     } else {
-      // Auto-detect from current location
-      const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-      this.backendUrl = `${wsProtocol}//${window.location.host}/ws/aviator`
+      const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+      this.wsUrl = `${proto}//${window.location.host}/ws/aviator`
     }
   }
 
-  /**
-   * Connect to WebSocket server
-   */
   connect() {
-    console.log('[WS] Connecting to:', this.backendUrl)
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      console.log('[WS] Already connected')
-      return
-    }
-
-    // Close existing connection if any
-    if (this.ws) {
-      try { this.ws.close() } catch {}
-      this.ws = null
-    }
+    if (this.isPolling) return
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) return
+    if (this.ws) { try { this.ws.close() } catch {} this.ws = null }
 
     try {
-      this.ws = new WebSocket(this.backendUrl)
+      this.ws = new WebSocket(this.wsUrl)
 
       this.ws.onopen = () => {
-        console.log('[WS] Connected to game server')
         this.isConnected = true
+        this.wsFailAttempts = 0
         this.resetReconnectAttempts()
-        if (this.reconnectTimer) {
-          clearTimeout(this.reconnectTimer)
-          this.reconnectTimer = null
-        }
-        // Notify listeners of reconnection
-        this.handleMessage({ type: 'ws_connected' })
+        if (this.reconnectTimer) { clearTimeout(this.reconnectTimer); this.reconnectTimer = null }
+        this.emit('ws_connected')
       }
 
       this.ws.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data)
-          this.handleMessage(data)
-        } catch (error) {
-          console.error('[WS] Failed to parse message:', error)
-        }
+        try { this.emit(JSON.parse(event.data)) } catch {}
       }
 
       this.ws.onclose = () => {
-        console.log('[WS] Connection closed')
         this.isConnected = false
+        this.wsFailAttempts++
+        if (this.wsFailAttempts >= this.maxWsFailBeforePoll && !this.isPolling) {
+          this.startPolling()
+        } else {
+          this.scheduleReconnect()
+        }
+      }
+
+      this.ws.onerror = () => {
+        this.isConnected = false
+      }
+    } catch {
+      this.wsFailAttempts++
+      if (this.wsFailAttempts >= this.maxWsFailBeforePoll) {
+        this.startPolling()
+      } else {
         this.scheduleReconnect()
       }
-
-      this.ws.onerror = (error) => {
-        console.error('[WS] Connection error')
-        this.isConnected = false
-      }
-    } catch (error) {
-      console.error('[WS] Failed to connect:', error)
-      this.scheduleReconnect()
     }
   }
 
-  /**
-   * Schedule reconnection attempt with exponential backoff
-   */
   scheduleReconnect() {
-    if (this.reconnectTimer) return
-    
-    // Exponential backoff: 1s, 2s, 4s, 8s, 15s max
+    if (this.reconnectTimer || this.isPolling) return
     const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), this.maxReconnectDelay)
     this.reconnectAttempts++
-    
-    console.log(`[WS] Reconnecting in ${delay/1000}s (attempt ${this.reconnectAttempts})...`)
-    this.reconnectTimer = setTimeout(() => {
-      this.connect()
-    }, delay)
+    this.reconnectTimer = setTimeout(() => this.connect(), delay)
   }
 
-  /**
-   * Reset reconnect counter on successful connection
-   */
   resetReconnectAttempts() {
     this.reconnectAttempts = 0
+    this.wsFailAttempts = 0
   }
 
-  /**
-   * Handle incoming messages
-   */
-  handleMessage(data) {
+  // ── HTTP Polling fallback ──
+
+  startPolling() {
+    if (this.isPolling) return
+    if (this.ws) { try { this.ws.close() } catch {} this.ws = null }
+    this.isPolling = true
+    this.isConnected = true
+    console.log('[Game] WebSocket unavailable — switching to HTTP polling')
+    this.emit('polling_active')
+    this.emit('ws_connected')
+    this.fetchState()
+    this.pollingTimer = setInterval(() => this.fetchState(), 1000)
+  }
+
+  async fetchState() {
+    try {
+      const res = await fetch(`${API_URL}/api/aviator/state`)
+      if (!res.ok) return
+      const data = await res.json()
+      this.emit({
+        type: 'game_state',
+        phase: data.phase,
+        mult: data.mult || data.multiplier,
+        countdown: data.countdown,
+        crash_point: data.crash_point || data.crashPoint,
+        roundId: data.roundId,
+        crashHistory: data.crashHistory,
+        bets: data.bets,
+        settings: data.settings,
+      })
+    } catch {}
+  }
+
+  // ── Event system ──
+
+  emit(data) {
+    if (typeof data === 'string') data = { type: data }
     const { type, ...payload } = data
-
     if (this.listeners[type]) {
-      this.listeners[type].forEach(callback => callback(payload))
+      this.listeners[type].forEach(cb => cb(payload))
     }
   }
 
-  /**
-   * Subscribe to game events
-   */
   on(eventType, callback) {
-    if (this.listeners[eventType]) {
-      this.listeners[eventType].push(callback)
-    }
+    if (this.listeners[eventType]) this.listeners[eventType].push(callback)
   }
 
-  /**
-   * Remove listener
-   */
   off(eventType, callback) {
     if (this.listeners[eventType]) {
       this.listeners[eventType] = this.listeners[eventType].filter(cb => cb !== callback)
     }
   }
 
-  /**
-   * Clear all listeners
-   */
   clearListeners() {
-    Object.keys(this.listeners).forEach(key => {
-      this.listeners[key] = []
-    })
+    Object.keys(this.listeners).forEach(k => { this.listeners[k] = [] })
   }
 
-  /**
-   * Place a bet
-   */
+  // ── Actions ──
+
+  send(msg) {
+    if (this.ws && this.isConnected && !this.isPolling) {
+      this.ws.send(JSON.stringify(msg))
+      return true
+    }
+    return false
+  }
+
+  async postAction(path, body) {
+    try {
+      const res = await fetch(`${API_URL}${path}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      return await res.json()
+    } catch { return { success: false, error: 'Network error' } }
+  }
+
   placeBet(betData) {
-    if (!this.isConnected) {
-      console.error('[WS] Not connected')
-      return { success: false, error: 'Not connected' }
-    }
-
-    const message = {
-      type: 'place_bet',
-      ...betData
-    }
-
-    this.ws.send(JSON.stringify(message))
-    return { success: true }
+    if (this.send({ type: 'place_bet', ...betData })) return { success: true }
+    this.postAction('/api/aviator/bet', betData).then(r => this.emit({ type: 'bet_result', ...r }))
+    return { success: true, pending: true }
   }
 
-  /**
-   * Cash out
-   */
   cashout(userId, betNum) {
-    if (!this.isConnected) {
-      console.error('[WS] Not connected')
-      return { success: false, error: 'Not connected' }
-    }
-
-    const message = {
-      type: 'cashout',
-      userId,
-      betNum
-    }
-
-    this.ws.send(JSON.stringify(message))
-    return { success: true }
+    if (this.send({ type: 'cashout', userId, betNum })) return { success: true }
+    this.postAction('/api/aviator/cashout', { userId, betNum }).then(r => this.emit({ type: 'cashout_result', ...r, betNum }))
+    return { success: true, pending: true }
   }
 
-  /**
-   * Request manual crash (admin only)
-   */
-  requestManualCrash() {
-    if (!this.isConnected) {
-      console.error('[WS] Not connected')
-      return
-    }
-
-    this.ws.send(JSON.stringify({ type: 'manual_crash' }))
+  cancelBet(userId, betNum, betId) {
+    if (this.send({ type: 'cancel_bet', userId, betNum, betId })) return { success: true }
+    this.postAction('/api/aviator/cancel-bet', { userId, betNum, betId }).then(r => this.emit({ type: 'cancel_result', ...r }))
+    return { success: true, pending: true }
   }
 
-  /**
-   * Update settings (admin only)
-   */
-  updateSettings(settings) {
-    if (!this.isConnected) {
-      console.error('[WS] Not connected')
-      return
-    }
+  requestManualCrash() { this.send({ type: 'manual_crash' }) }
+  updateSettings(settings) { this.send({ type: 'update_settings', settings }) }
 
-    this.ws.send(JSON.stringify({
-      type: 'update_settings',
-      settings
-    }))
-  }
-
-  /**
-   * Disconnect
-   */
   disconnect() {
-    if (this.reconnectTimer) {
-      clearTimeout(this.reconnectTimer)
-      this.reconnectTimer = null
-    }
-
-    if (this.ws) {
-      this.ws.close()
-      this.ws = null
-    }
-
+    if (this.reconnectTimer) { clearTimeout(this.reconnectTimer); this.reconnectTimer = null }
+    if (this.pollingTimer) { clearInterval(this.pollingTimer); this.pollingTimer = null }
+    if (this.ws) { try { this.ws.close() } catch {} this.ws = null }
     this.isConnected = false
+    this.isPolling = false
     this.clearListeners()
-  }
-
-  /**
-   * Get connection state
-   */
-  getConnectionState() {
-    if (!this.ws) return 'closed'
-    switch (this.ws.readyState) {
-      case WebSocket.CONNECTING:
-        return 'connecting'
-      case WebSocket.OPEN:
-        return 'open'
-      case WebSocket.CLOSING:
-        return 'closing'
-      case WebSocket.CLOSED:
-        return 'closed'
-      default:
-        return 'unknown'
-    }
   }
 }
 
-// Singleton instance
-export const aviatorWS = new AviatorWebSocketClient()
-
+export const aviatorWS = new AviatorGameClient()
 export default aviatorWS
