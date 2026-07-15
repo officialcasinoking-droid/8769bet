@@ -119,8 +119,12 @@ export default function AviatorCanvas({ phase, mult, crashedAt, cashoutExits }) 
       const dt = lastFrameTime.current ? Math.min((now - lastFrameTime.current) / 1000, 0.05) : 0.016
       lastFrameTime.current = now
 
-      const { phase: p, mult: m, crashedAt: cp } = stateRef.current
-      const dm = Math.max(1, m)
+      const { phase: p, crashedAt: cp } = stateRef.current
+      const elapsed = (now - startTimeRef.current) / 1000
+      const calcMult = p === 'running' || p === 'flying'
+        ? Math.pow(Math.E, 0.06 * elapsed)
+        : p === 'crashed' ? (cp || 1) : 1
+      const dm = Math.max(1, calcMult)
 
       ctx.clearRect(0, 0, W, H)
       if (bg) ctx.drawImage(bg, 0, 0)

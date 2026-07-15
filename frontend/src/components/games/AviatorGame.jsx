@@ -214,8 +214,8 @@ export default function AviatorGame() {
     })
 
     aviatorWS.on('bet_result', (result) => {
-      if (result.success) {
-        const num = result.betNumber
+      if (result.success && result.bet) {
+        const num = result.bet.betNum || result.betNumber || 1
         const setter = num === 1 ? setB1d : setB2d
         setter(p => p && p.id.startsWith('temp_') ? { ...p, id: result.bet.id } : p)
         setMyHistory(p => p.map(e => e.pending && e.betId.startsWith('temp_') && e.amount === result.bet.amount ? { ...e, betId: result.bet.id } : e))
