@@ -1,4 +1,6 @@
-export default function LiveBets({ bets, currentUsername }) {
+import { memo } from 'react'
+
+const LiveBets = memo(function LiveBets({ bets, currentUsername }) {
   return (
     <div className="flex flex-col bg-[#0f1929] border-l border-white/[0.04] flex-[0.25] min-w-[120px]">
       <div className="flex items-center gap-2 px-2.5 py-2 border-b border-white/[0.04] flex-shrink-0">
@@ -30,4 +32,6 @@ export default function LiveBets({ bets, currentUsername }) {
       </div>
     </div>
   )
-}
+})
+
+export default LiveBets

@@ -1,145 +1,129 @@
 import { useEffect, useRef } from 'react'
 
-const STAR_COUNT = 60
+const STAR_COUNT = 50
 
-function precomputeStars(count) {
-  const stars = []
-  for (let i = 0; i < count; i++) {
-    stars.push({
-      x: Math.random(), y: Math.random(),
-      size: 0.4 + Math.random() * 1.0,
-      speed: 0.00015 + Math.random() * 0.0006,
-      phase: Math.random() * Math.PI * 2,
-      alpha: 0.12 + Math.random() * 0.35,
-    })
-  }
-  return stars
+function makeStars(n) {
+  const a = []
+  for (let i = 0; i < n; i++) a.push({ x: Math.random(), y: Math.random(), s: 0.3 + Math.random() * 0.9, sp: 0.0001 + Math.random() * 0.0005, ph: Math.random() * 6.28, al: 0.1 + Math.random() * 0.3 })
+  return a
+}
+function makeTrailDots(n) {
+  const a = []
+  for (let i = 0; i < n; i++) a.push({ ox: (Math.random() - 0.5) * 4, oy: (Math.random() - 0.5) * 4, sz: 0.6 + Math.random() * 1, ph: Math.random() * 6.28 })
+  return a
 }
 
-function precomputeTrail(count) {
-  const pts = []
-  for (let i = 0; i < count; i++) {
-    pts.push({
-      offX: (Math.random() - 0.5) * 5,
-      offY: (Math.random() - 0.5) * 5,
-      size: 0.8 + Math.random() * 1.2,
-      phase: Math.random() * Math.PI * 2,
-    })
-  }
-  return pts
+function bez(t, ox, oy, cx, cy, ex, ey) {
+  const m = 1 - t
+  return { x: m * m * ox + 2 * m * t * cx + t * t * ex, y: m * m * oy + 2 * m * t * cy + t * t * ey }
 }
 
-function bezierPoint(t, ox, oy, cpx, cpy, ex, ey) {
-  const mt = 1 - t
-  return {
-    x: mt * mt * ox + 2 * mt * t * cpx + t * t * ex,
-    y: mt * mt * oy + 2 * mt * t * cpy + t * t * ey,
-  }
-}
-
-function drawPlane(ctx, x, y, angle, frame) {
+function drawPlane(ctx, x, y, angle, time, scale) {
   ctx.save()
   ctx.translate(x, y)
   ctx.rotate(angle)
-  const s = 1.1
+  const s = scale
 
-  // Engine exhaust glow
-  const glowSize = 6 + Math.sin(frame * 0.4) * 2
-  const grd = ctx.createRadialGradient(-26 * s, 0, 0, -26 * s, 0, glowSize * 2)
-  grd.addColorStop(0, 'rgba(255,160,50,0.5)')
-  grd.addColorStop(0.4, 'rgba(255,100,20,0.2)')
-  grd.addColorStop(1, 'rgba(255,60,10,0)')
-  ctx.fillStyle = grd
-  ctx.beginPath()
-  ctx.arc(-26 * s, 0, glowSize * 2, 0, Math.PI * 2)
-  ctx.fill()
+  // Exhaust glow
+  const gs = 8 + Math.sin(time * 8) * 2
+  const g = ctx.createRadialGradient(-30 * s, 0, 0, -30 * s, 0, gs * 2.5)
+  g.addColorStop(0, 'rgba(255,160,50,0.6)')
+  g.addColorStop(0.3, 'rgba(255,80,20,0.25)')
+  g.addColorStop(1, 'rgba(255,40,10,0)')
+  ctx.fillStyle = g
+  ctx.beginPath(); ctx.arc(-30 * s, 0, gs * 2.5, 0, Math.PI * 2); ctx.fill()
 
-  // Exhaust flame
-  ctx.fillStyle = 'rgba(255,180,60,0.7)'
+  // Flame
+  ctx.fillStyle = 'rgba(255,200,80,0.8)'
   ctx.beginPath()
-  ctx.moveTo(-24 * s, -2.5 * s)
-  ctx.lineTo(-24 * s - (6 + Math.sin(frame * 0.5) * 3) * s, 0)
-  ctx.lineTo(-24 * s, 2.5 * s)
-  ctx.closePath()
-  ctx.fill()
+  ctx.moveTo(-28 * s, -3 * s)
+  ctx.lineTo(-28 * s - (8 + Math.sin(time * 12) * 4) * s, 0)
+  ctx.lineTo(-28 * s, 3 * s)
+  ctx.closePath(); ctx.fill()
 
-  // Fuselage (sleek body)
-  ctx.fillStyle = '#d1d5db'
+  // Fuselage
+  const fGrd = ctx.createLinearGradient(0, -5 * s, 0, 5 * s)
+  fGrd.addColorStop(0, '#e5e7eb')
+  fGrd.addColorStop(0.5, '#d1d5db')
+  fGrd.addColorStop(1, '#9ca3af')
+  ctx.fillStyle = fGrd
   ctx.beginPath()
-  ctx.ellipse(0, 0, 24 * s, 4.5 * s, 0, 0, Math.PI * 2)
-  ctx.fill()
-  // Fuselage top highlight
-  ctx.fillStyle = 'rgba(255,255,255,0.25)'
-  ctx.beginPath()
-  ctx.ellipse(0, -1.5 * s, 20 * s, 2 * s, 0, 0, Math.PI * 2)
-  ctx.fill()
+  ctx.moveTo(30 * s, 0)
+  ctx.bezierCurveTo(28 * s, -5 * s, -10 * s, -6 * s, -30 * s, -4 * s)
+  ctx.lineTo(-30 * s, 4 * s)
+  ctx.bezierCurveTo(-10 * s, 6 * s, 28 * s, 5 * s, 30 * s, 0)
+  ctx.closePath(); ctx.fill()
 
-  // Wings (swept back, modern)
-  ctx.fillStyle = '#9ca3af'
+  // Cockpit canopy
+  ctx.fillStyle = 'rgba(56,189,248,0.55)'
   ctx.beginPath()
-  ctx.moveTo(-2 * s, -3 * s)
-  ctx.lineTo(-14 * s, -16 * s)
-  ctx.lineTo(4 * s, -3 * s)
-  ctx.closePath()
+  ctx.ellipse(18 * s, -2.5 * s, 7 * s, 3 * s, -0.1, 0, Math.PI * 2)
   ctx.fill()
-  ctx.beginPath()
-  ctx.moveTo(-2 * s, 3 * s)
-  ctx.lineTo(-14 * s, 16 * s)
-  ctx.lineTo(4 * s, 3 * s)
-  ctx.closePath()
-  ctx.fill()
+  ctx.strokeStyle = 'rgba(255,255,255,0.35)'
+  ctx.lineWidth = 0.6
+  ctx.stroke()
 
-  // Tail fin (vertical stabilizer)
+  // Main wings
+  ctx.fillStyle = '#6b7280'
+  ctx.beginPath()
+  ctx.moveTo(2 * s, -5 * s)
+  ctx.lineTo(-8 * s, -22 * s)
+  ctx.lineTo(10 * s, -22 * s)
+  ctx.lineTo(12 * s, -5 * s)
+  ctx.closePath(); ctx.fill()
+  ctx.beginPath()
+  ctx.moveTo(2 * s, 5 * s)
+  ctx.lineTo(-8 * s, 22 * s)
+  ctx.lineTo(10 * s, 22 * s)
+  ctx.lineTo(12 * s, 5 * s)
+  ctx.closePath(); ctx.fill()
+
+  // Wing highlights
+  ctx.fillStyle = 'rgba(255,255,255,0.12)'
+  ctx.beginPath()
+  ctx.moveTo(4 * s, -5 * s)
+  ctx.lineTo(-4 * s, -18 * s)
+  ctx.lineTo(8 * s, -18 * s)
+  ctx.lineTo(10 * s, -5 * s)
+  ctx.closePath(); ctx.fill()
+
+  // Tail vertical stabilizer
+  ctx.fillStyle = '#4b5563'
+  ctx.beginPath()
+  ctx.moveTo(-22 * s, -4 * s)
+  ctx.lineTo(-28 * s, -16 * s)
+  ctx.lineTo(-18 * s, -16 * s)
+  ctx.lineTo(-16 * s, -4 * s)
+  ctx.closePath(); ctx.fill()
+
+  // Tail horizontal stabilizer
   ctx.fillStyle = '#6b7280'
   ctx.beginPath()
   ctx.moveTo(-20 * s, -4 * s)
-  ctx.lineTo(-26 * s, -12 * s)
-  ctx.lineTo(-16 * s, -4 * s)
-  ctx.closePath()
-  ctx.fill()
-
-  // Horizontal stabilizer
-  ctx.fillStyle = '#9ca3af'
+  ctx.lineTo(-26 * s, -10 * s)
+  ctx.lineTo(-14 * s, -10 * s)
+  ctx.lineTo(-14 * s, -4 * s)
+  ctx.closePath(); ctx.fill()
   ctx.beginPath()
-  ctx.moveTo(-18 * s, -3 * s)
-  ctx.lineTo(-24 * s, -8 * s)
-  ctx.lineTo(-14 * s, -3 * s)
-  ctx.closePath()
-  ctx.fill()
-  ctx.beginPath()
-  ctx.moveTo(-18 * s, 3 * s)
-  ctx.lineTo(-24 * s, 8 * s)
-  ctx.lineTo(-14 * s, 3 * s)
-  ctx.closePath()
-  ctx.fill()
+  ctx.moveTo(-20 * s, 4 * s)
+  ctx.lineTo(-26 * s, 10 * s)
+  ctx.lineTo(-14 * s, 10 * s)
+  ctx.lineTo(-14 * s, 4 * s)
+  ctx.closePath(); ctx.fill()
 
-  // Cockpit window
-  ctx.fillStyle = 'rgba(100,200,255,0.6)'
+  // Nose
+  ctx.fillStyle = '#dc2626'
   ctx.beginPath()
-  ctx.ellipse(12 * s, -1.5 * s, 5 * s, 2.5 * s, -0.15, 0, Math.PI * 2)
-  ctx.fill()
-  ctx.strokeStyle = 'rgba(255,255,255,0.3)'
-  ctx.lineWidth = 0.5
-  ctx.stroke()
+  ctx.moveTo(30 * s, 0)
+  ctx.lineTo(26 * s, -3.5 * s)
+  ctx.lineTo(26 * s, 3.5 * s)
+  ctx.closePath(); ctx.fill()
 
-  // Nose cone
-  ctx.fillStyle = '#ef4444'
-  ctx.beginPath()
-  ctx.moveTo(24 * s, 0)
-  ctx.lineTo(20 * s, -3 * s)
-  ctx.lineTo(20 * s, 3 * s)
-  ctx.closePath()
-  ctx.fill()
-
-  // Wing tip lights
+  // Navigation lights
   ctx.fillStyle = '#22d3ee'
-  ctx.beginPath()
-  ctx.arc(-14 * s, -16 * s, 1.2, 0, Math.PI * 2)
-  ctx.fill()
+  ctx.beginPath(); ctx.arc(-8 * s, -22 * s, 1.5, 0, Math.PI * 2); ctx.fill()
   ctx.fillStyle = '#ef4444'
-  ctx.beginPath()
-  ctx.arc(-14 * s, 16 * s, 1.2, 0, Math.PI * 2)
-  ctx.fill()
+  ctx.beginPath(); ctx.arc(-8 * s, 22 * s, 1.5, 0, Math.PI * 2); ctx.fill()
 
   ctx.restore()
 }
@@ -148,31 +132,31 @@ export default function AviatorCanvas({ phase, mult, crashedAt, cashoutExits }) 
   const canvasRef = useRef(null)
   const stateRef = useRef({ phase, mult, crashedAt })
   const animRef = useRef(null)
-  const shakeRef = useRef({ x: 0, y: 0, time: 0 })
-  const starsRef = useRef(precomputeStars(STAR_COUNT))
-  const trailDots = useRef(precomputeTrail(15))
+  const starsRef = useRef(makeStars(STAR_COUNT))
+  const trailDots = useRef(makeTrailDots(15))
   const particlesRef = useRef([])
   const planePos = useRef({ x: 0, y: 0 })
   const crashShownRef = useRef(false)
   const smoothMult = useRef(1)
+  const startTimeRef = useRef(0)
+  const lastFrameTime = useRef(0)
 
   useEffect(() => { stateRef.current = { phase, mult, crashedAt } }, [phase, mult, crashedAt])
 
   useEffect(() => {
+    if (phase === 'flying' || phase === 'running') {
+      startTimeRef.current = performance.now()
+      smoothMult.current = 1
+    }
     if (phase === 'crashed' && !crashShownRef.current) {
-      shakeRef.current.time = 12
       const px = planePos.current.x, py = planePos.current.y
-      for (let i = 0; i < 40; i++) {
-        const angle = (Math.PI * 2 * i) / 40 + (Math.random() - 0.5) * 0.4
-        const speed = 1.5 + Math.random() * 3.5
+      for (let i = 0; i < 35; i++) {
+        const a = (Math.PI * 2 * i) / 35 + (Math.random() - 0.5) * 0.4
+        const sp = 1.5 + Math.random() * 3
         particlesRef.current.push({
-          x: px, y: py,
-          vx: Math.cos(angle) * speed,
-          vy: Math.sin(angle) * speed - 0.8,
-          life: 1,
-          decay: 0.015 + Math.random() * 0.02,
-          size: 1.5 + Math.random() * 2.5,
-          color: ['#ef4444', '#f97316', '#facc15', '#ffffff'][Math.floor(Math.random() * 4)],
+          x: px, y: py, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 0.6,
+          life: 1, decay: 0.016 + Math.random() * 0.02, sz: 1.5 + Math.random() * 2.5,
+          col: ['#ef4444', '#f97316', '#facc15', '#fff'][~~(Math.random() * 4)],
         })
       }
       crashShownRef.current = true
@@ -188,188 +172,145 @@ export default function AviatorCanvas({ phase, mult, crashedAt, cashoutExits }) 
     const canvas = canvasRef.current
     if (!canvas) return
     const ctx = canvas.getContext('2d')
-    let W = 0, H = 0
-    let bgCanvas = null
+    let W = 0, H = 0, bg = null
 
     const buildBg = (w, h) => {
-      const off = document.createElement('canvas')
-      off.width = w; off.height = h
-      const c = off.getContext('2d')
-
-      // Gradient background
-      const bg = c.createLinearGradient(0, 0, 0, h)
-      bg.addColorStop(0, '#080d1a')
-      bg.addColorStop(0.5, '#0b1120')
-      bg.addColorStop(1, '#060c18')
-      c.fillStyle = bg; c.fillRect(0, 0, w, h)
-
-      // Grid
-      c.strokeStyle = 'rgba(255,255,255,0.015)'
-      c.lineWidth = 0.5
-      for (let i = 0; i < w; i += 36) { c.beginPath(); c.moveTo(i, 0); c.lineTo(i, h); c.stroke() }
-      for (let i = 0; i < h; i += 36) { c.beginPath(); c.moveTo(0, i); c.lineTo(w, i); c.stroke() }
-
-      // Y-axis labels + lines
-      c.fillStyle = 'rgba(255,255,255,0.06)'
-      c.font = '10px monospace'
+      const o = document.createElement('canvas')
+      o.width = w; o.height = h
+      const c = o.getContext('2d')
+      const gr = c.createLinearGradient(0, 0, 0, h)
+      gr.addColorStop(0, '#080d1a')
+      gr.addColorStop(0.5, '#0b1120')
+      gr.addColorStop(1, '#060c18')
+      c.fillStyle = gr; c.fillRect(0, 0, w, h)
+      c.strokeStyle = 'rgba(255,255,255,0.013)'; c.lineWidth = 0.5
+      for (let i = 0; i < w; i += 40) { c.beginPath(); c.moveTo(i, 0); c.lineTo(i, h); c.stroke() }
+      for (let i = 0; i < h; i += 40) { c.beginPath(); c.moveTo(0, i); c.lineTo(w, i); c.stroke() }
+      c.fillStyle = 'rgba(255,255,255,0.05)'; c.font = '10px monospace'
       for (let i = 1; i <= 10; i++) {
         const y = h - (i / 10) * h * 0.82 - h * 0.08
         c.fillText(`${i}x`, 4, y + 3)
-        c.strokeStyle = 'rgba(0,232,135,0.035)'
-        c.beginPath(); c.moveTo(22, y); c.lineTo(w, y); c.stroke()
+        c.strokeStyle = 'rgba(0,232,135,0.03)'; c.beginPath(); c.moveTo(22, y); c.lineTo(w, y); c.stroke()
       }
-
-      return off
+      return o
     }
-
-    let frame = 0
 
     const resize = () => {
       const dpr = window.devicePixelRatio || 1
       W = canvas.offsetWidth; H = canvas.offsetHeight
       canvas.width = W * dpr; canvas.height = H * dpr
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-      bgCanvas = buildBg(W, H)
+      bg = buildBg(W, H)
     }
     resize()
     window.addEventListener('resize', resize)
 
-    const draw = () => {
-      frame++
-      const { phase: p, mult: m, crashedAt: cp } = stateRef.current
+    const draw = (now) => {
+      const dt = lastFrameTime.current ? Math.min((now - lastFrameTime.current) / 1000, 0.05) : 0.016
+      lastFrameTime.current = now
 
-      // Smooth multiplier interpolation
-      if (p === 'running' && m > 1) {
-        smoothMult.current += (m - smoothMult.current) * 0.3
+      const { phase: p, mult: m, crashedAt: cp } = stateRef.current
+      const elapsed = (now - startTimeRef.current) / 1000
+
+      // Smooth mult with delta time
+      if (p === 'running' || p === 'flying') {
+        // Interpolate towards target at rate proportional to dt
+        const target = m
+        const speed = 8
+        smoothMult.current += (target - smoothMult.current) * Math.min(1, speed * dt)
       } else if (p === 'crashed') {
-        smoothMult.current = cp || m
+        smoothMult.current += ((cp || m) - smoothMult.current) * Math.min(1, 12 * dt)
       }
-      const displayMult = smoothMult.current
+      const dm = Math.max(1, smoothMult.current)
 
       ctx.clearRect(0, 0, W, H)
-      if (bgCanvas) ctx.drawImage(bgCanvas, 0, 0)
+      if (bg) ctx.drawImage(bg, 0, 0)
 
-      // Stars (pre-computed, no Math.random)
-      const t01 = frame * 0.005
+      // Stars
       starsRef.current.forEach(s => {
-        s.y -= s.speed
+        s.y -= s.sp
         if (s.y < -0.01) { s.y = 1.01; s.x = Math.random() }
-        ctx.globalAlpha = s.alpha * (0.5 + 0.5 * Math.sin(frame * 0.015 + s.phase))
+        ctx.globalAlpha = s.al * (0.5 + 0.5 * Math.sin(now * 0.001 + s.ph))
         ctx.fillStyle = '#fff'
-        ctx.fillRect(s.x * W, s.y * H, s.size, s.size)
+        ctx.fillRect(s.x * W, s.y * H, s.s, s.s)
       })
       ctx.globalAlpha = 1
 
-      const originX = 8, originY = H * 0.88
+      const ox = 8, oy = H * 0.88
 
-      if (p === 'running' && displayMult > 1) {
-        const progress = Math.min(1, Math.log(displayMult) / Math.log(60))
-        const eased = Math.pow(progress, 0.5)
-        const maxX = Math.max(W - 200, W * 0.6)
+      if ((p === 'running' || p === 'flying') && dm > 1) {
+        const progress = Math.min(1, Math.log(dm) / Math.log(60))
+        const eased = Math.pow(progress, 0.45)
+        const maxX = Math.max(W - 160, W * 0.55)
         const maxY = H * 0.78
-        const ex = originX + eased * maxX
-        const ey = originY - eased * maxY
-        const cpx = (originX + ex) * 0.5
-        const cpy = originY - (originY - ey) * 0.05
+        const ex = ox + eased * maxX
+        const ey = oy - eased * maxY
+        const cpx = (ox + ex) * 0.5
+        const cpy = oy - (oy - ey) * 0.05
 
-        // Trail glow (wide, soft)
-        ctx.strokeStyle = 'rgba(0,232,135,0.08)'
-        ctx.lineWidth = 18
+        // Trail
         ctx.lineCap = 'round'
-        ctx.beginPath()
-        ctx.moveTo(originX, originY)
-        ctx.quadraticCurveTo(cpx, cpy, ex, ey)
-        ctx.stroke()
+        ctx.strokeStyle = 'rgba(0,232,135,0.06)'; ctx.lineWidth = 20
+        ctx.beginPath(); ctx.moveTo(ox, oy); ctx.quadraticCurveTo(cpx, cpy, ex, ey); ctx.stroke()
+        ctx.strokeStyle = 'rgba(0,232,135,0.18)'; ctx.lineWidth = 8
+        ctx.beginPath(); ctx.moveTo(ox, oy); ctx.quadraticCurveTo(cpx, cpy, ex, ey); ctx.stroke()
+        ctx.strokeStyle = '#00e887'; ctx.lineWidth = 2.5
+        ctx.beginPath(); ctx.moveTo(ox, oy); ctx.quadraticCurveTo(cpx, cpy, ex, ey); ctx.stroke()
 
-        // Trail glow (medium)
-        ctx.strokeStyle = 'rgba(0,232,135,0.2)'
-        ctx.lineWidth = 8
-        ctx.beginPath()
-        ctx.moveTo(originX, originY)
-        ctx.quadraticCurveTo(cpx, cpy, ex, ey)
-        ctx.stroke()
-
-        // Trail core
-        ctx.strokeStyle = '#00e887'
-        ctx.lineWidth = 2.5
-        ctx.beginPath()
-        ctx.moveTo(originX, originY)
-        ctx.quadraticCurveTo(cpx, cpy, ex, ey)
-        ctx.stroke()
-
-        // Trail dots (pre-computed offsets, no Math.random)
+        // Trail dots
         trailDots.current.forEach(d => {
-          const frac = ((frame * 0.012 + d.phase) % 1)
-          const pt = bezierPoint(frac, originX, originY, cpx, cpy, ex, ey)
-          ctx.globalAlpha = (1 - frac) * 0.5
+          const f = ((now * 0.001 + d.ph) % 1)
+          const pt = bez(f, ox, oy, cpx, cpy, ex, ey)
+          ctx.globalAlpha = (1 - f) * 0.4
           ctx.fillStyle = '#00e887'
-          ctx.beginPath()
-          ctx.arc(pt.x + d.offX, pt.y + d.offY, d.size, 0, Math.PI * 2)
-          ctx.fill()
+          ctx.beginPath(); ctx.arc(pt.x + d.ox, pt.y + d.oy, d.sz, 0, Math.PI * 2); ctx.fill()
         })
         ctx.globalAlpha = 1
 
         planePos.current = { x: ex, y: ey }
 
-        // Plane angle from bezier tangent
-        const prev = bezierPoint(0.96, originX, originY, cpx, cpy, ex, ey)
+        // Plane angle
+        const prev = bez(0.95, ox, oy, cpx, cpy, ex, ey)
         const angle = Math.atan2(ey - prev.y, ex - prev.x)
 
-        drawPlane(ctx, ex, ey, angle, frame)
+        // Plane scale based on multiplier (starts smaller, grows)
+        const planeScale = Math.min(1.3, 0.7 + eased * 0.6)
+        drawPlane(ctx, ex, ey, angle, now * 0.001, planeScale)
 
-        // Multiplier text
-        const mc = displayMult >= 10 ? '#ef4444' : displayMult >= 5 ? '#facc15' : '#00e887'
-        const mBg = displayMult >= 10 ? 'rgba(239,68,68,0.12)' : displayMult >= 5 ? 'rgba(250,204,21,0.1)' : 'rgba(0,232,135,0.1)'
-        ctx.font = 'bold 22px "Exo 2", sans-serif'
-        const tw = ctx.measureText(`${displayMult.toFixed(2)}x`).width
-        const tx = ex + 28, ty = ey - 6
-        ctx.fillStyle = mBg
-        roundRect(ctx, tx - 8, ty - 18, tw + 16, 26, 6)
-        ctx.fill()
+        // Multiplier pill
+        const mc = dm >= 10 ? '#ef4444' : dm >= 5 ? '#facc15' : '#00e887'
+        const mbg = dm >= 10 ? 'rgba(239,68,68,0.12)' : dm >= 5 ? 'rgba(250,204,21,0.1)' : 'rgba(0,232,135,0.1)'
+        ctx.font = `bold ${Math.round(20 * planeScale)}px "Exo 2", sans-serif`
+        const tw = ctx.measureText(`${dm.toFixed(2)}x`).width
+        const tx = ex + 35 * planeScale, ty = ey - 4
+        ctx.fillStyle = mbg
+        roundRect(ctx, tx - 8, ty - 16, tw + 16, 24, 6); ctx.fill()
         ctx.fillStyle = mc
-        ctx.fillText(`${displayMult.toFixed(2)}x`, tx, ty)
-
+        ctx.fillText(`${dm.toFixed(2)}x`, tx, ty)
       } else {
         planePos.current = { x: 0, y: 0 }
       }
 
-      // Screen shake
-      if (shakeRef.current.time > 0) {
-        shakeRef.current.time--
-        const intensity = shakeRef.current.time * 0.6
-        const sx = (Math.random() - 0.5) * intensity
-        const sy = (Math.random() - 0.5) * intensity
+      // Explosion
+      if (particlesRef.current.length > 0) {
         ctx.save()
-        ctx.translate(sx, sy)
+        particlesRef.current = particlesRef.current.filter(p => {
+          p.x += p.vx; p.y += p.vy; p.vy += 0.04; p.vx *= 0.985; p.life -= p.decay
+          if (p.life <= 0) return false
+          ctx.globalAlpha = p.life * 0.9
+          ctx.fillStyle = p.col
+          ctx.beginPath(); ctx.arc(p.x, p.y, p.sz * p.life, 0, Math.PI * 2); ctx.fill()
+          return true
+        })
+        ctx.globalAlpha = 1
+        ctx.restore()
       }
-
-      // Explosion particles
-      particlesRef.current = particlesRef.current.filter(p => {
-        p.x += p.vx
-        p.y += p.vy
-        p.vy += 0.035
-        p.vx *= 0.985
-        p.life -= p.decay
-        if (p.life <= 0) return false
-        ctx.globalAlpha = p.life * 0.9
-        ctx.fillStyle = p.color
-        ctx.beginPath()
-        ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2)
-        ctx.fill()
-        return true
-      })
-      ctx.globalAlpha = 1
-
-      if (shakeRef.current.time > 0) ctx.restore()
 
       animRef.current = requestAnimationFrame(draw)
     }
 
     animRef.current = requestAnimationFrame(draw)
-    return () => {
-      window.removeEventListener('resize', resize)
-      cancelAnimationFrame(animRef.current)
-    }
+    return () => { window.removeEventListener('resize', resize); cancelAnimationFrame(animRef.current) }
   }, [])
 
   return (
@@ -399,13 +340,9 @@ export default function AviatorCanvas({ phase, mult, crashedAt, cashoutExits }) 
 function roundRect(ctx, x, y, w, h, r) {
   ctx.beginPath()
   ctx.moveTo(x + r, y)
-  ctx.lineTo(x + w - r, y)
-  ctx.quadraticCurveTo(x + w, y, x + w, y + r)
-  ctx.lineTo(x + w, y + h - r)
-  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h)
-  ctx.lineTo(x + r, y + h)
-  ctx.quadraticCurveTo(x, y + h, x, y + h - r)
-  ctx.lineTo(x, y + r)
-  ctx.quadraticCurveTo(x, y, x + r, y)
+  ctx.lineTo(x + w - r, y); ctx.quadraticCurveTo(x + w, y, x + w, y + r)
+  ctx.lineTo(x + w, y + h - r); ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h)
+  ctx.lineTo(x + r, y + h); ctx.quadraticCurveTo(x, y + h, x, y + h - r)
+  ctx.lineTo(x, y + r); ctx.quadraticCurveTo(x, y, x + r, y)
   ctx.closePath()
 }

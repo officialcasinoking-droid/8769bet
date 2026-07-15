@@ -1,4 +1,6 @@
-export default function MyBets({ history }) {
+import { memo } from 'react'
+
+const MyBets = memo(function MyBets({ history }) {
   return (
     <div className="flex items-center gap-0 bg-[#0f1929] border-t border-white/[0.04] overflow-x-auto flex-shrink-0 max-h-10" style={{ scrollbarWidth: 'none' }}>
       <span className="text-[8px] font-bold text-white/20 uppercase tracking-[0.1em] flex-shrink-0 px-2.5 h-full flex items-center border-r border-white/[0.04]">My Bets</span>
@@ -24,4 +26,6 @@ export default function MyBets({ history }) {
       ))}
     </div>
   )
-}
+})
+
+export default MyBets

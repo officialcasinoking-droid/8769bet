@@ -1,4 +1,6 @@
-export default function CrashHistory({ history }) {
+import { memo } from 'react'
+
+const CrashHistory = memo(function CrashHistory({ history }) {
   return (
     <div className="flex items-center gap-1.5 px-3.5 py-2 bg-[#0f1929] border-b border-white/[0.04] overflow-x-auto scrollbar-none flex-shrink-0" style={{ scrollbarWidth: 'none' }}>
       {history.length === 0 && (
@@ -19,4 +21,6 @@ export default function CrashHistory({ history }) {
       })}
     </div>
   )
-}
+})
+
+export default CrashHistory

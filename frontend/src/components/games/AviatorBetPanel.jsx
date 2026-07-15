@@ -1,11 +1,11 @@
-import { useState } from 'react'
+import { useState, memo } from 'react'
 
 const QUICK_BET = [6, 10, 20, 50, 100, 200, 500]
 const MIN_BET = 6
 const MAX_BET = 1000
 const AUTO_PRESETS = ['2.00', '3.00', '4.00', '5.00', '8.00', '10.00', '20.00']
 
-export default function AviatorBetPanel({ num, amt, setAmt, autoOn, setAutoOn, autoVal, setAutoVal, betData, phase, mult, bal, onPlace, onCash, onCancel }) {
+const AviatorBetPanel = memo(function AviatorBetPanel({ num, amt, setAmt, autoOn, setAutoOn, autoVal, setAutoVal, betData, phase, mult, bal, onPlace, onCash, onCancel }) {
   const hasBet = !!betData
   const isBetting = phase === 'betting'
   const isRunning = phase === 'running'
@@ -143,4 +143,6 @@ export default function AviatorBetPanel({ num, amt, setAmt, autoOn, setAutoOn, a
       {actionBtn}
     </div>
   )
-}
+})
+
+export default AviatorBetPanel
