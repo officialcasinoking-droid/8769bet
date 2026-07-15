@@ -45,7 +45,15 @@ export default function useGameSounds(muted) {
 
   useEffect(() => {
     return () => {
-      if (engineRef.current) { try { engineRef.current.stop() } catch {} }
+      try {
+        if (engineRef.current) {
+          const e = engineRef.current
+          if (e.osc1) e.osc1.stop()
+          if (e.osc2) e.osc2.stop()
+          if (e.osc3) e.osc3.stop()
+          if (e.osc4) e.osc4.stop()
+        }
+      } catch {}
     }
   }, [])
 
@@ -54,27 +62,79 @@ export default function useGameSounds(muted) {
     try {
       const ctx = getCtx()
       if (!engineRef.current) {
-        const osc = ctx.createOscillator()
-        const g = ctx.createGain()
-        osc.type = 'sawtooth'
-        osc.frequency.setValueAtTime(60, ctx.currentTime)
-        g.gain.setValueAtTime(0, ctx.currentTime)
-        osc.connect(g); g.connect(ctx.destination)
-        osc.start()
-        engineRef.current = osc
-        engineGainRef.current = g
+        // Layer 1: Low drone (sawtooth, 40-80Hz)
+        const osc1 = ctx.createOscillator()
+        const g1 = ctx.createGain()
+        osc1.type = 'sawtooth'
+        osc1.frequency.value = 45
+        g1.gain.value = 0
+        osc1.connect(g1); g1.connect(ctx.destination)
+        osc1.start()
+
+        // Layer 2: Mid harmonic (sine, 90-150Hz, detuned)
+        const osc2 = ctx.createOscillator()
+        const g2 = ctx.createGain()
+        osc2.type = 'sine'
+        osc2.frequency.value = 95
+        osc2.detune.value = 12
+        g2.gain.value = 0
+        osc2.connect(g2); g2.connect(ctx.destination)
+        osc2.start()
+
+        // Layer 3: Propeller whine (triangle, 300-600Hz)
+        const osc3 = ctx.createOscillator()
+        const g3 = ctx.createGain()
+        osc3.type = 'triangle'
+        osc3.frequency.value = 350
+        g3.gain.value = 0
+        osc3.connect(g3); g3.connect(ctx.destination)
+        osc3.start()
+
+        // Layer 4: Sub bass (sine, 25-40Hz)
+        const osc4 = ctx.createOscillator()
+        const g4 = ctx.createGain()
+        osc4.type = 'sine'
+        osc4.frequency.value = 30
+        g4.gain.value = 0
+        osc4.connect(g4); g4.connect(ctx.destination)
+        osc4.start()
+
+        engineRef.current = { osc1, g1, osc2, g2, osc3, g3, osc4, g4 }
+        engineGainRef.current = { g1, g2, g3, g4 }
       }
-      const baseFreq = 60 + Math.min(mult, 20) * 8
-      const vol = Math.min(0.04, 0.015 + mult * 0.002)
-      engineRef.current.frequency.setTargetAtTime(baseFreq, getCtx().currentTime, 0.1)
-      engineGainRef.current.gain.setTargetAtTime(vol, getCtx().currentTime, 0.1)
+
+      const t = ctx.currentTime
+      const { osc1, g1, osc2, g2, osc3, g3, osc4, g4 } = engineRef.current
+
+      const ratio = Math.min(mult, 20)
+      const vol = Math.min(0.035, 0.012 + mult * 0.002)
+
+      osc1.frequency.setTargetAtTime(45 + ratio * 3, t, 0.1)
+      g1.gain.setTargetAtTime(vol * 0.6, t, 0.1)
+
+      osc2.frequency.setTargetAtTime(95 + ratio * 5, t, 0.1)
+      g2.gain.setTargetAtTime(vol * 0.35, t, 0.1)
+
+      osc3.frequency.setTargetAtTime(350 + ratio * 20, t, 0.1)
+      g3.gain.setTargetAtTime(vol * 0.15, t, 0.1)
+
+      osc4.frequency.setTargetAtTime(30 + ratio * 1.5, t, 0.1)
+      g4.gain.setTargetAtTime(vol * 0.5, t, 0.1)
     } catch {}
   }, [muted])
 
   const stopEngine = useCallback(() => {
-    if (engineGainRef.current) {
-      try { engineGainRef.current.gain.setTargetAtTime(0, getCtx().currentTime, 0.3) } catch {}
-    }
+    try {
+      const ctx = getCtx()
+      const t = ctx.currentTime
+      if (engineGainRef.current) {
+        const { g1, g2, g3, g4 } = engineGainRef.current
+        if (g1) g1.gain.setTargetAtTime(0, t, 0.3)
+        if (g2) g2.gain.setTargetAtTime(0, t, 0.3)
+        if (g3) g3.gain.setTargetAtTime(0, t, 0.3)
+        if (g4) g4.gain.setTargetAtTime(0, t, 0.3)
+      }
+    } catch {}
   }, [])
 
   const playCashout = useCallback(() => {

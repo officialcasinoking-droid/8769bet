@@ -55,6 +55,7 @@ export default function AviatorGame() {
   const cdIntervalRef = useRef(null)
   const userRef = useRef(user)
   const balRef = useRef(bal)
+  const multRef = useRef(1)
   const b1aRef = useRef(b1a), b1oRef = useRef(b1o), b1vRef = useRef(b1v)
   const b2aRef = useRef(b2a), b2oRef = useRef(b2o), b2vRef = useRef(b2v)
 
@@ -63,6 +64,7 @@ export default function AviatorGame() {
   useEffect(() => { phaseRef.current = phase }, [phase])
   useEffect(() => { userRef.current = user }, [user])
   useEffect(() => { balRef.current = bal }, [bal])
+  useEffect(() => { multRef.current = mult }, [mult])
   useEffect(() => { b1aRef.current = b1a; b1oRef.current = b1o; b1vRef.current = b1v }, [b1a, b1o, b1v])
   useEffect(() => { b2aRef.current = b2a; b2oRef.current = b2o; b2vRef.current = b2v }, [b2a, b2o, b2v])
   useEffect(() => { if (user?.balance !== undefined) setBal(user.balance) }, [user])
@@ -197,12 +199,13 @@ export default function AviatorGame() {
 
     aviatorWS.on('cashout_result', (result) => {
       if (!result.success) return
-      const u = userRef.current
       const num = result.betNum || 1
+      const betData = num === 1 ? b1dRef.current : b2dRef.current
+      if (betData?.cashed) return
+      const u = userRef.current
       const setter = num === 1 ? setB1d : setB2d
       setBal(p => { const n = p + result.winAmount; updateBalance(n); return n })
       setter(p => p ? { ...p, cashed: { won: result.winAmount } } : null)
-      const betData = num === 1 ? b1dRef.current : b2dRef.current
       setMyHistory(p => p.map(e => e.pending && (e.betId === betData?.id || e.betId.startsWith('temp_'))
         ? { ...e, mult: result.multiplier, won: true, profit: result.winAmount, pending: false } : e))
       addCashoutExit(u?.username || 'You', result.winAmount)
@@ -300,7 +303,21 @@ export default function AviatorGame() {
     if (phaseRef.current !== 'running') return
     const betData = num === 1 ? b1dRef.current : b2dRef.current
     if (!betData || betData.cashed) return
-    aviatorWS.cashout(userRef.current?.id, num)
+
+    const u = userRef.current
+    const currentMult = multRef.current || 1
+    const winAmount = Math.floor(betData.amount * currentMult)
+
+    const setter = num === 1 ? setB1d : setB2d
+    setter(p => p ? { ...p, cashed: { won: winAmount } } : null)
+    setBal(p => { const n = p + winAmount; updateBalance(n); return n })
+    setMyHistory(p => p.map(e => e.pending && (e.betId === betData.id || e.betId.startsWith('temp_'))
+      ? { ...e, mult: currentMult, won: true, profit: winAmount, pending: false } : e))
+    addCashoutExit(u?.username || 'You', winAmount)
+    toast.success(`Cashed ${currentMult.toFixed(2)}x — +₨${winAmount.toLocaleString()}`)
+    soundsRef.current.playCashout()
+
+    aviatorWS.cashout(u?.id, num)
   }, [])
 
   const cancelBet = useCallback((num) => {
