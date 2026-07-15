@@ -509,6 +509,9 @@ function crashRound(crashPoint, reason = 'natural') {
       }
     })
 
+    // Broadcast final bet states so frontend shows correct cashout/loss status
+    broadcast({ type: 'bets_update', bets: currentBets })
+
     // Add to history
     crashHistory.unshift(gameState.crashPoint)
     if (crashHistory.length > 30) crashHistory = crashHistory.slice(0, 30)
