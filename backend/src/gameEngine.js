@@ -864,7 +864,6 @@ async function initGameEngine(server) {
           if (msg.type === 'place_bet') {
             console.log('[WS] place_bet received:', JSON.stringify({ autoCashout: msg.autoCashout, amount: msg.amount, betNumber: msg.betNumber }))
             const result = await placeBet(msg)
-            const result = await placeBet(msg)
             ws.send(JSON.stringify({ type: 'bet_result', ...result }))
           }
 
