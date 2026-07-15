@@ -166,10 +166,11 @@ export default function AviatorCanvas({ phase, mult, crashedAt, cashoutExits }) 
         // Plane body
         ctx.save()
         ctx.translate(ex, ey)
-        const angle = Math.atan2(
-          -(ey - ((1 - (frac => (1-frac)*(1-frac)*originY + 2*(1-frac)*frac*cpy + frac*frac*ey))(0.99))),
-          ex - ((1 - (frac => (1-frac)*(1-frac)*originX + 2*(1-frac)*frac*cpx + frac*frac*ex))(0.99))
-        ) || -0.3
+        // Compute tangent angle from bezier curve at t=0.95
+        const t0 = 0.95
+        const prevX = (1-t0)*(1-t0)*originX + 2*(1-t0)*t0*cpx + t0*t0*ex
+        const prevY = (1-t0)*(1-t0)*originY + 2*(1-t0)*t0*cpy + t0*t0*ey
+        const angle = Math.atan2(ey - prevY, ex - prevX)
         ctx.rotate(angle)
 
         // Fuselage
