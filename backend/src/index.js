@@ -99,6 +99,7 @@ app.post('/api/aviator/settings', (req, res) => {
 
 // Place bet
 app.post('/api/aviator/bet', async (req, res) => {
+  console.log('[REST] /api/aviator/bet:', JSON.stringify({ autoCashout: req.body.autoCashout, amount: req.body.amount, betNumber: req.body.betNumber }))
   const result = await placeBet(req.body)
   res.json(result)
 })

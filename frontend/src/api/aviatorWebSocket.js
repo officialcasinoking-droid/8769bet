@@ -16,6 +16,7 @@ class AviatorGameClient {
     this.wsFailAttempts = 0
     this.maxReconnectDelay = 15000
     this.maxWsFailBeforePoll = 2
+    this._lastPollBets = null
     this.listeners = {
       game_state: [],
       bets_update: [],
@@ -126,6 +127,11 @@ class AviatorGameClient {
         bets: data.bets,
         settings: data.settings,
       })
+      const betsKey = JSON.stringify(data.bets || [])
+      if (betsKey !== this._lastPollBets) {
+        this._lastPollBets = betsKey
+        this.emit({ type: 'bets_update', bets: data.bets || [] })
+      }
     } catch {}
   }
 

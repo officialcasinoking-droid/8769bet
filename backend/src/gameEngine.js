@@ -371,6 +371,7 @@ function startGameLoop() {
         let betsChanged = false
         for (const bet of currentBets) {
           if (!bet.cashedOut && bet.autoCashout && mult >= bet.autoCashout) {
+            console.log(`[AUTO-CASHOUT] userId=${bet.userId} betNum=${bet.betNum} autoCashout=${bet.autoCashout} mult=${mult}`)
             bet.cashedOut = true
             bet.cashoutMult = parseFloat(bet.autoCashout.toFixed(2))
             bet.winAmount = Math.floor(bet.amount * bet.autoCashout)
@@ -611,6 +612,8 @@ async function placeBet(betData) {
   }
 
   const { userId, username, amount, autoCashout, betNumber } = betData
+
+  console.log(`[placeBet] userId=${userId} amount=${amount} autoCashout=${autoCashout} betNumber=${betNumber}`)
 
   if (!userId || !amount || amount <= 0) {
     return { success: false, error: 'Invalid bet data' }
@@ -859,6 +862,8 @@ async function initGameEngine(server) {
           }
 
           if (msg.type === 'place_bet') {
+            console.log('[WS] place_bet received:', JSON.stringify({ autoCashout: msg.autoCashout, amount: msg.amount, betNumber: msg.betNumber }))
+            const result = await placeBet(msg)
             const result = await placeBet(msg)
             ws.send(JSON.stringify({ type: 'bet_result', ...result }))
           }
