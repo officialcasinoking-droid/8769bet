@@ -54,7 +54,7 @@ export function AuthProvider({ children }) {
           username: data.username || user.username,
           full_name: data.full_name || user.full_name,
           role: data.role || user.role,
-          balance: Number(data.balance) || user.balance,
+          balance: data.balance != null ? Number(data.balance) : user.balance,
           avatar_url: data.avatar_url || user.avatar_url,
           withdrawal_pin_set: data.withdrawal_pin_set ?? user.withdrawal_pin_set,
           withdrawal_pin_hash: data.withdrawal_pin_hash || user.withdrawal_pin_hash,
@@ -466,14 +466,6 @@ export function AuthProvider({ children }) {
     setUser(updatedUser)
     localStorage.setItem('sb_user', JSON.stringify(updatedUser))
     localStorage.setItem('sb_balance', JSON.stringify(newBalance))
-    try {
-      await supabase
-        .from('users')
-        .update({ balance: newBalance, updated_at: new Date().toISOString() })
-        .eq('id', user.id)
-    } catch (e) {
-      console.warn('[updateBalance] DB error (saved locally):', e?.message)
-    }
   }, [user])
 
   useEffect(() => {
@@ -540,6 +532,24 @@ export function AuthProvider({ children }) {
 
     return () => subscription.unsubscribe()
   }, [])
+
+  useEffect(() => {
+    if (!user?.id) return
+    const poll = async () => {
+      try {
+        const { data } = await supabase
+          .from('users').select('balance').eq('id', user.id).single()
+        if (data && Number(data.balance) !== user.balance) {
+          const updated = { ...user, balance: Number(data.balance) }
+          setUser(updated)
+          localStorage.setItem('sb_user', JSON.stringify(updated))
+        }
+      } catch {}
+    }
+    poll()
+    const i = setInterval(poll, 15000)
+    return () => clearInterval(i)
+  }, [user?.id])
 
   const value = useMemo(() => ({
     user,

@@ -8,6 +8,7 @@ import bcrypt from 'bcryptjs'
 import { supabase } from '../lib/supabase.js'
 import { authenticateAdmin, requireRole } from '../middleware/auth.js'
 import { logAudit } from '../middleware/auditLogger.js'
+import { broadcastBalance } from '../gameEngine.js'
 
 const router = express.Router()
 
@@ -249,6 +250,8 @@ router.post('/:id/balance', async (req, res) => {
       .single()
 
     if (updateError) throw updateError
+
+    broadcastBalance(req.params.id, balanceAfter)
 
     await supabase.from('balance_history').insert({
       user_id: req.params.id,

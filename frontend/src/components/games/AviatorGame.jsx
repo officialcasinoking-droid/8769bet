@@ -73,6 +73,8 @@ export default function AviatorGame() {
   const sounds = useGameSounds(soundMuted)
   const soundsRef = useRef(sounds)
   useEffect(() => { soundsRef.current = sounds }, [sounds])
+  const updateBalanceRef = useRef(updateBalance)
+  useEffect(() => { updateBalanceRef.current = updateBalance }, [updateBalance])
 
   // ── Loading screen ──
   useEffect(() => {
@@ -95,7 +97,11 @@ export default function AviatorGame() {
         const { data: { session } } = await supabase.auth.getSession()
         if (session) {
           const { data } = await supabase.from('users').select('balance').eq('id', user.id).single()
-          if (data) setBal(Number(data.balance) || 0)
+          if (data) {
+            const newBal = Number(data.balance) || 0
+            setBal(newBal)
+            updateBalanceRef.current(newBal)
+          }
         }
       } catch {}
     }
@@ -227,6 +233,14 @@ export default function AviatorGame() {
     })
 
     aviatorWS.on('cancel_result', (r) => { if (!r.success) console.error('[cancel] Failed:', r.error) })
+
+    aviatorWS.on('balance_update', (data) => {
+      if (data.balance !== undefined) {
+        const newBal = Number(data.balance)
+        setBal(newBal)
+        updateBalanceRef.current(newBal)
+      }
+    })
 
     return () => { clearInterval(checkConn) }
   }, [showLoading])

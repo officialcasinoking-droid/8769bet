@@ -12,7 +12,7 @@ import securityRoutes from './routes/security.js'
 import supportRoutes from './routes/support.js'
 import aiWithdrawalRoutes from './routes/ai-withdrawal.js'
 import { landingContent } from './store.js'
-import { initGameEngine, getCurrentState, requestManualCrash, updateSettings, placeBet, cashoutBet } from './gameEngine.js'
+import { initGameEngine, getCurrentState, requestManualCrash, updateSettings, placeBet, cashoutBet, broadcastBalance } from './gameEngine.js'
 import { authenticateAdmin, getRequiredRoleForPath, requireRole } from './middleware/auth.js'
 import { createAuditMiddleware, initAuditWebSocket } from './middleware/auditLogger.js'
 import { createLoginRateLimiter } from './middleware/rateLimiter.js'
@@ -122,7 +122,9 @@ app.post('/api/aviator/cancel-bet', async (req, res) => {
     try {
       const { data: user } = await supabase.from('users').select('balance').eq('id', userId).single()
       if (user) {
-        await supabase.from('users').update({ balance: Number(user.balance) + bet.amount, updated_at: new Date().toISOString() }).eq('id', userId)
+        const newBalance = Number(user.balance) + bet.amount
+        await supabase.from('users').update({ balance: newBalance, updated_at: new Date().toISOString() }).eq('id', userId)
+        broadcastBalance(userId, newBalance)
       }
       await supabase.from('aviator_bets').update({ status: 'cancelled', updated_at: new Date().toISOString() }).eq('id', betId)
     } catch (e) {
@@ -235,10 +237,12 @@ app.post('/api/deposits', async (req, res) => {
 
       if (!approveError) {
         // Add balance to user
+        const newBalance = Number(user.balance) + Number(amount)
         await supabase
           .from('users')
-          .update({ balance: Number(user.balance) + Number(amount), updated_at: now })
+          .update({ balance: newBalance, updated_at: now })
           .eq('id', userId)
+        broadcastBalance(userId, newBalance)
         autoApproved = true
       }
     }
@@ -354,6 +358,7 @@ app.post('/api/withdrawals', async (req, res) => {
       .from('users')
       .update({ balance: newBalance, updated_at: now })
       .eq('id', userId)
+    broadcastBalance(userId, newBalance)
 
     // Log to audit_logs
     try {

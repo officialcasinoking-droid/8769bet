@@ -23,6 +23,7 @@ class AviatorGameClient {
       bet_result: [],
       cashout_result: [],
       cancel_result: [],
+      balance_update: [],
       ws_connected: [],
       ping: [],
       polling_active: [],

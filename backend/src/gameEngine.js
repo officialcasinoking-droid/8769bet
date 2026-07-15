@@ -112,10 +112,12 @@ async function creditUserBalance(userId, winAmount, bet) {
 
     if (user) {
       const currentBalance = Number(user.balance) || 0
+      const newBalance = currentBalance + winAmount
       await supabase
         .from('users')
-        .update({ balance: currentBalance + winAmount, updated_at: new Date().toISOString() })
+        .update({ balance: newBalance, updated_at: new Date().toISOString() })
         .eq('id', userId)
+      broadcastBalance(userId, newBalance)
     }
 
     if (bet) {
@@ -174,6 +176,7 @@ function getRandomBotName() {
 // ── WebSocket Server ─────────────────────────────────────────
 let wss = null
 const clients = new Set()
+const clientUserIds = new Map()
 let gameLoop = null
 let saveInterval = null
 let manualCrashRequested = false
@@ -208,6 +211,27 @@ function broadcast(data) {
       clients.delete(client)
     }
   })
+}
+
+// ── Send to Specific User ───────────────────────────────────
+function sendToUser(userId, data) {
+  if (!userId) return
+  const msg = JSON.stringify(data)
+  clients.forEach(client => {
+    try {
+      if (client.readyState === 1 && clientUserIds.get(client) === userId) {
+        client.send(msg)
+      }
+    } catch (err) {
+      console.error('[SendToUser] Error:', err.message)
+      clients.delete(client)
+      clientUserIds.delete(client)
+    }
+  })
+}
+
+function broadcastBalance(userId, balance) {
+  sendToUser(userId, { type: 'balance_update', balance })
 }
 
 // ── Game State Persistence ────────────────────────────
@@ -607,15 +631,18 @@ async function placeBet(betData) {
     }
 
     // Deduct balance
+    const newBalance = currentBalance - amount
     const { error: updateError } = await supabase
       .from('users')
-      .update({ balance: currentBalance - amount, updated_at: new Date().toISOString() })
+      .update({ balance: newBalance, updated_at: new Date().toISOString() })
       .eq('id', userId)
 
     if (updateError) {
       console.error('[placeBet] Balance update error:', updateError.message)
       return { success: false, error: 'Failed to update balance' }
     }
+
+    broadcastBalance(userId, newBalance)
   } catch (e) {
     console.error('[placeBet] DB error:', e.message)
     return { success: false, error: 'Database error' }
@@ -691,10 +718,12 @@ async function cashoutBet(userId, betNum) {
 
     if (user) {
       const currentBalance = Number(user.balance) || 0
+      const newBalance = currentBalance + bet.winAmount
       await supabase
         .from('users')
-        .update({ balance: currentBalance + bet.winAmount, updated_at: new Date().toISOString() })
+        .update({ balance: newBalance, updated_at: new Date().toISOString() })
         .eq('id', userId)
+      broadcastBalance(userId, newBalance)
     }
 
     // Update bet record in DB
@@ -742,7 +771,9 @@ function cancelBet(userId, betNum, betId) {
     supabase.from('users').select('balance').eq('id', userId).single()
       .then(({ data: user, error }) => {
         if (user && !error) {
-          supabase.from('users').update({ balance: Number(user.balance) + bet.amount, updated_at: new Date().toISOString() }).eq('id', userId)
+          const newBalance = Number(user.balance) + bet.amount
+          supabase.from('users').update({ balance: newBalance, updated_at: new Date().toISOString() }).eq('id', userId)
+          broadcastBalance(userId, newBalance)
         }
       })
       .catch(() => {})
@@ -820,6 +851,10 @@ async function initGameEngine(server) {
         try {
           const msg = JSON.parse(data)
 
+          if (msg.userId && !clientUserIds.has(ws)) {
+            clientUserIds.set(ws, msg.userId)
+          }
+
           if (msg.type === 'place_bet') {
             const result = await placeBet(msg)
             ws.send(JSON.stringify({ type: 'bet_result', ...result }))
@@ -880,6 +915,7 @@ async function initGameEngine(server) {
       ws.on('close', () => {
         clearInterval(pingInterval)
         clients.delete(ws)
+        clientUserIds.delete(ws)
         console.log(`[GameEngine] Client disconnected. Total clients: ${clients.size}`)
       })
 
@@ -887,6 +923,7 @@ async function initGameEngine(server) {
         console.error('[WS] Error:', err.message)
         clearInterval(pingInterval)
         clients.delete(ws)
+        clientUserIds.delete(ws)
       })
     })
 
@@ -920,4 +957,4 @@ async function initGameEngine(server) {
 }
 
 // ── Export ───────────────────────────────────────────────────
-export { initGameEngine, getCurrentState, requestManualCrash, startNewRound, updateSettings, gameState, settings, placeBet, cashoutBet, cancelBet, houseEdgePool }
+export { initGameEngine, getCurrentState, requestManualCrash, startNewRound, updateSettings, gameState, settings, placeBet, cashoutBet, cancelBet, houseEdgePool, broadcastBalance }
