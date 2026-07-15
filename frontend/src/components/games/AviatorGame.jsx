@@ -53,14 +53,24 @@ export default function AviatorGame() {
   const prevPhaseRef = useRef('betting')
   const prevLiveRef = useRef([])
   const cdIntervalRef = useRef(null)
+  const userRef = useRef(user)
+  const balRef = useRef(bal)
+  const b1aRef = useRef(b1a), b1oRef = useRef(b1o), b1vRef = useRef(b1v)
+  const b2aRef = useRef(b2a), b2oRef = useRef(b2o), b2vRef = useRef(b2v)
 
   useEffect(() => { b1dRef.current = b1d }, [b1d])
   useEffect(() => { b2dRef.current = b2d }, [b2d])
   useEffect(() => { phaseRef.current = phase }, [phase])
+  useEffect(() => { userRef.current = user }, [user])
+  useEffect(() => { balRef.current = bal }, [bal])
+  useEffect(() => { b1aRef.current = b1a; b1oRef.current = b1o; b1vRef.current = b1v }, [b1a, b1o, b1v])
+  useEffect(() => { b2aRef.current = b2a; b2oRef.current = b2o; b2vRef.current = b2v }, [b2a, b2o, b2v])
   useEffect(() => { if (user?.balance !== undefined) setBal(user.balance) }, [user])
   useEffect(() => { localStorage.setItem('aviator_muted', soundMuted) }, [soundMuted])
 
   const sounds = useGameSounds(soundMuted)
+  const soundsRef = useRef(sounds)
+  useEffect(() => { soundsRef.current = sounds }, [sounds])
 
   // ── Loading screen ──
   useEffect(() => {
@@ -115,13 +125,13 @@ export default function AviatorGame() {
       cdIntervalRef.current = setInterval(() => {
         setCd(prev => {
           if (prev <= 0.1) { clearInterval(cdIntervalRef.current); return 0 }
-          if (Math.floor(prev) !== Math.floor(prev - 0.1) && prev > 0.5) sounds.playTick()
+          if (Math.floor(prev) !== Math.floor(prev - 0.1) && prev > 0.5) soundsRef.current.playTick()
           return Math.round((prev - 0.1) * 10) / 10
         })
       }, 100)
     }
     return () => { if (cdIntervalRef.current) clearInterval(cdIntervalRef.current) }
-  }, [phase, showLoading, sounds])
+  }, [phase, showLoading])
 
   // ── WebSocket connection ──
   useEffect(() => {
@@ -165,26 +175,29 @@ export default function AviatorGame() {
     aviatorWS.on('bets_update', (data) => {
       const bets = Array.isArray(data) ? data : data?.bets || []
       setLive(bets)
+      const u = userRef.current
+      if (!u?.id) return
       ;[1, 2].forEach(num => {
         const ref = num === 1 ? b1dRef : b2dRef
         const setter = num === 1 ? setB1d : setB2d
-        const myBet = bets.find(b => b.userId === user?.id && b.betNum === num && b.cashedOut && b.status === 'won')
-        if (myBet && ref.current && !ref.current.cashed && !autoCashedRef.current.has(myBet.id)) {
-          autoCashedRef.current.add(myBet.id)
+        const myBet = bets.find(b => b.userId === u.id && b.betNum === num && b.cashedOut && b.status === 'won')
+        if (myBet && ref.current && !ref.current.cashed && !autoCashedRef.current.has(`${myBet.userId}_${myBet.betNum}`)) {
+          autoCashedRef.current.add(`${myBet.userId}_${myBet.betNum}`)
           const won = myBet.winAmount || 0
           setBal(p => { const n = p + won; updateBalance(n); return n })
           setter(p => p ? { ...p, cashed: { won }, id: myBet.id } : null)
           setMyHistory(p => p.map(e => e.pending && (e.betId === myBet.id || e.betId.startsWith('temp_'))
             ? { ...e, mult: myBet.cashoutMult, won: true, profit: won, pending: false } : e))
-          addCashoutExit(user?.username || 'You', won)
+          addCashoutExit(u.username || 'You', won)
           toast.success(`Auto cashed ${myBet.cashoutMult.toFixed(2)}x — +₨${won.toLocaleString()}`)
-          sounds.playCashout()
+          soundsRef.current.playCashout()
         }
       })
     })
 
     aviatorWS.on('cashout_result', (result) => {
       if (!result.success) return
+      const u = userRef.current
       const num = result.betNum || 1
       const setter = num === 1 ? setB1d : setB2d
       setBal(p => { const n = p + result.winAmount; updateBalance(n); return n })
@@ -192,9 +205,9 @@ export default function AviatorGame() {
       const betData = num === 1 ? b1dRef.current : b2dRef.current
       setMyHistory(p => p.map(e => e.pending && (e.betId === betData?.id || e.betId.startsWith('temp_'))
         ? { ...e, mult: result.multiplier, won: true, profit: result.winAmount, pending: false } : e))
-      addCashoutExit(user?.username || 'You', result.winAmount)
+      addCashoutExit(u?.username || 'You', result.winAmount)
       toast.success(`Cashed ${result.multiplier.toFixed(2)}x — +₨${result.winAmount.toLocaleString()}`)
-      sounds.playCashout()
+      soundsRef.current.playCashout()
     })
 
     aviatorWS.on('bet_result', (result) => {
@@ -202,7 +215,7 @@ export default function AviatorGame() {
         const num = result.betNumber
         const setter = num === 1 ? setB1d : setB2d
         setter(p => p && p.id.startsWith('temp_') ? { ...p, id: result.bet.id } : p)
-        setMyHistory(p => p.map(e => e.pending && e.betId.startsWith('temp_') ? { ...e, betId: result.bet.id } : e))
+        setMyHistory(p => p.map(e => e.pending && e.betId.startsWith('temp_') && e.amount === result.bet.amount ? { ...e, betId: result.bet.id } : e))
       } else {
         toast.error(result.error || 'Failed to place bet')
         setB1d(null); setB2d(null)
@@ -220,9 +233,9 @@ export default function AviatorGame() {
     const prev = prevPhaseRef.current
     prevPhaseRef.current = phase
     if (phase === 'crashed' && prev !== 'crashed') {
-      sounds.playCrash()
+      soundsRef.current.playCrash()
       setMyHistory(h => h.map(e => e.pending && !e.won ? { ...e, won: false, pending: false, mult: null, profit: -e.amount } : e))
-      if (user?.id) fetch(`${API_URL}/api/aviator/bet-history?userId=${user.id}`).then(r => r.json()).catch(() => {})
+      if (userRef.current?.id) fetch(`${API_URL}/api/aviator/bet-history?userId=${userRef.current.id}`).then(r => r.json()).catch(() => {})
     }
     if (phase === 'betting' && prev === 'crashed') {
       setB1d(null); setB2d(null)
@@ -232,9 +245,9 @@ export default function AviatorGame() {
 
   // ── Engine sound ──
   useEffect(() => {
-    if (phase === 'running') sounds.playEngine(mult)
-    else sounds.stopEngine()
-  }, [phase, mult, sounds])
+    if (phase === 'running') soundsRef.current.playEngine(mult)
+    else soundsRef.current.stopEngine()
+  }, [phase, mult])
 
   // ── Live bet cashout popups ──
   useEffect(() => {
@@ -242,7 +255,7 @@ export default function AviatorGame() {
       const prevMap = new Map(prevLiveRef.current.map(b => [b.id, b]))
       live.forEach(b => {
         const prev = prevMap.get(b.id)
-        if (prev && prev.status === 'pending' && b.status === 'won' && b.username !== user?.username) {
+        if (prev && prev.status === 'pending' && b.status === 'won' && b.username !== userRef.current?.username) {
           addCashoutExit(b.username, Number(b.winAmount || b.win_amount || 0))
         }
       })
@@ -259,43 +272,47 @@ export default function AviatorGame() {
   }, [])
 
   const place = useCallback((num) => {
+    const u = userRef.current
+    const b = balRef.current
     if (!isLoggedIn) { navigate('/login', { state: { from: '/play/aviator' } }); return }
-    const amount = num === 1 ? b1a : b2a
+    const amount = num === 1 ? b1aRef.current : b2aRef.current
     if (amount < MIN_BET) { toast.error(`Min ₨${MIN_BET}`); return }
-    if (amount > MAX_BET) { toast.error(`Max ₨MAX_BET`); return }
-    if (amount > bal) { toast.error('Low balance'); return }
+    if (amount > MAX_BET) { toast.error(`Max ₨${MAX_BET}`); return }
+    if (amount > b) { toast.error('Low balance'); return }
     if (phaseRef.current !== 'betting') { toast.error('Wait for next round'); return }
 
-    const autoCashout = (num === 1 ? b1o : b2o) ? parseFloat(num === 1 ? b1v : b2v) : null
+    const autoOn = num === 1 ? b1oRef.current : b2oRef.current
+    const autoVal = num === 1 ? b1vRef.current : b2vRef.current
+    const autoCashout = autoOn ? parseFloat(autoVal) : null
     const tempId = `temp_${Date.now()}_${num}`
-    const newBal = bal - amount
+    const newBal = b - amount
     setBal(newBal); updateBalance(newBal)
     const entry = { id: tempId, amount, autoCashout, cashed: null }
     if (num === 1) setB1d(entry); else setB2d(entry)
     setMyHistory(p => [{ amount, mult: null, won: false, profit: 0, pending: true, betId: tempId, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }, ...p].slice(0, 15))
 
-    aviatorWS.placeBet({ userId: user?.id, username: user?.username || 'You', amount, autoCashout, betNumber: num })
-    sounds.playBet()
+    aviatorWS.placeBet({ userId: u?.id, username: u?.username || 'You', amount, autoCashout, betNumber: num })
+    soundsRef.current.playBet()
     toast.success(`Bet ${num}: ₨${amount} placed`)
-  }, [isLoggedIn, b1a, b1o, b1v, b2a, b2o, b2v, bal, user, navigate, toast, updateBalance, sounds])
+  }, [isLoggedIn, navigate, toast, updateBalance])
 
   const cashout = useCallback((num) => {
     if (phaseRef.current !== 'running') return
     const betData = num === 1 ? b1dRef.current : b2dRef.current
     if (!betData || betData.cashed) return
-    aviatorWS.cashout(user?.id, num)
-  }, [user])
+    aviatorWS.cashout(userRef.current?.id, num)
+  }, [])
 
   const cancelBet = useCallback((num) => {
     const betData = num === 1 ? b1dRef.current : b2dRef.current
     if (!betData) return
     if (phaseRef.current !== 'betting') { toast.error('Can only cancel during betting phase'); return }
-    aviatorWS.cancelBet(user?.id, num, betData.id)
+    aviatorWS.cancelBet(userRef.current?.id, num, betData.id)
     setBal(p => { const n = p + betData.amount; updateBalance(n); return n })
     if (num === 1) setB1d(null); else setB2d(null)
     setMyHistory(p => p.filter(e => e.betId !== betData.id && !e.betId.startsWith('temp_')))
     toast.success('Bet cancelled')
-  }, [user, toast, updateBalance])
+  }, [toast, updateBalance])
 
   // ── Render ──
   return (
