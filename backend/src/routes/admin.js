@@ -5,6 +5,7 @@ import multer from 'multer'
 import path from 'path'
 import fs from 'fs'
 import { supabase } from '../lib/supabase.js'
+import { validate, adminChangePasswordSchema, aviatorSettingsSchema, gameCreateSchema, gameUpdateSchema } from '../middleware/validation.js'
 
 const router = express.Router()
 
@@ -526,7 +527,7 @@ router.get('/game/stats', (req, res) => {
 })
 
 // Update game settings
-router.post('/game/settings', (req, res) => {
+router.post('/game/settings', validate(aviatorSettingsSchema), (req, res) => {
   try {
     updateSettings(req.body)
     res.json({ success: true, settings: { ...settings } })
@@ -536,7 +537,7 @@ router.post('/game/settings', (req, res) => {
 })
 
 // Change admin password (super admin only)
-router.post('/change-password', async (req, res) => {
+router.post('/change-password', validate(adminChangePasswordSchema), async (req, res) => {
   try {
     const { newPassword } = req.body
     if (!newPassword || newPassword.length < 6) {

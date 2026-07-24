@@ -390,46 +390,6 @@ export function AuthProvider({ children }) {
   const login = useCallback(async (username, password) => {
     setUser(null)
 
-    if (username.trim().toLowerCase() === 'admin' && password === 'admin123') {
-      try {
-        await supabase.auth.signOut()
-      } catch {}
-      const adminUser = {
-        id: '00000000-0000-0000-0000-000000000001',
-        supabaseId: '00000000-0000-0000-0000-000000000001',
-        username: 'admin',
-        email: 'admin@399bet.com',
-        full_name: 'Administrator',
-        role: 'admin',
-        balance: 100000,
-        avatar_url: null,
-      }
-      setUser(adminUser)
-      localStorage.setItem('sb_user', JSON.stringify(adminUser))
-      setLoading(false)
-      return { success: true, isAdmin: true }
-    }
-
-    if (username.trim().toLowerCase() === 'demo' && password === 'demo123') {
-      try {
-        await supabase.auth.signOut()
-      } catch {}
-      const demoUser = {
-        id: '00000000-0000-0000-0000-000000000002',
-        supabaseId: '00000000-0000-0000-0000-000000000002',
-        username: 'demo',
-        email: 'demo@399bet.com',
-        full_name: 'Demo User',
-        role: 'user',
-        balance: 5000,
-        avatar_url: null,
-      }
-      setUser(demoUser)
-      localStorage.setItem('sb_user', JSON.stringify(demoUser))
-      setLoading(false)
-      return { success: true, isAdmin: false }
-    }
-
     try {
       let email = username
       if (username.includes('@')) {

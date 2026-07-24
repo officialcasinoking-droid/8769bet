@@ -1,80 +1,24 @@
 import express from 'express'
-import { body } from 'express-validator'
+import crypto from 'crypto'
 import { login, signup, forgotPassword, changePassword, getMe, resetPassword } from '../controllers/authController.js'
 import { supabase } from '../lib/supabase.js'
 import bcrypt from 'bcryptjs'
 import { logAudit } from '../middleware/auditLogger.js'
+import { encryptPin, decryptPin, hashPin, verifyPin, verifyPinFormat } from '../lib/crypto.js'
+import { validate, setPinSchema, withdrawalAccountSchema } from '../middleware/validation.js'
 
 const router = express.Router()
 
-// Login validation
-const loginValidation = [
-  body('username').trim().notEmpty().withMessage('Username or email is required'),
-  body('password').notEmpty().withMessage('Password is required')
-]
-
-// Signup validation
-const signupValidation = [
-  body('full_name').trim().notEmpty().withMessage('Full name is required').isLength({ min: 2 }).withMessage('Name must be at least 2 characters'),
-  body('username').trim().notEmpty().withMessage('Username is required').isLength({ min: 3 }).withMessage('Username must be at least 3 characters').matches(/^[a-zA-Z0-9_]+$/).withMessage('Username can only contain letters, numbers, and underscores'),
-  body('email').trim().isEmail().withMessage('Valid email is required').normalizeEmail(),
-  body('password').isLength({ min: 8 }).withMessage('Password must be at least 8 characters').matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/).withMessage('Password must contain at least one uppercase, one lowercase, and one number'),
-  body('confirm_password').custom((value, { req }) => {
-    if (value !== req.body.password) {
-      throw new Error('Passwords do not match')
-    }
-    return true
-  }),
-  body('terms').isBoolean().withMessage('You must accept the terms').equals('true').withMessage('You must accept the terms')
-]
-
-// Reset password validation
-const resetPasswordValidation = [
-  body('token').trim().notEmpty().withMessage('Reset token is required'),
-  body('new_password').isLength({ min: 8 }).withMessage('Password must be at least 8 characters').matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/).withMessage('Password must contain at least one uppercase, one lowercase, and one number')
-]
-
-// Routes
-router.post('/login', loginValidation, login)
-router.post('/signup', signupValidation, signup)
-router.post('/forgot-password', [body('email').isEmail().withMessage('Valid email is required')], forgotPassword)
-router.post('/reset-password', resetPasswordValidation, resetPassword)
-router.post('/change-password', changePassword)
-router.get('/me', getMe)
-
-// Simple PIN encryption/decryption using JWT_SECRET
-function encryptPin(pin, secret) {
-  let result = ''
-  for (let i = 0; i < pin.length; i++) {
-    result += String.fromCharCode(pin.charCodeAt(i) ^ secret.charCodeAt(i % secret.length))
-  }
-  return Buffer.from(result).toString('base64')
-}
-
-function decryptPin(encrypted, secret) {
-  try {
-    const decoded = Buffer.from(encrypted, 'base64').toString()
-    let result = ''
-    for (let i = 0; i < decoded.length; i++) {
-      result += String.fromCharCode(decoded.charCodeAt(i) ^ secret.charCodeAt(i % secret.length))
-    }
-    return result
-  } catch {
-    return null
-  }
-}
-
 // User withdrawal PIN routes
-router.post('/users/:id/set-pin', async (req, res) => {
+router.post('/users/:id/set-pin', validate(setPinSchema), async (req, res) => {
   try {
     const { pin } = req.body
-    if (!pin || pin.length !== 6 || !/^\d{6}$/.test(pin)) {
+    if (!verifyPinFormat(pin)) {
       return res.status(400).json({ error: 'PIN must be 6 digits' })
     }
 
-    const pinHash = await bcrypt.hash(pin, 12)
-    const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-key-change-in-production-2026'
-    const encryptedPin = encryptPin(pin, JWT_SECRET)
+    const pinHash = await hashPin(pin)
+    const encryptedPin = encryptPin(pin)
 
     const { data: user, error: fetchError } = await supabase
       .from('users')
@@ -109,7 +53,7 @@ router.post('/users/:id/set-pin', async (req, res) => {
   }
 })
 
-router.post('/users/:id/verify-pin', async (req, res) => {
+router.post('/users/:id/verify-pin', validate(setPinSchema), async (req, res) => {
   try {
     const { pin } = req.body
 
@@ -123,14 +67,14 @@ router.post('/users/:id/verify-pin', async (req, res) => {
       return res.json({ success: false, error: 'PIN not set' })
     }
 
-    const isValid = await bcrypt.compare(pin, user.withdrawal_pin_hash)
+    const isValid = await verifyPin(pin, user.withdrawal_pin_hash)
     res.json({ success: isValid })
   } catch (err) {
     res.status(500).json({ success: false, error: err.message })
   }
 })
 
-router.post('/users/:id/withdrawal-accounts', async (req, res) => {
+router.post('/users/:id/withdrawal-accounts', validate(withdrawalAccountSchema), async (req, res) => {
   try {
     const { account } = req.body
     if (!account || !account.type || !account.account_number) {
@@ -218,5 +162,5 @@ router.delete('/users/:id/withdrawal-accounts/:accountId', async (req, res) => {
   }
 })
 
-export { encryptPin, decryptPin }
+export { encryptPin, decryptPin, hashPin, verifyPin }
 export default router

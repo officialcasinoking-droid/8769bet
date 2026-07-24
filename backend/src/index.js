@@ -1,5 +1,6 @@
 import express from 'express'
 import rateLimit from 'express-rate-limit'
+import helmet from 'helmet'
 import dotenv from 'dotenv'
 import { createServer } from 'http'
 import { supabase } from './lib/supabase.js'
@@ -16,12 +17,49 @@ import { initGameEngine, getCurrentState, requestManualCrash, updateSettings, pl
 import { authenticateAdmin, getRequiredRoleForPath, requireRole } from './middleware/auth.js'
 import { createAuditMiddleware, initAuditWebSocket } from './middleware/auditLogger.js'
 import { createLoginRateLimiter } from './middleware/rateLimiter.js'
+import { 
+  apiRateLimiter, 
+  strictRateLimiter, 
+  authRateLimiter, 
+  depositRateLimiter, 
+  withdrawalRateLimiter, 
+  pinRateLimiter,
+  adminRateLimiter,
+  csrfRateLimiter
+} from './middleware/rateLimiters.js'
+import { csrfMiddleware, csrfTokenEndpoint } from './middleware/csrf.js'
 import multer from 'multer'
 
 dotenv.config()
 
 const app = express()
 const server = createServer(app)
+
+// Security headers with Helmet
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", 'data:', 'https:'],
+      connectSrc: ["'self'", 'https://rbcipnwwllkscomatqmc.supabase.co', 'wss://rbcipnwwllkscomatqmc.supabase.co'],
+      fontSrc: ["'self'"],
+      objectSrc: ["'none'"],
+      mediaSrc: ["'self'"],
+      frameSrc: ["'none'"]
+    }
+  },
+  hsts: {
+    maxAge: 31536000,
+    includeSubDomains: true,
+    preload: true
+  },
+  noSniff: true,
+  referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+  xssFilter: true,
+  frameguard: { action: 'deny' }
+}))
 
 // Root endpoint for testing
 app.get('/', (req, res) => {
@@ -56,12 +94,38 @@ app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
 app.use('/public', express.static('public'))
 
-// Login rate limiter
+// Global API rate limiter
+app.use('/api/', apiRateLimiter)
+
+// Stricter rate limiter for sensitive endpoints
+app.use('/api/auth/login', authRateLimiter)
+app.use('/api/auth/signup', authRateLimiter)
+app.use('/api/auth/forgot-password', authRateLimiter)
+app.use('/api/auth/reset-password', authRateLimiter)
+app.use('/api/auth/users/:id/set-pin', pinRateLimiter)
+app.use('/api/auth/users/:id/verify-pin', pinRateLimiter)
+app.use('/api/auth/users/:id/withdrawal-accounts', depositRateLimiter)
+
+// Admin rate limiter
+app.use('/api/admin', adminRateLimiter)
+
+// Login rate limiter (existing)
 const loginLimiter = createLoginRateLimiter()
 app.use('/api/auth/login', loginLimiter)
 
 // Audit middleware for admin routes
 app.use('/api/admin', createAuditMiddleware())
+
+// CSRF token endpoint (public)
+app.get('/api/csrf-token', csrfRateLimiter, csrfTokenEndpoint)
+
+// Apply CSRF protection to all mutating API routes
+app.use('/api/', (req, res, next) => {
+  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
+    return csrfMiddleware()(req, res, next)
+  }
+  next()
+})
 
 // Routes
 app.use('/api/auth', authRoutes)
