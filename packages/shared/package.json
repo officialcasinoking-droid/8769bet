@@ -1,0 +1,26 @@
+{
+  "name": "@8769bet/shared",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "./index.ts",
+  "types": "./index.ts",
+  "exports": {
+    ".": "./index.ts",
+    "./constants": "./constants/index.ts",
+    "./types": "./types/index.ts",
+    "./crypto": "./crypto/index.ts",
+    "./validation": "./validation/index.ts",
+    "./api": "./api/index.ts",
+    "./utils": "./utils/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "zod": "^3.22.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.3",
+    "zod": "^3.22.0"
+  }
+}

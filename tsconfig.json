@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "jsx": "react-jsx",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@8769bet/shared/*": ["packages/shared/*"],
+      "@8769bet/ui/*": ["packages/ui/src/*"]
+    }
+  },
+  "include": ["packages/**/*", "frontend/**/*", "admin/**/*"],
+  "exclude": ["node_modules"]
+}
