@@ -131,7 +131,8 @@ const PUBLIC_AUTH_ENDPOINTS = [
 app.use('/api/', (req, res, next) => {
   if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
     // Skip CSRF for public auth endpoints
-    if (PUBLIC_AUTH_ENDPOINTS.some(endpoint => req.path.startsWith(endpoint))) {
+    const url = req.originalUrl || req.path;
+    if (PUBLIC_AUTH_ENDPOINTS.some(endpoint => url.startsWith(endpoint))) {
       return next();
     }
     return csrfMiddleware()(req, res, next);
