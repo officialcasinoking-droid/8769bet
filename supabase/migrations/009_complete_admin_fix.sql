@@ -42,11 +42,14 @@ ALTER TABLE admin_accounts ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "admins_select_service" ON admins;
 CREATE POLICY "admins_select_service" ON admins FOR SELECT USING (auth.jwt() ->> 'role' = 'service_role');
 
-DROP POLICY IF EXISTS "admins_all_service" ON admins FOR ALL USING (auth.jwt() ->> 'role' = 'service_role');
+DROP POLICY IF EXISTS "admins_all_service" ON admins;
+CREATE POLICY "admins_all_service" ON admins FOR ALL USING (auth.jwt() ->> 'role' = 'service_role');
 
-DROP POLICY IF EXISTS "admin_accounts_select_service" ON admin_accounts FOR SELECT USING (auth.jwt() ->> 'role' = 'service_role');
+DROP POLICY IF EXISTS "admin_accounts_select_service" ON admin_accounts;
+CREATE POLICY "admin_accounts_select_service" ON admin_accounts FOR SELECT USING (auth.jwt() ->> 'role' = 'service_role');
 
-DROP POLICY IF EXISTS "admin_accounts_all_service" ON admin_accounts FOR ALL USING (auth.jwt() ->> 'role' = 'service_role');
+DROP POLICY IF EXISTS "admin_accounts_all_service" ON admin_accounts;
+CREATE POLICY "admin_accounts_all_service" ON admin_accounts FOR ALL USING (auth.jwt() ->> 'role' = 'service_role');
 
 -- Step 4: Delete any existing admin
 DELETE FROM admins WHERE username = 'admin';
