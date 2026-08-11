@@ -1,6 +1,6 @@
 -- Phase 3: Performance - Add Missing Database Indexes
 -- Run this in Supabase SQL Editor
--- Safe: every index checks both table AND column existence
+-- Safe: every individual index checks both table AND column existence
 
 DO $$
 BEGIN
@@ -18,7 +18,9 @@ BEGIN
     CREATE INDEX IF NOT EXISTS idx_transactions_user_id_created_at ON transactions(user_id, created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_transactions_status ON transactions(status);
     CREATE INDEX IF NOT EXISTS idx_transactions_type ON transactions(type);
-    CREATE INDEX IF NOT EXISTS idx_transactions_reference ON transactions(reference);
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'transactions' AND column_name = 'reference') THEN
+      CREATE INDEX IF NOT EXISTS idx_transactions_reference ON transactions(reference);
+    END IF;
     CREATE INDEX IF NOT EXISTS idx_transactions_created_at ON transactions(created_at DESC);
   END IF;
 
@@ -54,8 +56,12 @@ BEGIN
       CREATE INDEX IF NOT EXISTS idx_game_bets_round_id ON game_bets(round_id);
     END IF;
     CREATE INDEX IF NOT EXISTS idx_game_bets_status ON game_bets(status);
-    CREATE INDEX IF NOT EXISTS idx_game_bets_is_bot ON game_bets(is_bot);
-    CREATE INDEX IF NOT EXISTS idx_game_bets_is_demo ON game_bets(is_demo);
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'game_bets' AND column_name = 'is_bot') THEN
+      CREATE INDEX IF NOT EXISTS idx_game_bets_is_bot ON game_bets(is_bot);
+    END IF;
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'game_bets' AND column_name = 'is_demo') THEN
+      CREATE INDEX IF NOT EXISTS idx_game_bets_is_demo ON game_bets(is_demo);
+    END IF;
   END IF;
 
   -- Game Rounds table
@@ -76,7 +82,9 @@ BEGIN
       CREATE INDEX IF NOT EXISTS idx_player_bets_round_id ON player_bets(round_id);
     END IF;
     CREATE INDEX IF NOT EXISTS idx_player_bets_status ON player_bets(status);
-    CREATE INDEX IF NOT EXISTS idx_player_bets_is_bot ON player_bets(is_bot);
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'player_bets' AND column_name = 'is_bot') THEN
+      CREATE INDEX IF NOT EXISTS idx_player_bets_is_bot ON player_bets(is_bot);
+    END IF;
   END IF;
 
   -- Referrals table
