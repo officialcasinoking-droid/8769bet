@@ -1,6 +1,6 @@
 -- Phase 3: Performance - Add Missing Database Indexes
 -- Run this in Supabase SQL Editor
--- Safe to re-run: uses IF NOT EXISTS
+-- Safe to re-run: uses IF NOT EXISTS and DO blocks for safety
 
 -- ── Users table ──────────────────────────────────────────────
 CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
@@ -47,11 +47,16 @@ CREATE INDEX IF NOT EXISTS idx_game_rounds_game_slug_created_at ON game_rounds(g
 CREATE INDEX IF NOT EXISTS idx_game_rounds_status ON game_rounds(status);
 CREATE INDEX IF NOT EXISTS idx_game_rounds_round_id ON game_rounds(round_id);
 
--- ── Player Bets (from migration 002) ─────────────────────────
-CREATE INDEX IF NOT EXISTS idx_player_bets_user_id_created_at ON player_bets(user_id, created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_player_bets_round_id ON player_bets(round_id);
-CREATE INDEX IF NOT EXISTS idx_player_bets_status ON player_bets(status);
-CREATE INDEX IF NOT EXISTS idx_player_bets_is_bot ON player_bets(is_bot);
+-- ── Player Bets (only if table exists) ───────────────────────
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'player_bets') THEN
+    CREATE INDEX IF NOT EXISTS idx_player_bets_user_id_created_at ON player_bets(user_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_player_bets_round_id ON player_bets(round_id);
+    CREATE INDEX IF NOT EXISTS idx_player_bets_status ON player_bets(status);
+    CREATE INDEX IF NOT EXISTS idx_player_bets_is_bot ON player_bets(is_bot);
+  END IF;
+END $$;
 
 -- ── Referrals ────────────────────────────────────────────────
 CREATE INDEX IF NOT EXISTS idx_referrals_referrer_id ON referrals(referrer_id);
