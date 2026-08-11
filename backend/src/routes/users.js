@@ -9,7 +9,7 @@ import { supabase } from '../lib/supabase.js'
 import { authenticateAdmin, requireRole } from '../middleware/auth.js'
 import { logAudit } from '../middleware/auditLogger.js'
 import { encryptPin, decryptPin, hashPin, verifyPin } from '../lib/crypto.js'
-import { validate, adminChangePasswordSchema, userFiltersSchema, paginationSchema } from '../middleware/validation.js'
+import { validate, adminChangePasswordSchema, userFiltersSchema, paginationSchema, setPinSchema, resetPinSchema } from '../middleware/validation.js'
 
 const router = express.Router()
 
