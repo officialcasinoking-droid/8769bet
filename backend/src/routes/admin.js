@@ -9,6 +9,54 @@ import { validate, adminChangePasswordSchema, aviatorSettingsSchema, gameCreateS
 
 const router = express.Router()
 
+// Optimized dashboard stats endpoint (single request)
+router.get('/stats', async (req, res) => {
+  try {
+    const [
+      { count: totalUsers },
+      { count: activeUsers },
+      { data: wallet },
+      { count: activeGames },
+      { data: recentTx },
+      { count: pendingWithdrawals },
+      { count: pendingDeposits },
+      { data: revenueData }
+    ] = await Promise.all([
+      supabase.from('users').select('*', { count: 'exact', head: true }),
+      supabase.from('users').select('*', { count: 'exact', head: true }).eq('is_active', true),
+      supabase.from('admin_wallet').select('*').eq('id', 'main').maybeSingle(),
+      supabase.from('games').select('*', { count: 'exact', head: true }).eq('is_active', true),
+      supabase.from('transactions').select('type, amount, status, created_at').order('created_at', { ascending: false }).limit(10),
+      supabase.from('withdrawals').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
+      supabase.from('deposits').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
+      supabase.from('transactions').select('amount, type, status').eq('status', 'completed').in('type', ['deposit', 'win'])
+    ]);
+
+    const totalRevenue = revenueData?.reduce((sum, tx) => {
+      if (tx.type === 'deposit') return sum + Number(tx.amount);
+      if (tx.type === 'win') return sum - Number(tx.amount);
+      return sum;
+    }, 0) || 0;
+
+    res.json({
+      success: true,
+      stats: {
+        totalUsers: totalUsers || 0,
+        activeUsers: activeUsers || 0,
+        walletBalance: wallet?.balance || 0,
+        activeGames: activeGames || 0,
+        pendingWithdrawals: pendingWithdrawals || 0,
+        pendingDeposits: pendingDeposits || 0,
+        totalRevenue,
+        recentTransactions: recentTx || []
+      }
+    });
+  } catch (err) {
+    console.error('[admin/stats] Error:', err.message);
+    res.status(500).json({ error: 'Failed to fetch stats' });
+  }
+})
+
 // Get all deposits
 router.get('/deposits', async (req, res) => {
   const { status } = req.query

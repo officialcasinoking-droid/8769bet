@@ -9,27 +9,28 @@ import {
 } from 'lucide-react'
 
 // ── API Functions ────────────────────────────────────────────
+const API_URL = import.meta.env.VITE_API_URL || 'https://eight769bet-backend.onrender.com';
+
 async function fetchStats() {
   try {
-    const [usersRes, walletRes, gamesRes, txRes] = await Promise.all([
-      supabase.from('users').select('*', { count: 'exact', head: true }),
-      supabase.from('admin_wallet').select('balance').eq('id', 'main').single(),
-      supabase.from('games').select('*', { count: 'exact', head: true }).eq('is_active', true),
-      supabase.from('transactions').select('type, amount, status').order('created_at', { ascending: false }).limit(100),
-    ])
-
-    const txData = txRes.data || []
-    const totalRevenue = txData.filter(t => t.type === 'deposit' && t.status === 'completed').reduce((s, t) => s + Number(t.amount), 0)
-    const totalWithdrawals = txData.filter(t => t.type === 'withdrawal' && t.status === 'approved').reduce((s, t) => s + Number(t.amount), 0)
-
+    const adminToken = localStorage.getItem('admin_token');
+    const response = await fetch(`${API_URL}/api/admin/stats`, {
+      headers: { 'Authorization': `Bearer ${adminToken}` }
+    });
+    if (!response.ok) throw new Error('Failed to fetch stats');
+    const data = await response.json();
     return {
-      totalUsers: usersRes.count || 0,
-      walletBalance: walletRes.data?.balance || 0,
-      activeGames: gamesRes.count || 0,
-      totalRevenue,
-      totalWithdrawals,
-      netRevenue: totalRevenue - totalWithdrawals,
-    }
+      totalUsers: data.stats?.totalUsers || 0,
+      walletBalance: data.stats?.walletBalance || 0,
+      activeGames: data.stats?.activeGames || 0,
+      totalRevenue: data.stats?.totalRevenue || 0,
+      totalWithdrawals: 0,
+      netRevenue: data.stats?.totalRevenue || 0,
+    };
+  } catch {
+    return { totalUsers: 0, walletBalance: 0, activeGames: 0, totalRevenue: 0, totalWithdrawals: 0, netRevenue: 0 };
+  }
+}
   } catch {
     return { totalUsers: 0, walletBalance: 0, activeGames: 0, totalRevenue: 0, totalWithdrawals: 0, netRevenue: 0 }
   }
