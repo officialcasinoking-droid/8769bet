@@ -119,11 +119,24 @@ app.use('/api/admin', createAuditMiddleware())
 app.get('/api/csrf-token', csrfRateLimiter, csrfTokenEndpoint)
 
 // Apply CSRF protection to all mutating API routes
+// Exclude public auth endpoints (login, signup, forgot-password, reset-password)
+const PUBLIC_AUTH_ENDPOINTS = [
+  '/api/auth/login',
+  '/api/auth/signup',
+  '/api/auth/forgot-password',
+  '/api/auth/reset-password',
+  '/api/admin/login',
+  '/api/csrf-token'
+];
 app.use('/api/', (req, res, next) => {
   if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
-    return csrfMiddleware()(req, res, next)
+    // Skip CSRF for public auth endpoints
+    if (PUBLIC_AUTH_ENDPOINTS.some(endpoint => req.path.startsWith(endpoint))) {
+      return next();
+    }
+    return csrfMiddleware()(req, res, next);
   }
-  next()
+  next();
 })
 
 // Routes
