@@ -388,6 +388,13 @@ router.post('/login', async (req, res) => {
       })
     }
 
+    // 0. Check env vars FIRST (most reliable)
+    const envUsername = process.env.ADMIN_USERNAME
+    const envPassword = process.env.ADMIN_PASSWORD
+    if (envUsername && envPassword && username === envUsername && password === envPassword) {
+      return respondAdmin('00000000-0000-0000-0000-000000000001', username, 'super_admin', { all: true })
+    }
+
     // 1. Try admins table (bcrypt)
     const { data: admin, error: adminError } = await supabase
       .from('admins')
@@ -395,21 +402,21 @@ router.post('/login', async (req, res) => {
       .eq('username', username)
       .maybeSingle()
 
-    if (admin && admin.password_hash) {
+    if (!adminError && admin && admin.password_hash) {
       const isValid = await bcrypt.compare(password, admin.password_hash)
       if (isValid) {
         return respondAdmin(admin.id, admin.username, admin.role, admin.permissions, admin.email, admin.full_name)
       }
     }
 
-    // 2. Try admin_accounts table (used by auth middleware)
+    // 2. Try admin_accounts table
     const { data: acct, error: acctError } = await supabase
       .from('admin_accounts')
       .select('*')
       .eq('username', username)
       .maybeSingle()
 
-    if (acct && acct.password_hash) {
+    if (!acctError && acct && acct.password_hash) {
       const isValid = await bcrypt.compare(password, acct.password_hash)
       if (isValid) {
         return respondAdmin(acct.id, acct.username, acct.role || 'super_admin', acct.permissions || { all: true }, acct.email, acct.full_name)
@@ -425,23 +432,56 @@ router.post('/login', async (req, res) => {
 
     if (!psError && platformSettings?.admin_username && platformSettings?.admin_password) {
       if (username === platformSettings.admin_username && password === platformSettings.admin_password) {
-        seedDefaultAdmin(username, password)
         return respondAdmin('00000000-0000-0000-0000-000000000001', username, 'super_admin', { all: true })
       }
-    }
-
-    // 4. Fallback: environment variables
-    const envUsername = process.env.ADMIN_USERNAME
-    const envPassword = process.env.ADMIN_PASSWORD
-    if (envUsername && envPassword && username === envUsername && password === envPassword) {
-      seedDefaultAdmin(username, password)
-      return respondAdmin('00000000-0000-0000-0000-000000000001', username, 'super_admin', { all: true })
     }
 
     res.status(401).json({ error: 'Invalid credentials' })
   } catch (err) {
     console.error('Admin login error:', err)
     res.status(500).json({ error: 'Server error' })
+  }
+})
+
+// Debug endpoint to check admin status
+router.get('/debug-admin', async (req, res) => {
+  try {
+    const results = {}
+    
+    // Check env vars
+    results.env = {
+      ADMIN_USERNAME: process.env.ADMIN_USERNAME || 'not set',
+      ADMIN_PASSWORD: process.env.ADMIN_PASSWORD ? 'set' : 'not set',
+      passwordMatches: process.env.ADMIN_PASSWORD === 'admin8769'
+    }
+    
+    // Check admins table
+    try {
+      const { data, error } = await supabase.from('admins').select('*').eq('username', 'admin').maybeSingle()
+      results.admins = { exists: !!data, error: error?.message, hasHash: !!data?.password_hash }
+    } catch (e) {
+      results.admins = { error: e.message }
+    }
+    
+    // Check admin_accounts table
+    try {
+      const { data, error } = await supabase.from('admin_accounts').select('*').eq('username', 'admin').maybeSingle()
+      results.admin_accounts = { exists: !!data, error: error?.message, hasHash: !!data?.password_hash }
+    } catch (e) {
+      results.admin_accounts = { error: e.message }
+    }
+    
+    // Check platform_settings
+    try {
+      const { data, error } = await supabase.from('platform_settings').select('admin_username, admin_password').eq('id', 'main').maybeSingle()
+      results.platform_settings = { data, error: error?.message }
+    } catch (e) {
+      results.platform_settings = { error: e.message }
+    }
+    
+    res.json(results)
+  } catch (err) {
+    res.status(500).json({ error: err.message })
   }
 })
 
