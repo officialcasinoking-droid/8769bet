@@ -31,10 +31,6 @@ async function fetchStats() {
     return { totalUsers: 0, walletBalance: 0, activeGames: 0, totalRevenue: 0, totalWithdrawals: 0, netRevenue: 0 };
   }
 }
-  } catch {
-    return { totalUsers: 0, walletBalance: 0, activeGames: 0, totalRevenue: 0, totalWithdrawals: 0, netRevenue: 0 }
-  }
-}
 
 async function fetchRecentActivity() {
   try {
