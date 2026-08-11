@@ -262,14 +262,7 @@ const { userId, betId } = req.body;
   } catch (err) {
     res.status(500).json({ error: 'Failed to cancel bet' });
   }
-})
-    await supabase.from('game_bets').update({ status: 'cancelled', updated_at: new Date().toISOString() }).eq('id', betId);
-    
-    res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to cancel bet' });
-  }
-})
+});
 
 // Get user bet history
 app.get('/api/aviator/bet-history', async (req, res) => {
