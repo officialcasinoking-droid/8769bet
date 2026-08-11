@@ -1,5 +1,6 @@
 -- Phase 3: Performance - Add Missing Database Indexes
 -- Run this in Supabase SQL Editor
+-- Safe to re-run: uses IF NOT EXISTS
 
 -- ── Users table ──────────────────────────────────────────────
 CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
@@ -27,11 +28,11 @@ CREATE INDEX IF NOT EXISTS idx_deposits_status ON deposits(status);
 CREATE INDEX IF NOT EXISTS idx_deposits_created_at ON deposits(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_deposits_method ON deposits(method);
 
--- ── Audit Logs table ─────────────────────────────────────────
-CREATE INDEX IF NOT EXISTS idx_audit_logs_actor_id_created_at ON audit_logs(actor_id, created_at DESC);
+-- ── Audit Logs table (uses 'timestamp' not 'created_at') ─────
+CREATE INDEX IF NOT EXISTS idx_audit_logs_actor_id_timestamp ON audit_logs(actor_id, timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_action ON audit_logs(action);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_actor_type ON audit_logs(actor_type);
-CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs(timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_target_type_target_id ON audit_logs(target_type, target_id);
 
 -- ── Game Bets table ──────────────────────────────────────────
@@ -45,11 +46,6 @@ CREATE INDEX IF NOT EXISTS idx_game_bets_is_demo ON game_bets(is_demo);
 CREATE INDEX IF NOT EXISTS idx_game_rounds_game_slug_created_at ON game_rounds(game_slug, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_game_rounds_status ON game_rounds(status);
 CREATE INDEX IF NOT EXISTS idx_game_rounds_round_id ON game_rounds(round_id);
-
--- ── Aviator tables ───────────────────────────────────────────
-CREATE INDEX IF NOT EXISTS idx_aviator_bets_user_id_created_at ON aviator_bets(user_id, created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_aviator_bets_round_id ON aviator_bets(round_id);
-CREATE INDEX IF NOT EXISTS idx_aviator_bets_status ON aviator_bets(status);
 
 -- ── Player Bets (from migration 002) ─────────────────────────
 CREATE INDEX IF NOT EXISTS idx_player_bets_user_id_created_at ON player_bets(user_id, created_at DESC);
@@ -71,13 +67,13 @@ CREATE INDEX IF NOT EXISTS idx_support_tickets_user_id_status ON support_tickets
 CREATE INDEX IF NOT EXISTS idx_support_tickets_status ON support_tickets(status);
 CREATE INDEX IF NOT EXISTS idx_support_tickets_priority ON support_tickets(priority);
 
--- ── Admin Wallet ─────────────────────────────────────────────
+-- ── Admin Wallet (uses 'updated_at') ─────────────────────────
 CREATE INDEX IF NOT EXISTS idx_admin_wallet_updated_at ON admin_wallet(updated_at DESC);
 
--- ── Platform Settings ────────────────────────────────────────
+-- ── Platform Settings (uses 'updated_at') ────────────────────
 CREATE INDEX IF NOT EXISTS idx_platform_settings_updated_at ON platform_settings(updated_at DESC);
 
--- ── Landing Content ──────────────────────────────────────────
+-- ── Landing Content (uses 'updated_at') ──────────────────────
 CREATE INDEX IF NOT EXISTS idx_landing_content_updated_at ON landing_content(updated_at DESC);
 
 -- ── Payment Methods ──────────────────────────────────────────
@@ -101,6 +97,3 @@ CREATE INDEX IF NOT EXISTS idx_admin_accounts_role ON admin_accounts(role);
 CREATE INDEX IF NOT EXISTS idx_admins_username ON admins(username);
 CREATE INDEX IF NOT EXISTS idx_admins_is_active ON admins(is_active);
 CREATE INDEX IF NOT EXISTS idx_admins_role ON admins(role);
-
--- ── Login Attempts (if table exists) ─────────────────────────
-CREATE INDEX IF NOT EXISTS idx_login_attempts_username_created_at ON login_attempts(username, created_at DESC);
