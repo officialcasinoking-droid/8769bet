@@ -252,7 +252,7 @@ router.post('/:id/balance', async (req, res) => {
 
     if (updateError) throw updateError
 
-    broadcastBalance(req.params.id, balanceAfter)
+    // Balance updated successfully
 
     await supabase.from('balance_history').insert({
       user_id: req.params.id,

@@ -1,6 +1,5 @@
 import express from 'express'
 import { supabase } from '../lib/supabase.js'
-import { broadcastBalance } from '../gameEngine.js'
 
 const router = express.Router()
 
@@ -277,7 +276,7 @@ ${pendingWithdrawals?.map(w => `- ID: ${w.id}, User: ${w.users?.username || 'Unk
               if (balanceError) {
                 console.error('[AI/withdrawal] Balance refund error:', balanceError.message)
               } else {
-                broadcastBalance(withdrawal.user_id, newBalance)
+                // Balance refunded successfully
               }
             }
 
