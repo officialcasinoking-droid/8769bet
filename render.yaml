@@ -10,7 +10,7 @@ services:
       - key: VITE_SUPABASE_URL
         value: https://rbcipnwwllkscomatqmc.supabase.co
       - key: VITE_SUPABASE_ANON_KEY
-        value: sb_publishable_AhkszCMVXSyaAuk8xumFuQ_YPUIJsAL
+        value: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJiY2lwbnd3bGxrc2NvbWF0cW1jIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM5MTg2NTcsImV4cCI6MjA4OTQ5NDY1N30.yVXhIJi86a5s6vH8ySVHcJB4BREuA6IzwDbZGHkElzU
       - key: VITE_API_URL
         value: https://eight769bet-backend.onrender.com
       - key: VITE_BACKEND_WS_URL
@@ -41,7 +41,7 @@ services:
       - key: SUPABASE_URL
         value: https://rbcipnwwllkscomatqmc.supabase.co
       - key: SUPABASE_SERVICE_ROLE_KEY
-        value: sb_secret_mWPpLyPuu2W5_vGraqbVKg_WydTq08u
+        value: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJiY2lwbnd3bGxrc2NvbWF0cW1jIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MzkxODY1NywiZXhwIjoyMDg5NDk0NjU3fQ.YrR1fWCxwIG2e2bSJkjAl9sQ0aQQtf4oRjpYPVzoXiU
       - key: JWT_SECRET
         value: 8769bet-production-jwt-secret-2026-a7f3c9d1e5b8f4a2c6d0e9f3a7b1c5d8e2f6a0b4c8d2e6f0
       - key: BASE_URL
