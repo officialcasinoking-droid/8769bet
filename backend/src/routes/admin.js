@@ -479,60 +479,91 @@ router.post('/withdrawal/settings', async (req, res) => {
 // ── Game Control Endpoints ────────────────────────
 
 // Force crash current round
-router.post('/game/crash', (req, res) => {
+router.post('/game/crash', async (req, res) => {
   try {
-    requestManualCrash()
-    res.json({ success: true, message: 'Crash signal sent' })
+    await supabase.from('aviator_admin_signals').insert({
+      id: 'control',
+      action: 'force_crash',
+      triggered_by: req.admin?.id || null,
+      processed: false
+    });
+    res.json({ success: true, message: 'Crash signal sent' });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message })
+    res.status(500).json({ success: false, error: err.message });
   }
 })
 
 // Start new round immediately
-router.post('/game/new-round', (req, res) => {
+router.post('/game/new-round', async (req, res) => {
   try {
-    startNewRound()
-    res.json({ success: true, message: 'New round started' })
+    await supabase.from('aviator_admin_signals').insert({
+      id: 'control',
+      action: 'new_round',
+      triggered_by: req.admin?.id || null,
+      processed: false
+    });
+    res.json({ success: true, message: 'New round signal sent' });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message })
+    res.status(500).json({ success: false, error: err.message });
   }
 })
 
 // Get current game state
-router.get('/game/state', (req, res) => {
+router.get('/game/state', async (req, res) => {
   try {
-    const state = getCurrentState()
-    res.json({ success: true, state })
+    const { data, error } = await supabase
+      .from('aviator_game_state')
+      .select('*')
+      .eq('id', 'current')
+      .single();
+    if (error) throw error;
+    res.json({ success: true, state: data });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message })
+    res.status(500).json({ success: false, error: err.message });
   }
 })
 
 // Get game statistics
-router.get('/game/stats', (req, res) => {
+router.get('/game/stats', async (req, res) => {
   try {
+    const { data: gameState } = await supabase
+      .from('aviator_game_state')
+      .select('*')
+      .eq('id', 'current')
+      .single();
+    
+    const { data: settings } = await supabase
+      .from('aviator_settings')
+      .select('*')
+      .eq('id', 'config')
+      .single();
+    
     res.json({
       success: true,
       stats: {
-        houseEdgePool,
-        currentPhase: getCurrentState().phase,
-        totalRounds: houseEdgePool.roundsPlayed,
-        totalBets: houseEdgePool.totalBets,
-        totalWinnings: houseEdgePool.totalWinnings,
+        currentPhase: gameState?.phase || 'betting',
+        multiplier: gameState?.multiplier || 1.00,
+        houseEdge: settings?.house_edge || 0.05,
+        heMode: settings?.he_mode || 'off',
       }
-    })
+    });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message })
+    res.status(500).json({ success: false, error: err.message });
   }
 })
 
 // Update game settings
-router.post('/game/settings', validate(aviatorSettingsSchema), (req, res) => {
+router.post('/game/settings', validate(aviatorSettingsSchema), async (req, res) => {
   try {
-    updateSettings(req.body)
-    res.json({ success: true, settings: { ...settings } })
+    const { error } = await supabase
+      .from('aviator_settings')
+      .update({ ...req.body, updated_at: new Date().toISOString() })
+      .eq('id', 'config');
+    if (error) throw error;
+    const { data } = await supabase.from('aviator_settings').select('*').eq('id', 'config').single();
+    res.json({ success: true, settings: data });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message })
+    res.status(500).json({ success: false, error: err.message });
   }
 })
 

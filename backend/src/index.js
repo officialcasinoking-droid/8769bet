@@ -13,7 +13,6 @@ import securityRoutes from './routes/security.js'
 import supportRoutes from './routes/support.js'
 import aiWithdrawalRoutes from './routes/ai-withdrawal.js'
 import { landingContent } from './store.js'
-import { initGameEngine, getCurrentState, requestManualCrash, updateSettings, placeBet, cashoutBet } from './gameEngine.js'
 import { authenticateAdmin, getRequiredRoleForPath, requireRole } from './middleware/auth.js'
 import { createAuditMiddleware, initAuditWebSocket } from './middleware/auditLogger.js'
 import { createLoginRateLimiter } from './middleware/rateLimiter.js'
@@ -143,97 +142,162 @@ app.get('/api/landing', (req, res) => {
   res.json(landingContent)
 })
 
-// ── Aviator Game API ─────────────────────────────────────────
+// ── Aviator Game API (via Supabase) ─────────────────────────
 // Get current game state
-app.get('/api/aviator/state', (req, res) => {
-  res.json(getCurrentState())
+app.get('/api/aviator/state', async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('aviator_game_state')
+      .select('*')
+      .eq('id', 'current')
+      .single();
+    if (error) throw error;
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch game state' });
+  }
 })
 
 // Manual crash request (admin only)
-app.post('/api/aviator/crash', (req, res) => {
-  requestManualCrash()
-  res.json({ success: true })
+app.post('/api/aviator/crash', authenticateAdmin, async (req, res) => {
+  try {
+    await supabase.from('aviator_admin_signals').insert({
+      id: 'control',
+      action: 'force_crash',
+      triggered_by: req.admin.id,
+      processed: false
+    });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to request crash' });
+  }
 })
 
 // Update game settings (admin only)
-app.post('/api/aviator/settings', (req, res) => {
-  updateSettings(req.body)
-  res.json({ success: true, settings: require('./gameEngine.js').settings })
+app.post('/api/aviator/settings', authenticateAdmin, async (req, res) => {
+  try {
+    const { error } = await supabase
+      .from('aviator_settings')
+      .update({ ...req.body, updated_at: new Date().toISOString() })
+      .eq('id', 'config');
+    if (error) throw error;
+    const { data } = await supabase.from('aviator_settings').select('*').eq('id', 'config').single();
+    res.json({ success: true, settings: data });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update settings' });
+  }
 })
 
 // Place bet
 app.post('/api/aviator/bet', async (req, res) => {
-  const result = await placeBet(req.body)
-  res.json(result)
+  try {
+    const { data, error } = await supabase
+      .from('game_bets')
+      .insert({
+        round_id: req.body.roundId,
+        user_id: req.body.userId,
+        username: req.body.username,
+        amount: req.body.amount,
+        auto_cashout_at: req.body.autoCashout || null,
+        status: 'pending'
+      })
+      .select()
+      .single();
+    if (error) throw error;
+    res.json({ success: true, bet: data });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to place bet' });
+  }
 })
 
 // Cash out
 app.post('/api/aviator/cashout', async (req, res) => {
-  const result = await cashoutBet(req.body.userId, req.body.betNum)
-  res.json(result)
+  try {
+    const { betId, multiplier } = req.body;
+    const winAmount = Math.floor(multiplier * 100);
+    const { data, error } = await supabase
+      .from('game_bets')
+      .update({
+        status: 'won',
+        cashout_at: multiplier,
+        cashout_multiplier: multiplier,
+        cashout_amount: winAmount,
+        won_amount: winAmount,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', betId)
+      .select()
+      .single();
+    if (error) throw error;
+    res.json({ success: true, winAmount, multiplier });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to cash out' });
+  }
 })
 
 // Cancel bet
 app.post('/api/aviator/cancel-bet', async (req, res) => {
-  const { userId, betNum, betId } = req.body
-  const bet = currentBets.find(b => b.userId === userId && b.betNum === betNum && b.status === 'pending')
-  if (!bet) {
-    return res.json({ success: false, error: 'Bet not found' })
-  }
-
-  // Refund balance
-  if (supabaseAvailable) {
-    try {
-      const { data: user } = await supabase.from('users').select('balance').eq('id', userId).single()
-      if (user) {
-        await supabase.from('users').update({ balance: Number(user.balance) + bet.amount, updated_at: new Date().toISOString() }).eq('id', userId)
-      }
-      await supabase.from('aviator_bets').update({ status: 'cancelled', updated_at: new Date().toISOString() }).eq('id', betId)
-    } catch (e) {
-      console.error('[cancel-bet] DB error:', e.message)
+  const { userId, betId } = req.body;
+  try {
+    const { data: bet } = await supabase
+      .from('game_bets')
+      .select('*')
+      .eq('id', betId)
+      .eq('user_id', userId)
+      .eq('status', 'pending')
+      .single();
+    
+    if (!bet) {
+      return res.json({ success: false, error: 'Bet not found' });
     }
-  }
 
-  currentBets = currentBets.filter(b => b.id !== betId)
-  broadcast({ type: 'bets_update', bets: currentBets })
-  res.json({ success: true })
+    // Refund balance
+    const { data: user } = await supabase.from('users').select('balance').eq('id', userId).single();
+    if (user) {
+      await supabase.from('users').update({ balance: Number(user.balance) + bet.amount, updated_at: new Date().toISOString() }).eq('id', userId);
+    }
+    await supabase.from('game_bets').update({ status: 'cancelled', updated_at: new Date().toISOString() }).eq('id', betId);
+    
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to cancel bet' });
+  }
 })
 
 // Get user bet history
 app.get('/api/aviator/bet-history', async (req, res) => {
-  const { userId } = req.query
-  if (!userId) return res.status(400).json({ error: 'userId required' })
+  const { userId } = req.query;
+  if (!userId) return res.status(400).json({ error: 'userId required' });
 
   try {
     const { data: bets, error } = await supabase
-      .from('aviator_bets')
+      .from('game_bets')
       .select('*')
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
-      .limit(100)
+      .limit(100);
 
     if (error) {
-      console.error('[bet-history] Supabase error:', error.message)
-      return res.json({ success: true, bets: [], stats: { totalBets: 0, wonBets: 0, lostBets: 0, totalWagered: 0, totalWon: 0, profit: 0 } })
+      console.error('[bet-history] Supabase error:', error.message);
+      return res.json({ success: true, bets: [], stats: { totalBets: 0, wonBets: 0, lostBets: 0, totalWagered: 0, totalWon: 0, profit: 0 } });
     }
 
-    // Calculate stats
-    const totalBets = bets?.length || 0
-    const wonBets = bets?.filter(b => b.status === 'won').length || 0
-    const lostBets = bets?.filter(b => b.status === 'lost').length || 0
-    const totalWagered = bets?.reduce((sum, b) => sum + Number(b.amount), 0) || 0
-    const totalWon = bets?.filter(b => b.status === 'won').reduce((sum, b) => sum + Number(b.win_amount), 0) || 0
+    const totalBets = bets?.length || 0;
+    const wonBets = bets?.filter(b => b.status === 'won').length || 0;
+    const lostBets = bets?.filter(b => b.status === 'lost').length || 0;
+    const totalWagered = bets?.reduce((sum, b) => sum + Number(b.amount), 0) || 0;
+    const totalWon = bets?.filter(b => b.status === 'won').reduce((sum, b) => sum + Number(b.win_amount), 0) || 0;
 
-    res.json({
+res.json({
       success: true,
       bets: bets || [],
       stats: { totalBets, wonBets, lostBets, totalWagered, totalWon, profit: totalWon - totalWagered }
-    })
+    });
   } catch (err) {
-    console.error('[bet-history] Exception:', err.message)
-    res.json({ success: true, bets: [], stats: { totalBets: 0, wonBets: 0, lostBets: 0, totalWagered: 0, totalWon: 0, profit: 0 } })
+    console.error('[bet-history] Exception:', err.message);
+    res.json({ success: true, bets: [], stats: { totalBets: 0, wonBets: 0, lostBets: 0, totalWagered: 0, totalWon: 0, profit: 0 } });
   }
-})
+});
 
 // Create deposit request
 app.post('/api/deposits', async (req, res) => {
@@ -450,18 +514,41 @@ app.post('/api/withdrawals', async (req, res) => {
 })
 
 // Health check
-app.get('/api/health', (req, res) => {
-  res.json({ 
-    status: 'ok', 
-    timestamp: new Date().toISOString(),
-    game: getCurrentState()
-  })
+app.get('/api/health', async (req, res) => {
+  try {
+    const { data: gameState } = await supabase
+      .from('aviator_game_state')
+      .select('*')
+      .eq('id', 'current')
+      .single();
+    
+    res.json({ 
+      status: 'ok', 
+      timestamp: new Date().toISOString(),
+      game: gameState || null
+    });
+  } catch (err) {
+    res.json({ 
+      status: 'ok', 
+      timestamp: new Date().toISOString(),
+      game: null
+    });
+  }
 })
 
 // House edge pool endpoint
-app.get('/api/aviator/house-edge', (req, res) => {
-  const state = getCurrentState()
-  res.json(state.settings || {})
+app.get('/api/aviator/house-edge', async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('aviator_settings')
+      .select('*')
+      .eq('id', 'config')
+      .single();
+    if (error) throw error;
+    res.json(data || {});
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch settings' });
+  }
 })
 
 // ── Public Payment Methods ──────────────────────────────────
@@ -542,8 +629,6 @@ const PORT = process.env.PORT || 3006
 
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`)
-  // Initialize the Aviator game engine with WebSocket
-  initGameEngine(server)
   // Initialize audit WebSocket
   initAuditWebSocket(server)
 })
