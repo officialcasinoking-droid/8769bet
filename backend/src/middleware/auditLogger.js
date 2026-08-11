@@ -89,35 +89,44 @@ export async function logAudit({
 
 export function createAuditMiddleware() {
   return async (req, res, next) => {
+    // Skip audit for login endpoints
+    if (req.path === '/login' || req.path === '/debug-admin') {
+      return next();
+    }
+
     const originalJson = res.json.bind(res)
 
     res.json = function(body) {
-      const success = res.statusCode >= 200 && res.statusCode < 400
+      try {
+        const success = res.statusCode >= 200 && res.statusCode < 400
 
-      if (req.method === 'POST' || req.method === 'PUT' || req.method === 'DELETE' || req.method === 'PATCH') {
-        const admin = req.admin
-        if (admin) {
-          logAudit({
-            actorType: 'admin',
-            actorId: admin.id,
-            actorUsername: admin.username,
-            action: `${req.method} ${req.originalUrl}`,
-            targetType: req.body.targetType || req.params.targetType || null,
-            targetId: req.body.targetId || req.params.id || req.params.userId || null,
-            targetUsername: req.body.targetUsername || null,
-            details: {
-              method: req.method,
-              url: req.originalUrl,
-              body: req.body,
-              params: req.params,
-              query: req.query
-            },
-            ipAddress: req.ip || req.connection.remoteAddress,
-            userAgent: req.headers['user-agent'],
-            severity: req.method === 'DELETE' ? 'warning' : 'info',
-            success
-          }).catch(() => {})
+        if (req.method === 'POST' || req.method === 'PUT' || req.method === 'DELETE' || req.method === 'PATCH') {
+          const admin = req.admin
+          if (admin) {
+            logAudit({
+              actorType: 'admin',
+              actorId: admin.id,
+              actorUsername: admin.username,
+              action: `${req.method} ${req.originalUrl}`,
+              targetType: req.body.targetType || req.params.targetType || null,
+              targetId: req.body.targetId || req.params.id || req.params.userId || null,
+              targetUsername: req.body.targetUsername || null,
+              details: {
+                method: req.method,
+                url: req.originalUrl,
+                body: req.body,
+                params: req.params,
+                query: req.query
+              },
+              ipAddress: req.ip || req.connection.remoteAddress,
+              userAgent: req.headers['user-agent'],
+              severity: req.method === 'DELETE' ? 'warning' : 'info',
+              success
+            }).catch(() => {})
+          }
         }
+      } catch (e) {
+        // Ignore audit errors
       }
 
       return originalJson(body)
