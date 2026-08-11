@@ -237,7 +237,7 @@ app.post('/api/aviator/cashout', async (req, res) => {
 
 // Cancel bet
 app.post('/api/aviator/cancel-bet', async (req, res) => {
-  const { userId, betId } = req.body;
+const { userId, betId } = req.body;
   try {
     const { data: bet } = await supabase
       .from('game_bets')
@@ -256,6 +256,13 @@ app.post('/api/aviator/cancel-bet', async (req, res) => {
     if (user) {
       await supabase.from('users').update({ balance: Number(user.balance) + bet.amount, updated_at: new Date().toISOString() }).eq('id', userId);
     }
+    await supabase.from('game_bets').update({ status: 'cancelled', updated_at: new Date().toISOString() }).eq('id', betId);
+    
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to cancel bet' });
+  }
+})
     await supabase.from('game_bets').update({ status: 'cancelled', updated_at: new Date().toISOString() }).eq('id', betId);
     
     res.json({ success: true });
@@ -363,10 +370,12 @@ app.post('/api/deposits', async (req, res) => {
 
       if (!approveError) {
         // Add balance to user
+        const newBalance = Number(user.balance) + Number(amount)
         await supabase
           .from('users')
-          .update({ balance: Number(user.balance) + Number(amount), updated_at: now })
+          .update({ balance: newBalance, updated_at: now })
           .eq('id', userId)
+        broadcastBalance(userId, newBalance)
         autoApproved = true
       }
     }
@@ -482,6 +491,7 @@ app.post('/api/withdrawals', async (req, res) => {
       .from('users')
       .update({ balance: newBalance, updated_at: now })
       .eq('id', userId)
+    broadcastBalance(userId, newBalance)
 
     // Log to audit_logs
     try {

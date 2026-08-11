@@ -150,13 +150,16 @@ router.post('/deposits/:id', async (req, res) => {
 
     // If approved, add balance to user
     if (action === 'approve') {
+      const newBalance = Number(deposit.users?.balance || 0) + deposit.amount
       const { error: balanceError } = await supabase
         .from('users')
-        .update({ balance: Number(deposit.users?.balance || 0) + deposit.amount })
+        .update({ balance: newBalance })
         .eq('id', deposit.user_id)
       
       if (balanceError) {
         console.error('[admin/deposits] Balance update error:', balanceError.message)
+      } else {
+        // Balance updated successfully
       }
     }
 
@@ -279,13 +282,16 @@ router.post('/withdrawals/:id', async (req, res) => {
       if (userError) {
         console.error('[admin/withdrawals] User fetch error:', userError.message)
       } else if (user) {
+        const newBalance = Number(user.balance) + withdrawal.amount
         const { error: balanceError } = await supabase
           .from('users')
-          .update({ balance: Number(user.balance) + withdrawal.amount })
+          .update({ balance: newBalance })
           .eq('id', withdrawal.user_id)
         
         if (balanceError) {
           console.error('[admin/withdrawals] Balance update error:', balanceError.message)
+        } else {
+          // Balance updated successfully
         }
       }
     }
